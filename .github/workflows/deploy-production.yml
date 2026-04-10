@@ -69,6 +69,7 @@ jobs:
       - name: Build release archive
         run: |
           ARCHIVE="edilcloud-back-dn-${GITHUB_SHA}.tar.gz"
+          ARCHIVE_PATH="${RUNNER_TEMP}/${ARCHIVE}"
           tar \
             --exclude='.git' \
             --exclude='.github' \
@@ -86,8 +87,9 @@ jobs:
             --exclude='.tmp' \
             --exclude='pytest-cache-files-*' \
             --exclude='__pycache__' \
-            -czf "$ARCHIVE" .
+            -czf "$ARCHIVE_PATH" .
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> "$GITHUB_ENV"
 
       - name: Setup SSH
         run: |
@@ -102,7 +104,7 @@ jobs:
         run: |
           PORT="${PROD_PORT:-22}"
           REMOTE_ARCHIVE="/tmp/${ARCHIVE}"
-          scp -P "$PORT" "$ARCHIVE" "${PROD_USER}@${PROD_HOST}:${REMOTE_ARCHIVE}"
+          scp -P "$PORT" "$ARCHIVE_PATH" "${PROD_USER}@${PROD_HOST}:${REMOTE_ARCHIVE}"
           echo "REMOTE_ARCHIVE=$REMOTE_ARCHIVE" >> "$GITHUB_ENV"
 
       - name: Upload server config files
