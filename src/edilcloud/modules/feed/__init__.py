@@ -1,0 +1,2 @@
+"""Feed bounded context."""
+

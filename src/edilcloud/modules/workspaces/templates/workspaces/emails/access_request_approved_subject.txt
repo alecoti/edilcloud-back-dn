@@ -1,0 +1,1 @@
+Accesso approvato a {{ workspace_name }}

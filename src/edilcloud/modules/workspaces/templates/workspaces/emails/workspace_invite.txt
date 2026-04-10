@@ -1,0 +1,13 @@
+Hai ricevuto un invito a unirti a {{ workspace_name }} su EdilCloud.
+
+Invitato da: {{ inviter_name }}
+Ruolo proposto: {{ role_label }}
+Codice invito: {{ invite_code }}
+
+Puoi accedere direttamente da qui:
+{{ invite_url }}
+
+Se non hai ancora completato la registrazione, usa questo link:
+{{ registration_url }}
+
+Per supporto: {{ support_email }}

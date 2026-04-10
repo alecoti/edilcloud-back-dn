@@ -1,0 +1,106 @@
+{
+  "status": "fail",
+  "baseline_label": "smoke-local-matrix",
+  "current_label": "smoke-local-matrix-2",
+  "available_sections": 6,
+  "comparisons": {
+    "runtime_budget": {
+      "status": "fail",
+      "regressions": [
+        "runtime budget score peggiorato da 100% a 87%",
+        "runtime budget `auth.login` e passato da pass a fail"
+      ],
+      "baseline_score": 100,
+      "current_score": 87
+    },
+    "read_heavy": {
+      "status": "pass",
+      "regressions": [],
+      "compared_stages": [
+        {
+          "users": 5,
+          "baseline_p95_ms": 1828.17,
+          "current_p95_ms": 448.47,
+          "baseline_failure_ratio": 0.0,
+          "current_failure_ratio": 0.0,
+          "status": "pass",
+          "regressions": []
+        }
+      ]
+    },
+    "auth_burst": {
+      "status": "fail",
+      "regressions": [
+        "auth_burst stage 5: failure ratio aumentato di 0.153"
+      ],
+      "compared_stages": [
+        {
+          "users": 5,
+          "baseline_p95_ms": 1946.9,
+          "current_p95_ms": 815.52,
+          "baseline_failure_ratio": 0.0345,
+          "current_failure_ratio": 0.1875,
+          "status": "fail",
+          "regressions": [
+            "failure ratio aumentato di 0.153"
+          ]
+        }
+      ]
+    },
+    "mixed_crud": {
+      "status": "pass",
+      "regressions": [],
+      "compared_stages": [
+        {
+          "users": 3,
+          "baseline_p95_ms": 953.96,
+          "current_p95_ms": 0.0,
+          "baseline_failure_ratio": 0.0,
+          "current_failure_ratio": 0.0,
+          "status": "pass",
+          "regressions": []
+        }
+      ]
+    },
+    "realtime": {
+      "status": "fail",
+      "regressions": [
+        "realtime stage 5: stage passata a fail"
+      ],
+      "compared_stages": [
+        {
+          "users": 5,
+          "baseline_lag_p95_ms": 593.88,
+          "current_lag_p95_ms": 536.94,
+          "baseline_delivery_ratio": 1.0,
+          "current_delivery_ratio": 1.0,
+          "status": "fail",
+          "regressions": [
+            "stage passata a fail"
+          ]
+        }
+      ]
+    },
+    "search_benchmark": {
+      "status": "fail",
+      "regressions": [
+        "search benchmark p95 peggiorato oltre soglia (136.39%)"
+      ],
+      "summary": {
+        "baseline_p95_ms": 111.47,
+        "current_p95_ms": 263.5,
+        "baseline_failure_ratio": 0.0,
+        "current_failure_ratio": 0.0,
+        "baseline_empty_ratio": 0.0,
+        "current_empty_ratio": 0.0
+      }
+    }
+  },
+  "regressions": [
+    "runtime budget score peggiorato da 100% a 87%",
+    "runtime budget `auth.login` e passato da pass a fail",
+    "auth_burst stage 5: failure ratio aumentato di 0.153",
+    "realtime stage 5: stage passata a fail",
+    "search benchmark p95 peggiorato oltre soglia (136.39%)"
+  ]
+}

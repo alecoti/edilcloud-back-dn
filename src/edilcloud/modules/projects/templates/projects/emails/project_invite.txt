@@ -1,0 +1,7 @@
+{{ inviter_name }} ti ha invitato a partecipare al progetto "{{ project_name }}".
+
+Codice invito progetto: {{ invite_code }}
+
+Usa questo codice all'interno di EdilCloud per collegarti rapidamente al progetto.
+
+Per supporto: {{ support_email }}

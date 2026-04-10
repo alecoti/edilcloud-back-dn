@@ -1,0 +1,32 @@
+[
+  {
+    "question": "quanti partecipanti ci sono nel progetto?",
+    "expected_intent": "team_count",
+    "expected_strategy": "deterministic_db",
+    "expected_target_length": "short"
+  },
+  {
+    "question": "quali sono le segnalazioni aperte?",
+    "expected_intent": "open_alerts",
+    "expected_strategy": "deterministic_db",
+    "expected_target_length": "medium"
+  },
+  {
+    "question": "cosa e successo oggi in cantiere?",
+    "expected_intent": "activity_by_date",
+    "expected_strategy": "deterministic_db",
+    "expected_target_length": "medium"
+  },
+  {
+    "question": "c'e un documento sul drenaggio lato nord?",
+    "expected_intent": "document_search",
+    "expected_strategy": "semantic_retrieval",
+    "expected_target_length": "long"
+  },
+  {
+    "question": "fammi una sintesi del progetto",
+    "expected_intent": "project_summary",
+    "expected_strategy": "hybrid_db_retrieval",
+    "expected_target_length": "long"
+  }
+]

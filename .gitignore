@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+
+# Virtual envs
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+pytest-cache-files-*/
+.ruff_cache/
+.tmp/
+tmp/
+
+# Django
+db.sqlite3
+test.sqlite3
+media/
+staticfiles/
+logs/
+.runtime/
+edilcloud-back-dn-manual-*.tar.gz
+
+# Env files
+.env
+.env.local
+.env.prod
+.env.production
+
+# IDE
+.idea/
+.vscode/

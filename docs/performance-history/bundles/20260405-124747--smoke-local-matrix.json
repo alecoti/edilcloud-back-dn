@@ -1,0 +1,1974 @@
+{
+  "version": 1,
+  "label": "smoke-local-matrix",
+  "generated_at": "2026-04-05T12:47:47Z",
+  "runtime_budget": {
+    "status": "ok",
+    "budget": {
+      "status": "pass",
+      "score_percent": 100,
+      "checked_rules": 8,
+      "passing_rules": 8,
+      "failing_rules": 0,
+      "no_data_rules": 0,
+      "rules": [
+        {
+          "key": "health",
+          "method": "GET",
+          "path_pattern": "^/api/v1/health$",
+          "matched_paths": [
+            "/api/v1/health"
+          ],
+          "requests": 57,
+          "p95_ms": 389.65,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1500.0,
+          "max_error_ratio": 0.0,
+          "status": "pass"
+        },
+        {
+          "key": "auth.login",
+          "method": "POST",
+          "path_pattern": "^/api/v1/auth/login$",
+          "matched_paths": [
+            "/api/v1/auth/login"
+          ],
+          "requests": 48,
+          "p95_ms": 456.81,
+          "error_ratio": 0.0,
+          "max_p95_ms": 900.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        },
+        {
+          "key": "projects.list",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects$",
+          "matched_paths": [
+            "/api/v1/projects"
+          ],
+          "requests": 40,
+          "p95_ms": 73.13,
+          "error_ratio": 0.0,
+          "max_p95_ms": 900.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        },
+        {
+          "key": "projects.overview",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/overview$",
+          "matched_paths": [
+            "/api/v1/projects/13/overview"
+          ],
+          "requests": 14,
+          "p95_ms": 883.03,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1200.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        },
+        {
+          "key": "projects.tasks",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/tasks$",
+          "matched_paths": [
+            "/api/v1/projects/13/tasks"
+          ],
+          "requests": 55,
+          "p95_ms": 723.75,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1200.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        },
+        {
+          "key": "projects.gantt",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/gantt$",
+          "matched_paths": [
+            "/api/v1/projects/13/gantt"
+          ],
+          "requests": 7,
+          "p95_ms": 616.27,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1500.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        },
+        {
+          "key": "search.global",
+          "method": "GET",
+          "path_pattern": "^/api/v1/search/global$",
+          "matched_paths": [
+            "/api/v1/search/global"
+          ],
+          "requests": 97,
+          "p95_ms": 153.75,
+          "error_ratio": 0.0,
+          "max_p95_ms": 900.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        },
+        {
+          "key": "notifications.list",
+          "method": "GET",
+          "path_pattern": "^/api/v1/notifications$",
+          "matched_paths": [
+            "/api/v1/notifications"
+          ],
+          "requests": 4,
+          "p95_ms": 110.92,
+          "error_ratio": 0.0,
+          "max_p95_ms": 900.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        }
+      ],
+      "failing": [],
+      "missing_data": []
+    }
+  },
+  "runtime_summary": {
+    "status": "ok",
+    "summary": {
+      "uptime_seconds": 580.93,
+      "http": {
+        "totals": {
+          "requests": 406,
+          "errors": 0,
+          "error_ratio": 0.0
+        },
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/api/v1/tasks/19/posts",
+            "requests": 5,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 838.92,
+            "p95_ms": 1099.87,
+            "p99_ms": 1099.87,
+            "max_ms": 1099.87,
+            "min_ms": 514.59,
+            "performance_status": "warning",
+            "status_counts": {
+              "201": 5
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/13/overview",
+            "requests": 14,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 600.84,
+            "p95_ms": 883.03,
+            "p99_ms": 883.03,
+            "max_ms": 883.03,
+            "min_ms": 365.69,
+            "performance_status": "warning",
+            "status_counts": {
+              "200": 14
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/13/tasks",
+            "requests": 55,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 505.29,
+            "p95_ms": 723.75,
+            "p99_ms": 857.34,
+            "max_ms": 857.34,
+            "min_ms": 248.3,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 55
+            }
+          },
+          {
+            "method": "DELETE",
+            "path": "/api/v1/posts/96",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 670.15,
+            "p95_ms": 670.15,
+            "p99_ms": 670.15,
+            "max_ms": 670.15,
+            "min_ms": 670.15,
+            "performance_status": "ok",
+            "status_counts": {
+              "204": 1
+            }
+          },
+          {
+            "method": "DELETE",
+            "path": "/api/v1/posts/93",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 663.86,
+            "p95_ms": 663.86,
+            "p99_ms": 663.86,
+            "max_ms": 663.86,
+            "min_ms": 663.86,
+            "performance_status": "ok",
+            "status_counts": {
+              "204": 1
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/13/gantt",
+            "requests": 7,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 468.33,
+            "p95_ms": 616.27,
+            "p99_ms": 616.27,
+            "max_ms": 616.27,
+            "min_ms": 340.52,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 7
+            }
+          },
+          {
+            "method": "DELETE",
+            "path": "/api/v1/posts/94",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 609.6,
+            "p95_ms": 609.6,
+            "p99_ms": 609.6,
+            "max_ms": 609.6,
+            "min_ms": 609.6,
+            "performance_status": "ok",
+            "status_counts": {
+              "204": 1
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/posts/95/comments",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 561.0,
+            "p95_ms": 561.0,
+            "p99_ms": 561.0,
+            "max_ms": 561.0,
+            "min_ms": 561.0,
+            "performance_status": "ok",
+            "status_counts": {
+              "201": 1
+            }
+          },
+          {
+            "method": "DELETE",
+            "path": "/api/v1/posts/97",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 547.07,
+            "p95_ms": 547.07,
+            "p99_ms": 547.07,
+            "max_ms": 547.07,
+            "min_ms": 547.07,
+            "performance_status": "ok",
+            "status_counts": {
+              "204": 1
+            }
+          },
+          {
+            "method": "DELETE",
+            "path": "/api/v1/posts/95",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 459.86,
+            "p95_ms": 459.86,
+            "p99_ms": 459.86,
+            "max_ms": 459.86,
+            "min_ms": 459.86,
+            "performance_status": "ok",
+            "status_counts": {
+              "204": 1
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "requests": 48,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 316.98,
+            "p95_ms": 456.81,
+            "p99_ms": 511.3,
+            "max_ms": 511.3,
+            "min_ms": 199.08,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 48
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health",
+            "requests": 57,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 29.33,
+            "p95_ms": 389.65,
+            "p99_ms": 456.89,
+            "max_ms": 456.89,
+            "min_ms": 4.67,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 57
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/posts/92/comments",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 282.37,
+            "p95_ms": 282.37,
+            "p99_ms": 282.37,
+            "max_ms": 282.37,
+            "min_ms": 282.37,
+            "performance_status": "ok",
+            "status_counts": {
+              "201": 1
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/feed",
+            "requests": 49,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 188.66,
+            "p95_ms": 278.61,
+            "p99_ms": 324.03,
+            "max_ms": 324.03,
+            "min_ms": 89.17,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 49
+            }
+          },
+          {
+            "method": "DELETE",
+            "path": "/api/v1/comments/139",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 277.87,
+            "p95_ms": 277.87,
+            "p99_ms": 277.87,
+            "max_ms": 277.87,
+            "min_ms": 277.87,
+            "performance_status": "ok",
+            "status_counts": {
+              "204": 1
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/13/assistant",
+            "requests": 2,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 251.3,
+            "p95_ms": 266.58,
+            "p99_ms": 266.58,
+            "max_ms": 266.58,
+            "min_ms": 236.02,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 2
+            }
+          },
+          {
+            "method": "DELETE",
+            "path": "/api/v1/comments/138",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 178.46,
+            "p95_ms": 178.46,
+            "p99_ms": 178.46,
+            "max_ms": 178.46,
+            "min_ms": 178.46,
+            "performance_status": "ok",
+            "status_counts": {
+              "204": 1
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/search/global",
+            "requests": 97,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 59.37,
+            "p95_ms": 153.75,
+            "p99_ms": 196.74,
+            "max_ms": 196.74,
+            "min_ms": 26.88,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 97
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/13/documents",
+            "requests": 4,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 78.06,
+            "p95_ms": 124.23,
+            "p99_ms": 124.23,
+            "max_ms": 124.23,
+            "min_ms": 58.57,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 4
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/notifications",
+            "requests": 4,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 64.76,
+            "p95_ms": 110.92,
+            "p99_ms": 110.92,
+            "max_ms": 110.92,
+            "min_ms": 43.48,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 4
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects",
+            "requests": 40,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 56.0,
+            "p95_ms": 73.13,
+            "p99_ms": 87.07,
+            "max_ms": 87.07,
+            "min_ms": 29.98,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 40
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/auth/token/verify",
+            "requests": 9,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 31.53,
+            "p95_ms": 46.42,
+            "p99_ms": 46.42,
+            "max_ms": 46.42,
+            "min_ms": 19.81,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 9
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/13/realtime/session",
+            "requests": 5,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 28.66,
+            "p95_ms": 31.18,
+            "p99_ms": 31.18,
+            "max_ms": 31.18,
+            "min_ms": 24.91,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 5
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health/metrics/budget",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 7.53,
+            "p95_ms": 7.53,
+            "p99_ms": 7.53,
+            "max_ms": 7.53,
+            "min_ms": 7.53,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 1
+            }
+          }
+        ],
+        "top_slowest": [
+          {
+            "method": "POST",
+            "path": "/api/v1/tasks/19/posts",
+            "requests": 5,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 838.92,
+            "p95_ms": 1099.87,
+            "p99_ms": 1099.87,
+            "max_ms": 1099.87,
+            "min_ms": 514.59,
+            "performance_status": "warning",
+            "status_counts": {
+              "201": 5
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/13/overview",
+            "requests": 14,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 600.84,
+            "p95_ms": 883.03,
+            "p99_ms": 883.03,
+            "max_ms": 883.03,
+            "min_ms": 365.69,
+            "performance_status": "warning",
+            "status_counts": {
+              "200": 14
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/13/tasks",
+            "requests": 55,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 505.29,
+            "p95_ms": 723.75,
+            "p99_ms": 857.34,
+            "max_ms": 857.34,
+            "min_ms": 248.3,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 55
+            }
+          },
+          {
+            "method": "DELETE",
+            "path": "/api/v1/posts/96",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 670.15,
+            "p95_ms": 670.15,
+            "p99_ms": 670.15,
+            "max_ms": 670.15,
+            "min_ms": 670.15,
+            "performance_status": "ok",
+            "status_counts": {
+              "204": 1
+            }
+          },
+          {
+            "method": "DELETE",
+            "path": "/api/v1/posts/93",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 663.86,
+            "p95_ms": 663.86,
+            "p99_ms": 663.86,
+            "max_ms": 663.86,
+            "min_ms": 663.86,
+            "performance_status": "ok",
+            "status_counts": {
+              "204": 1
+            }
+          }
+        ],
+        "top_errors": [],
+        "hot_paths": [
+          {
+            "method": "GET",
+            "path": "/api/v1/search/global",
+            "requests": 97,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 59.37,
+            "p95_ms": 153.75,
+            "p99_ms": 196.74,
+            "max_ms": 196.74,
+            "min_ms": 26.88,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 97
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health",
+            "requests": 57,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 29.33,
+            "p95_ms": 389.65,
+            "p99_ms": 456.89,
+            "max_ms": 456.89,
+            "min_ms": 4.67,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 57
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/13/tasks",
+            "requests": 55,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 505.29,
+            "p95_ms": 723.75,
+            "p99_ms": 857.34,
+            "max_ms": 857.34,
+            "min_ms": 248.3,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 55
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/feed",
+            "requests": 49,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 188.66,
+            "p95_ms": 278.61,
+            "p99_ms": 324.03,
+            "max_ms": 324.03,
+            "min_ms": 89.17,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 49
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "requests": 48,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 316.98,
+            "p95_ms": 456.81,
+            "p99_ms": 511.3,
+            "max_ms": 511.3,
+            "min_ms": 199.08,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 48
+            }
+          }
+        ]
+      }
+    }
+  },
+  "loadtests": {
+    "read_heavy": {
+      "base_url": "http://localhost:3000",
+      "profile": "read-heavy",
+      "session_mode": "steady-state",
+      "project_id": null,
+      "spawn_rate": 20.0,
+      "duration_seconds": 5,
+      "max_failure_ratio": 0.01,
+      "max_p95_ms": 800.0,
+      "generated_at": "2026-04-05T12:47:17Z",
+      "stages": [
+        {
+          "total_requests": 10,
+          "total_failures": 0,
+          "failure_ratio": 0.0,
+          "avg_ms": 869.41,
+          "p50_ms": 631.56,
+          "p95_ms": 1828.17,
+          "p99_ms": 1828.17,
+          "max_ms": 1828.17,
+          "login_failures": 0,
+          "bootstrap_failures": 0,
+          "endpoints": {
+            "project.gantt": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 529.17,
+              "p50_ms": 529.17,
+              "p95_ms": 529.17,
+              "p99_ms": 529.17,
+              "max_ms": 529.17,
+              "status_counts": {
+                "200": 1
+              },
+              "sample_errors": []
+            },
+            "feed.list": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 292.11,
+              "p50_ms": 292.11,
+              "p95_ms": 292.11,
+              "p99_ms": 292.11,
+              "max_ms": 292.11,
+              "status_counts": {
+                "200": 1
+              },
+              "sample_errors": []
+            },
+            "notifications.list": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 284.6,
+              "p50_ms": 284.6,
+              "p95_ms": 284.6,
+              "p99_ms": 284.6,
+              "max_ms": 284.6,
+              "status_counts": {
+                "200": 1
+              },
+              "sample_errors": []
+            },
+            "project.tasks": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 786.11,
+              "p50_ms": 786.11,
+              "p95_ms": 786.11,
+              "p99_ms": 786.11,
+              "max_ms": 786.11,
+              "status_counts": {
+                "200": 1
+              },
+              "sample_errors": []
+            },
+            "search.global": {
+              "requests": 2,
+              "successes": 2,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 619.26,
+              "p50_ms": 321.01,
+              "p95_ms": 917.51,
+              "p99_ms": 917.51,
+              "max_ms": 917.51,
+              "status_counts": {
+                "200": 2
+              },
+              "sample_errors": []
+            },
+            "project.documents": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 631.56,
+              "p50_ms": 631.56,
+              "p95_ms": 631.56,
+              "p99_ms": 631.56,
+              "max_ms": 631.56,
+              "status_counts": {
+                "200": 1
+              },
+              "sample_errors": []
+            },
+            "project.overview": {
+              "requests": 3,
+              "successes": 3,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 1644.0,
+              "p50_ms": 1803.29,
+              "p95_ms": 1828.17,
+              "p99_ms": 1828.17,
+              "max_ms": 1828.17,
+              "status_counts": {
+                "200": 3
+              },
+              "sample_errors": []
+            }
+          },
+          "profile": "read-heavy",
+          "session_mode": "steady-state",
+          "users": 5,
+          "duration_seconds": 7.03,
+          "pass": false
+        }
+      ],
+      "breaking_stage": 5
+    },
+    "auth_burst": {
+      "base_url": "http://localhost:3000",
+      "profile": "read-heavy",
+      "session_mode": "fresh-login",
+      "project_id": null,
+      "spawn_rate": 50.0,
+      "duration_seconds": 5,
+      "max_failure_ratio": 0.01,
+      "max_p95_ms": 800.0,
+      "generated_at": "2026-04-05T12:47:24Z",
+      "stages": [
+        {
+          "total_requests": 29,
+          "total_failures": 1,
+          "failure_ratio": 0.0345,
+          "avg_ms": 717.17,
+          "p50_ms": 575.22,
+          "p95_ms": 1946.9,
+          "p99_ms": 1955.4,
+          "max_ms": 1955.4,
+          "login_failures": 0,
+          "bootstrap_failures": 0,
+          "endpoints": {
+            "auth.login": {
+              "requests": 5,
+              "successes": 5,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 1003.24,
+              "p50_ms": 999.4,
+              "p95_ms": 1512.27,
+              "p99_ms": 1512.27,
+              "max_ms": 1512.27,
+              "status_counts": {
+                "200": 5
+              },
+              "sample_errors": []
+            },
+            "projects.list": {
+              "requests": 5,
+              "successes": 5,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 127.97,
+              "p50_ms": 131.33,
+              "p95_ms": 140.53,
+              "p99_ms": 140.53,
+              "max_ms": 140.53,
+              "status_counts": {
+                "200": 5
+              },
+              "sample_errors": []
+            },
+            "project.tasks": {
+              "requests": 8,
+              "successes": 8,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 904.07,
+              "p50_ms": 784.76,
+              "p95_ms": 1946.9,
+              "p99_ms": 1946.9,
+              "max_ms": 1946.9,
+              "status_counts": {
+                "200": 8
+              },
+              "sample_errors": []
+            },
+            "feed.list": {
+              "requests": 5,
+              "successes": 5,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 337.51,
+              "p50_ms": 360.97,
+              "p95_ms": 417.18,
+              "p99_ms": 417.18,
+              "max_ms": 417.18,
+              "status_counts": {
+                "200": 5
+              },
+              "sample_errors": []
+            },
+            "project.overview": {
+              "requests": 2,
+              "successes": 2,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 1369.7,
+              "p50_ms": 784.0,
+              "p95_ms": 1955.4,
+              "p99_ms": 1955.4,
+              "max_ms": 1955.4,
+              "status_counts": {
+                "200": 2
+              },
+              "sample_errors": []
+            },
+            "search.global": {
+              "requests": 2,
+              "successes": 2,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 306.98,
+              "p50_ms": 266.78,
+              "p95_ms": 347.18,
+              "p99_ms": 347.18,
+              "max_ms": 347.18,
+              "status_counts": {
+                "200": 2
+              },
+              "sample_errors": []
+            },
+            "project.gantt": {
+              "requests": 1,
+              "successes": 0,
+              "failures": 1,
+              "failure_ratio": 1.0,
+              "avg_ms": 1815.55,
+              "p50_ms": 1815.55,
+              "p95_ms": 1815.55,
+              "p99_ms": 1815.55,
+              "max_ms": 1815.55,
+              "status_counts": {
+                "503": 1
+              },
+              "sample_errors": [
+                "[]"
+              ]
+            },
+            "project.documents": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 1052.71,
+              "p50_ms": 1052.71,
+              "p95_ms": 1052.71,
+              "p99_ms": 1052.71,
+              "max_ms": 1052.71,
+              "status_counts": {
+                "200": 1
+              },
+              "sample_errors": []
+            }
+          },
+          "profile": "read-heavy",
+          "session_mode": "fresh-login",
+          "users": 5,
+          "duration_seconds": 7.08,
+          "pass": false
+        }
+      ],
+      "breaking_stage": 5
+    },
+    "mixed_crud": {
+      "base_url": "http://localhost:3000",
+      "profile": "mixed-crud",
+      "session_mode": "steady-state",
+      "project_id": null,
+      "spawn_rate": 15.0,
+      "duration_seconds": 5,
+      "max_failure_ratio": 0.01,
+      "max_p95_ms": 800.0,
+      "generated_at": "2026-04-05T12:47:32Z",
+      "stages": [
+        {
+          "total_requests": 13,
+          "total_failures": 0,
+          "failure_ratio": 0.0,
+          "avg_ms": 500.19,
+          "p50_ms": 570.47,
+          "p95_ms": 953.96,
+          "p99_ms": 1094.1,
+          "max_ms": 1094.1,
+          "login_failures": 0,
+          "bootstrap_failures": 0,
+          "endpoints": {
+            "notifications.list": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 93.31,
+              "p50_ms": 93.31,
+              "p95_ms": 93.31,
+              "p99_ms": 93.31,
+              "max_ms": 93.31,
+              "status_counts": {
+                "200": 1
+              },
+              "sample_errors": []
+            },
+            "auth.session": {
+              "requests": 3,
+              "successes": 3,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 116.26,
+              "p50_ms": 137.68,
+              "p95_ms": 139.32,
+              "p99_ms": 139.32,
+              "max_ms": 139.32,
+              "status_counts": {
+                "200": 3
+              },
+              "sample_errors": []
+            },
+            "project.gantt": {
+              "requests": 2,
+              "successes": 2,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 567.73,
+              "p50_ms": 553.64,
+              "p95_ms": 581.81,
+              "p99_ms": 581.81,
+              "max_ms": 581.81,
+              "status_counts": {
+                "200": 2
+              },
+              "sample_errors": []
+            },
+            "post.comments.create": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 603.45,
+              "p50_ms": 603.45,
+              "p95_ms": 603.45,
+              "p99_ms": 603.45,
+              "max_ms": 603.45,
+              "status_counts": {
+                "201": 1
+              },
+              "sample_errors": []
+            },
+            "project.overview": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 570.47,
+              "p50_ms": 570.47,
+              "p95_ms": 570.47,
+              "p99_ms": 570.47,
+              "max_ms": 570.47,
+              "status_counts": {
+                "200": 1
+              },
+              "sample_errors": []
+            },
+            "project.tasks": {
+              "requests": 2,
+              "successes": 2,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 541.38,
+              "p50_ms": 372.54,
+              "p95_ms": 710.21,
+              "p99_ms": 710.21,
+              "max_ms": 710.21,
+              "status_counts": {
+                "200": 2
+              },
+              "sample_errors": []
+            },
+            "task.posts.create": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 1094.1,
+              "p50_ms": 1094.1,
+              "p95_ms": 1094.1,
+              "p99_ms": 1094.1,
+              "max_ms": 1094.1,
+              "status_counts": {
+                "201": 1
+              },
+              "sample_errors": []
+            },
+            "comment.delete": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 620.22,
+              "p50_ms": 620.22,
+              "p95_ms": 620.22,
+              "p99_ms": 620.22,
+              "max_ms": 620.22,
+              "status_counts": {
+                "204": 1
+              },
+              "sample_errors": []
+            },
+            "post.delete": {
+              "requests": 1,
+              "successes": 1,
+              "failures": 0,
+              "failure_ratio": 0.0,
+              "avg_ms": 953.96,
+              "p50_ms": 953.96,
+              "p95_ms": 953.96,
+              "p99_ms": 953.96,
+              "max_ms": 953.96,
+              "status_counts": {
+                "204": 1
+              },
+              "sample_errors": []
+            }
+          },
+          "profile": "mixed-crud",
+          "session_mode": "steady-state",
+          "users": 3,
+          "duration_seconds": 8.43,
+          "pass": false
+        }
+      ],
+      "breaking_stage": 3
+    },
+    "realtime": {
+      "base_url": "http://localhost:3000",
+      "project_id": null,
+      "rounds": 1,
+      "connect_timeout": 10.0,
+      "event_timeout": 8.0,
+      "max_delivery_loss": 0.01,
+      "max_p95_lag_ms": 1200.0,
+      "generated_at": "2026-04-05T12:47:41Z",
+      "stages": [
+        {
+          "users": 5,
+          "project_id": 13,
+          "connected": 5,
+          "connection_failures": [],
+          "rounds": 1,
+          "publish_requests": 1,
+          "publish_avg_ms": 593.72,
+          "publish_p95_ms": 593.72,
+          "delivery_expected": 5,
+          "delivery_received": 5,
+          "delivery_ratio": 1.0,
+          "delivery_loss_ratio": 0.0,
+          "lag_p50_ms": 593.87,
+          "lag_p95_ms": 593.88,
+          "lag_p99_ms": 593.88,
+          "lag_max_ms": 593.88,
+          "pass": true
+        }
+      ],
+      "breaking_stage": null
+    }
+  },
+  "search_benchmark": {
+    "status": "pass",
+    "thresholds": {
+      "max_failure_ratio": 0.01,
+      "max_p95_ms": 1200.0,
+      "max_empty_ratio": 1.0
+    },
+    "overall": {
+      "name": "overall",
+      "requests": 30,
+      "failure_ratio": 0.0,
+      "empty_ratio": 0.0,
+      "avg_ms": 80.69,
+      "p50_ms": 79.57,
+      "p95_ms": 111.47,
+      "p99_ms": 118.23,
+      "max_ms": 118.23,
+      "avg_total": 3.7,
+      "max_total": 10,
+      "sections_hit": [
+        "activities",
+        "documents",
+        "drawings",
+        "people",
+        "projects",
+        "tasks",
+        "updates"
+      ]
+    },
+    "by_query": [
+      {
+        "name": "core",
+        "requests": 6,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 82.95,
+        "p50_ms": 79.57,
+        "p95_ms": 118.23,
+        "p99_ms": 118.23,
+        "max_ms": 118.23,
+        "avg_total": 5.5,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "milano",
+        "requests": 6,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 76.92,
+        "p50_ms": 62.63,
+        "p95_ms": 98.8,
+        "p99_ms": 98.8,
+        "max_ms": 98.8,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "project",
+        "requests": 6,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 84.17,
+        "p50_ms": 73.87,
+        "p95_ms": 111.47,
+        "p99_ms": 111.47,
+        "max_ms": 111.47,
+        "avg_total": 5.5,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "smoke",
+        "requests": 6,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 78.53,
+        "p50_ms": 70.38,
+        "p95_ms": 110.65,
+        "p99_ms": 110.65,
+        "max_ms": 110.65,
+        "avg_total": 5.5,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "torino",
+        "requests": 6,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 80.91,
+        "p50_ms": 72.36,
+        "p95_ms": 108.8,
+        "p99_ms": 108.8,
+        "max_ms": 108.8,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      }
+    ],
+    "by_category": [
+      {
+        "name": "all",
+        "requests": 15,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 97.29,
+        "p50_ms": 93.18,
+        "p95_ms": 111.47,
+        "p99_ms": 118.23,
+        "max_ms": 118.23,
+        "avg_total": 6.4,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "projects",
+        "requests": 15,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 64.1,
+        "p50_ms": 63.58,
+        "p95_ms": 73.87,
+        "p99_ms": 79.57,
+        "max_ms": 79.57,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      }
+    ],
+    "by_query_category": [
+      {
+        "name": "core::all",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 99.97,
+        "p50_ms": 93.18,
+        "p95_ms": 118.23,
+        "p99_ms": 118.23,
+        "max_ms": 118.23,
+        "avg_total": 10.0,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "core::projects",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 65.93,
+        "p50_ms": 65.18,
+        "p95_ms": 79.57,
+        "p99_ms": 79.57,
+        "max_ms": 79.57,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "milano::all",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 93.19,
+        "p50_ms": 91.89,
+        "p95_ms": 98.8,
+        "p99_ms": 98.8,
+        "max_ms": 98.8,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "milano::projects",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 60.64,
+        "p50_ms": 60.33,
+        "p95_ms": 62.63,
+        "p99_ms": 62.63,
+        "max_ms": 62.63,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "project::all",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 100.17,
+        "p50_ms": 101.21,
+        "p95_ms": 111.47,
+        "p99_ms": 111.47,
+        "max_ms": 111.47,
+        "avg_total": 10.0,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "project::projects",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 68.18,
+        "p50_ms": 67.08,
+        "p95_ms": 73.87,
+        "p99_ms": 73.87,
+        "max_ms": 73.87,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "smoke::all",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 96.4,
+        "p50_ms": 91.02,
+        "p95_ms": 110.65,
+        "p99_ms": 110.65,
+        "max_ms": 110.65,
+        "avg_total": 10.0,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "smoke::projects",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 60.65,
+        "p50_ms": 59.13,
+        "p95_ms": 70.38,
+        "p99_ms": 70.38,
+        "max_ms": 70.38,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "torino::all",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 96.72,
+        "p50_ms": 95.09,
+        "p95_ms": 108.8,
+        "p99_ms": 108.8,
+        "max_ms": 108.8,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "torino::projects",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 65.09,
+        "p50_ms": 64.45,
+        "p95_ms": 72.36,
+        "p99_ms": 72.36,
+        "max_ms": 72.36,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      }
+    ],
+    "failures": [],
+    "query_count": 5,
+    "category_count": 2,
+    "generated_at": "2026-04-05T12:47:17Z",
+    "base_url": "http://localhost:3000",
+    "queries": [
+      "smoke",
+      "project",
+      "torino",
+      "core",
+      "milano"
+    ],
+    "categories": [
+      "all",
+      "projects"
+    ],
+    "repeats": 3,
+    "samples": [
+      {
+        "query": "smoke",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 91.02,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "smoke",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 52.45,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 87.82,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 67.08,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 95.09,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 58.45,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 88.51,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 65.18,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 88.87,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 60.33,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "smoke",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 110.65,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "smoke",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 59.13,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 101.21,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 73.87,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 108.8,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 72.36,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 118.23,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 79.57,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 98.8,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 58.97,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "smoke",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 87.53,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "smoke",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 70.38,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 111.47,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 63.58,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 86.28,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 64.45,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 93.18,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 53.04,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 91.89,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 62.63,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      }
+    ]
+  }
+}

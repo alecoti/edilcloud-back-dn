@@ -1,0 +1,252 @@
+{
+  "version": 1,
+  "label": "runtime-smoke-b",
+  "generated_at": "2026-04-05T12:02:57Z",
+  "runtime_budget": {
+    "status": "ok",
+    "budget": {
+      "status": "partial",
+      "score_percent": 20,
+      "checked_rules": 5,
+      "passing_rules": 1,
+      "failing_rules": 0,
+      "no_data_rules": 4,
+      "rules": [
+        {
+          "key": "health",
+          "method": "GET",
+          "path_pattern": "^/api/v1/health$",
+          "matched_paths": [
+            "/api/v1/health"
+          ],
+          "requests": 9,
+          "p95_ms": 372.15,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1500.0,
+          "max_error_ratio": 0.0,
+          "status": "pass"
+        },
+        {
+          "key": "projects.overview",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/overview$",
+          "matched_paths": [],
+          "requests": 0,
+          "p95_ms": 0.0,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1200.0,
+          "max_error_ratio": 0.01,
+          "status": "no_data"
+        },
+        {
+          "key": "projects.tasks",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/tasks$",
+          "matched_paths": [],
+          "requests": 0,
+          "p95_ms": 0.0,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1200.0,
+          "max_error_ratio": 0.01,
+          "status": "no_data"
+        },
+        {
+          "key": "projects.gantt",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/gantt$",
+          "matched_paths": [],
+          "requests": 0,
+          "p95_ms": 0.0,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1500.0,
+          "max_error_ratio": 0.01,
+          "status": "no_data"
+        },
+        {
+          "key": "search.global",
+          "method": "GET",
+          "path_pattern": "^/api/v1/search/global$",
+          "matched_paths": [],
+          "requests": 0,
+          "p95_ms": 0.0,
+          "error_ratio": 0.0,
+          "max_p95_ms": 900.0,
+          "max_error_ratio": 0.01,
+          "status": "no_data"
+        }
+      ],
+      "failing": [],
+      "missing_data": [
+        {
+          "key": "projects.overview",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/overview$",
+          "matched_paths": [],
+          "requests": 0,
+          "p95_ms": 0.0,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1200.0,
+          "max_error_ratio": 0.01,
+          "status": "no_data"
+        },
+        {
+          "key": "projects.tasks",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/tasks$",
+          "matched_paths": [],
+          "requests": 0,
+          "p95_ms": 0.0,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1200.0,
+          "max_error_ratio": 0.01,
+          "status": "no_data"
+        },
+        {
+          "key": "projects.gantt",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/gantt$",
+          "matched_paths": [],
+          "requests": 0,
+          "p95_ms": 0.0,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1500.0,
+          "max_error_ratio": 0.01,
+          "status": "no_data"
+        },
+        {
+          "key": "search.global",
+          "method": "GET",
+          "path_pattern": "^/api/v1/search/global$",
+          "matched_paths": [],
+          "requests": 0,
+          "p95_ms": 0.0,
+          "error_ratio": 0.0,
+          "max_p95_ms": 900.0,
+          "max_error_ratio": 0.01,
+          "status": "no_data"
+        }
+      ]
+    }
+  },
+  "runtime_summary": {
+    "status": "ok",
+    "summary": {
+      "uptime_seconds": 589.12,
+      "http": {
+        "totals": {
+          "requests": 10,
+          "errors": 0,
+          "error_ratio": 0.0
+        },
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/api/v1/health",
+            "requests": 9,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 47.01,
+            "p95_ms": 372.15,
+            "p99_ms": 372.15,
+            "max_ms": 372.15,
+            "min_ms": 5.29,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 9
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health/metrics/budget",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 7.41,
+            "p95_ms": 7.41,
+            "p99_ms": 7.41,
+            "max_ms": 7.41,
+            "min_ms": 7.41,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 1
+            }
+          }
+        ],
+        "top_slowest": [
+          {
+            "method": "GET",
+            "path": "/api/v1/health",
+            "requests": 9,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 47.01,
+            "p95_ms": 372.15,
+            "p99_ms": 372.15,
+            "max_ms": 372.15,
+            "min_ms": 5.29,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 9
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health/metrics/budget",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 7.41,
+            "p95_ms": 7.41,
+            "p99_ms": 7.41,
+            "max_ms": 7.41,
+            "min_ms": 7.41,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 1
+            }
+          }
+        ],
+        "top_errors": [],
+        "hot_paths": [
+          {
+            "method": "GET",
+            "path": "/api/v1/health",
+            "requests": 9,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 47.01,
+            "p95_ms": 372.15,
+            "p99_ms": 372.15,
+            "max_ms": 372.15,
+            "min_ms": 5.29,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 9
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health/metrics/budget",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 7.41,
+            "p95_ms": 7.41,
+            "p99_ms": 7.41,
+            "max_ms": 7.41,
+            "min_ms": 7.41,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  "loadtests": {
+    "read_heavy": {},
+    "mixed_crud": {},
+    "realtime": {}
+  }
+}

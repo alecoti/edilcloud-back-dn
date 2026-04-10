@@ -1,0 +1,1255 @@
+{
+  "version": 1,
+  "label": "milestone-local-core",
+  "generated_at": "2026-04-05T12:27:07Z",
+  "runtime_budget": {
+    "status": "ok",
+    "budget": {
+      "status": "pass",
+      "score_percent": 100,
+      "checked_rules": 5,
+      "passing_rules": 5,
+      "failing_rules": 0,
+      "no_data_rules": 0,
+      "rules": [
+        {
+          "key": "health",
+          "method": "GET",
+          "path_pattern": "^/api/v1/health$",
+          "matched_paths": [
+            "/api/v1/health"
+          ],
+          "requests": 154,
+          "p95_ms": 9.36,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1500.0,
+          "max_error_ratio": 0.0,
+          "status": "pass"
+        },
+        {
+          "key": "projects.overview",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/overview$",
+          "matched_paths": [
+            "/api/v1/projects/12/overview"
+          ],
+          "requests": 3,
+          "p95_ms": 206.39,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1200.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        },
+        {
+          "key": "projects.tasks",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/tasks$",
+          "matched_paths": [
+            "/api/v1/projects/12/tasks"
+          ],
+          "requests": 3,
+          "p95_ms": 76.18,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1200.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        },
+        {
+          "key": "projects.gantt",
+          "method": "GET",
+          "path_pattern": "^/api/v1/projects/\\d+/gantt$",
+          "matched_paths": [
+            "/api/v1/projects/12/gantt"
+          ],
+          "requests": 3,
+          "p95_ms": 91.78,
+          "error_ratio": 0.0,
+          "max_p95_ms": 1500.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        },
+        {
+          "key": "search.global",
+          "method": "GET",
+          "path_pattern": "^/api/v1/search/global$",
+          "matched_paths": [
+            "/api/v1/search/global"
+          ],
+          "requests": 102,
+          "p95_ms": 80.78,
+          "error_ratio": 0.0,
+          "max_p95_ms": 900.0,
+          "max_error_ratio": 0.01,
+          "status": "pass"
+        }
+      ],
+      "failing": [],
+      "missing_data": []
+    }
+  },
+  "runtime_summary": {
+    "status": "ok",
+    "summary": {
+      "uptime_seconds": 2038.28,
+      "http": {
+        "totals": {
+          "requests": 296,
+          "errors": 1,
+          "error_ratio": 0.0034
+        },
+        "endpoints": [
+          {
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "requests": 7,
+            "errors": 1,
+            "error_ratio": 0.1429,
+            "avg_ms": 246.61,
+            "p95_ms": 291.65,
+            "p99_ms": 291.65,
+            "max_ms": 291.65,
+            "min_ms": 208.29,
+            "performance_status": "ok",
+            "status_counts": {
+              "400": 1,
+              "200": 6
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/12/overview",
+            "requests": 3,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 175.37,
+            "p95_ms": 206.39,
+            "p99_ms": 206.39,
+            "max_ms": 206.39,
+            "min_ms": 156.87,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 3
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/12/gantt",
+            "requests": 3,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 84.11,
+            "p95_ms": 91.78,
+            "p99_ms": 91.78,
+            "max_ms": 91.78,
+            "min_ms": 73.86,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 3
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/search/global",
+            "requests": 102,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 53.18,
+            "p95_ms": 80.78,
+            "p99_ms": 85.33,
+            "max_ms": 305.2,
+            "min_ms": 28.4,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 102
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/12/tasks",
+            "requests": 3,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 70.7,
+            "p95_ms": 76.18,
+            "p99_ms": 76.18,
+            "max_ms": 76.18,
+            "min_ms": 63.4,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 3
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects",
+            "requests": 5,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 44.07,
+            "p95_ms": 64.42,
+            "p99_ms": 64.42,
+            "max_ms": 64.42,
+            "min_ms": 33.96,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 5
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/notifications",
+            "requests": 1,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 41.59,
+            "p95_ms": 41.59,
+            "p99_ms": 41.59,
+            "max_ms": 41.59,
+            "min_ms": 41.59,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 1
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/auth/token/verify",
+            "requests": 4,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 27.39,
+            "p95_ms": 30.62,
+            "p99_ms": 30.62,
+            "max_ms": 30.62,
+            "min_ms": 17.92,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 4
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health",
+            "requests": 154,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 10.11,
+            "p95_ms": 9.36,
+            "p99_ms": 19.83,
+            "max_ms": 491.3,
+            "min_ms": 4.92,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 154
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health/metrics/summary",
+            "requests": 6,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 4.91,
+            "p95_ms": 6.8,
+            "p99_ms": 6.8,
+            "max_ms": 6.8,
+            "min_ms": 3.72,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 6
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health/metrics/budget",
+            "requests": 8,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 4.55,
+            "p95_ms": 6.23,
+            "p99_ms": 6.23,
+            "max_ms": 6.23,
+            "min_ms": 2.98,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 8
+            }
+          }
+        ],
+        "top_slowest": [
+          {
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "requests": 7,
+            "errors": 1,
+            "error_ratio": 0.1429,
+            "avg_ms": 246.61,
+            "p95_ms": 291.65,
+            "p99_ms": 291.65,
+            "max_ms": 291.65,
+            "min_ms": 208.29,
+            "performance_status": "ok",
+            "status_counts": {
+              "400": 1,
+              "200": 6
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/12/overview",
+            "requests": 3,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 175.37,
+            "p95_ms": 206.39,
+            "p99_ms": 206.39,
+            "max_ms": 206.39,
+            "min_ms": 156.87,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 3
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/12/gantt",
+            "requests": 3,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 84.11,
+            "p95_ms": 91.78,
+            "p99_ms": 91.78,
+            "max_ms": 91.78,
+            "min_ms": 73.86,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 3
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/search/global",
+            "requests": 102,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 53.18,
+            "p95_ms": 80.78,
+            "p99_ms": 85.33,
+            "max_ms": 305.2,
+            "min_ms": 28.4,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 102
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/projects/12/tasks",
+            "requests": 3,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 70.7,
+            "p95_ms": 76.18,
+            "p99_ms": 76.18,
+            "max_ms": 76.18,
+            "min_ms": 63.4,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 3
+            }
+          }
+        ],
+        "top_errors": [
+          {
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "requests": 7,
+            "errors": 1,
+            "error_ratio": 0.1429,
+            "avg_ms": 246.61,
+            "p95_ms": 291.65,
+            "p99_ms": 291.65,
+            "max_ms": 291.65,
+            "min_ms": 208.29,
+            "performance_status": "ok",
+            "status_counts": {
+              "400": 1,
+              "200": 6
+            }
+          }
+        ],
+        "hot_paths": [
+          {
+            "method": "GET",
+            "path": "/api/v1/health",
+            "requests": 154,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 10.11,
+            "p95_ms": 9.36,
+            "p99_ms": 19.83,
+            "max_ms": 491.3,
+            "min_ms": 4.92,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 154
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/search/global",
+            "requests": 102,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 53.18,
+            "p95_ms": 80.78,
+            "p99_ms": 85.33,
+            "max_ms": 305.2,
+            "min_ms": 28.4,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 102
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health/metrics/budget",
+            "requests": 8,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 4.55,
+            "p95_ms": 6.23,
+            "p99_ms": 6.23,
+            "max_ms": 6.23,
+            "min_ms": 2.98,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 8
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "requests": 7,
+            "errors": 1,
+            "error_ratio": 0.1429,
+            "avg_ms": 246.61,
+            "p95_ms": 291.65,
+            "p99_ms": 291.65,
+            "max_ms": 291.65,
+            "min_ms": 208.29,
+            "performance_status": "ok",
+            "status_counts": {
+              "400": 1,
+              "200": 6
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/v1/health/metrics/summary",
+            "requests": 6,
+            "errors": 0,
+            "error_ratio": 0.0,
+            "avg_ms": 4.91,
+            "p95_ms": 6.8,
+            "p99_ms": 6.8,
+            "max_ms": 6.8,
+            "min_ms": 3.72,
+            "performance_status": "ok",
+            "status_counts": {
+              "200": 6
+            }
+          }
+        ]
+      }
+    }
+  },
+  "loadtests": {
+    "read_heavy": {},
+    "mixed_crud": {},
+    "realtime": {}
+  },
+  "search_benchmark": {
+    "status": "pass",
+    "thresholds": {
+      "max_failure_ratio": 0.01,
+      "max_p95_ms": 1200.0,
+      "max_empty_ratio": 1.0
+    },
+    "overall": {
+      "name": "overall",
+      "requests": 30,
+      "failure_ratio": 0.0,
+      "empty_ratio": 0.0,
+      "avg_ms": 86.61,
+      "p50_ms": 80.73,
+      "p95_ms": 113.9,
+      "p99_ms": 357.03,
+      "max_ms": 357.03,
+      "avg_total": 3.7,
+      "max_total": 10,
+      "sections_hit": [
+        "activities",
+        "documents",
+        "drawings",
+        "people",
+        "projects",
+        "tasks",
+        "updates"
+      ]
+    },
+    "by_query": [
+      {
+        "name": "core",
+        "requests": 6,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 72.79,
+        "p50_ms": 67.28,
+        "p95_ms": 92.15,
+        "p99_ms": 92.15,
+        "max_ms": 92.15,
+        "avg_total": 5.5,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "milano",
+        "requests": 6,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 81.78,
+        "p50_ms": 67.88,
+        "p95_ms": 113.9,
+        "p99_ms": 113.9,
+        "max_ms": 113.9,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "project",
+        "requests": 6,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 81.01,
+        "p50_ms": 85.34,
+        "p95_ms": 106.51,
+        "p99_ms": 106.51,
+        "max_ms": 106.51,
+        "avg_total": 5.5,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "smoke",
+        "requests": 6,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 75.95,
+        "p50_ms": 63.51,
+        "p95_ms": 93.61,
+        "p99_ms": 93.61,
+        "max_ms": 93.61,
+        "avg_total": 5.5,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "torino",
+        "requests": 6,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 121.49,
+        "p50_ms": 71.12,
+        "p95_ms": 357.03,
+        "p99_ms": 357.03,
+        "max_ms": 357.03,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      }
+    ],
+    "by_category": [
+      {
+        "name": "all",
+        "requests": 15,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 109.73,
+        "p50_ms": 90.83,
+        "p95_ms": 113.9,
+        "p99_ms": 357.03,
+        "max_ms": 357.03,
+        "avg_total": 6.4,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "projects",
+        "requests": 15,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 63.48,
+        "p50_ms": 63.51,
+        "p95_ms": 71.12,
+        "p99_ms": 90.86,
+        "max_ms": 90.86,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      }
+    ],
+    "by_query_category": [
+      {
+        "name": "core::all",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 87.58,
+        "p50_ms": 86.65,
+        "p95_ms": 92.15,
+        "p99_ms": 92.15,
+        "max_ms": 92.15,
+        "avg_total": 10.0,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "core::projects",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 57.99,
+        "p50_ms": 57.13,
+        "p95_ms": 67.28,
+        "p99_ms": 67.28,
+        "max_ms": 67.28,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "milano::all",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 97.51,
+        "p50_ms": 90.79,
+        "p95_ms": 113.9,
+        "p99_ms": 113.9,
+        "max_ms": 113.9,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "milano::projects",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 66.06,
+        "p50_ms": 65.3,
+        "p95_ms": 67.88,
+        "p99_ms": 67.88,
+        "max_ms": 67.88,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "project::all",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 94.23,
+        "p50_ms": 90.83,
+        "p95_ms": 106.51,
+        "p99_ms": 106.51,
+        "max_ms": 106.51,
+        "avg_total": 10.0,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "project::projects",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 67.8,
+        "p50_ms": 59.2,
+        "p95_ms": 90.86,
+        "p99_ms": 90.86,
+        "max_ms": 90.86,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "smoke::all",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 91.56,
+        "p50_ms": 93.03,
+        "p95_ms": 93.61,
+        "p99_ms": 93.61,
+        "max_ms": 93.61,
+        "avg_total": 10.0,
+        "max_total": 10,
+        "sections_hit": [
+          "activities",
+          "documents",
+          "drawings",
+          "people",
+          "projects",
+          "tasks",
+          "updates"
+        ]
+      },
+      {
+        "name": "smoke::projects",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 60.35,
+        "p50_ms": 62.96,
+        "p95_ms": 63.51,
+        "p99_ms": 63.51,
+        "max_ms": 63.51,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "torino::all",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 177.78,
+        "p50_ms": 95.57,
+        "p95_ms": 357.03,
+        "p99_ms": 357.03,
+        "max_ms": 357.03,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      },
+      {
+        "name": "torino::projects",
+        "requests": 3,
+        "failure_ratio": 0.0,
+        "empty_ratio": 0.0,
+        "avg_ms": 65.21,
+        "p50_ms": 64.87,
+        "p95_ms": 71.12,
+        "p99_ms": 71.12,
+        "max_ms": 71.12,
+        "avg_total": 1.0,
+        "max_total": 1,
+        "sections_hit": [
+          "projects"
+        ]
+      }
+    ],
+    "failures": [],
+    "query_count": 5,
+    "category_count": 2,
+    "generated_at": "2026-04-05T12:27:05Z",
+    "base_url": "http://localhost:3000",
+    "queries": [
+      "smoke",
+      "project",
+      "torino",
+      "core",
+      "milano"
+    ],
+    "categories": [
+      "all",
+      "projects"
+    ],
+    "repeats": 3,
+    "samples": [
+      {
+        "query": "smoke",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 93.61,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "smoke",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 54.59,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 106.51,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 53.33,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 95.57,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 59.63,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 86.65,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 67.28,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 87.83,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 67.88,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "smoke",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 93.03,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "smoke",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 62.96,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 85.34,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 59.2,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 80.73,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 71.12,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 83.95,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 57.13,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 113.9,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 65.3,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "smoke",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 88.03,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "smoke",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 63.51,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 90.83,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "project",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 90.86,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 357.03,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "torino",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 64.87,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 92.15,
+        "total": 10,
+        "non_empty_sections": [
+          "projects",
+          "tasks",
+          "activities",
+          "updates",
+          "documents",
+          "drawings",
+          "people"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "core",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 49.56,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "all",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 90.79,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      },
+      {
+        "query": "milano",
+        "category": "projects",
+        "ok": true,
+        "status_code": 200,
+        "latency_ms": 65.0,
+        "total": 1,
+        "non_empty_sections": [
+          "projects"
+        ],
+        "sample_error": ""
+      }
+    ]
+  }
+}

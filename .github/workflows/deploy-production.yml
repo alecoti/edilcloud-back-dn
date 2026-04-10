@@ -1,0 +1,205 @@
+name: Deploy Backend Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: edilcloud-back-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Migration drift check
+        run: python manage.py makemigrations --dry-run --check --settings=edilcloud.settings.test
+
+      - name: Django system check
+        run: python manage.py check --settings=edilcloud.settings.test
+
+      - name: Backend test suite
+        run: pytest -q
+
+  deploy:
+    name: Deploy to Production Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs:
+      - validate
+
+    env:
+      PROD_HOST: ${{ secrets.PROD_HOST }}
+      PROD_PORT: ${{ secrets.PROD_PORT }}
+      PROD_USER: ${{ secrets.PROD_USER }}
+      PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          test -n "$PROD_HOST" || (echo "Missing secret: PROD_HOST" && exit 1)
+          test -n "$PROD_USER" || (echo "Missing secret: PROD_USER" && exit 1)
+          test -n "$PROD_SSH_KEY" || (echo "Missing secret: PROD_SSH_KEY" && exit 1)
+
+      - name: Build release archive
+        run: |
+          ARCHIVE="edilcloud-back-dn-${GITHUB_SHA}.tar.gz"
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.venv' \
+            --exclude='media' \
+            --exclude='staticfiles' \
+            --exclude='logs' \
+            --exclude='.runtime' \
+            --exclude='.env' \
+            --exclude='.env.local' \
+            --exclude='.env.production' \
+            --exclude='test.sqlite3' \
+            --exclude='tmp' \
+            --exclude='.tmp' \
+            --exclude='pytest-cache-files-*' \
+            --exclude='__pycache__' \
+            -czf "$ARCHIVE" .
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Setup SSH
+        run: |
+          PORT="${PROD_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$PORT" "$PROD_HOST" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Upload release archive
+        run: |
+          PORT="${PROD_PORT:-22}"
+          REMOTE_ARCHIVE="/tmp/${ARCHIVE}"
+          scp -P "$PORT" "$ARCHIVE" "${PROD_USER}@${PROD_HOST}:${REMOTE_ARCHIVE}"
+          echo "REMOTE_ARCHIVE=$REMOTE_ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Deploy on server
+        run: |
+          PORT="${PROD_PORT:-22}"
+          ssh -p "$PORT" "${PROD_USER}@${PROD_HOST}" \
+            "GITHUB_SHA='${GITHUB_SHA}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' bash -s" <<'EOS'
+          set -euo pipefail
+
+          APP_DIR="/opt/edilcloud/back-dn"
+          RELEASE_DIR="/tmp/edilcloud-back-dn-${GITHUB_SHA}"
+          BACKUP_ROOT="/opt/edilcloud/releases"
+          BACKUP_DIR="${BACKUP_ROOT}/back-dn-pre-${GITHUB_SHA}"
+          COMPOSE_FILE="${APP_DIR}/docker-compose.server.yml"
+          ENV_FILE="${APP_DIR}/.env.production"
+
+          run_priv() {
+            if [ "$(id -u)" -eq 0 ]; then
+              "$@"
+            else
+              sudo "$@"
+            fi
+          }
+
+          cleanup() {
+            run_priv rm -rf "${RELEASE_DIR}" "${REMOTE_ARCHIVE}"
+          }
+
+          rollback() {
+            echo "Deploy healthcheck failed. Rolling back previous code..." >&2
+            run_priv rsync -a --delete \
+              --exclude='.git' \
+              --exclude='.venv' \
+              --exclude='.runtime' \
+              --exclude='media' \
+              --exclude='staticfiles' \
+              --exclude='logs' \
+              --exclude='.env' \
+              --exclude='.env.*' \
+              "${BACKUP_DIR}/" "${APP_DIR}/"
+            cd "${APP_DIR}"
+            run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build web assistant-worker
+            run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
+          }
+
+          healthcheck() {
+            local attempt=1
+            while [ "$attempt" -le 18 ]; do
+              if run_priv curl -fsS --max-time 10 \
+                -H 'Host: back.edilcloud.eu' \
+                -H 'X-Forwarded-Proto: https' \
+                http://127.0.0.1:18001/api/v1/health >/dev/null; then
+                return 0
+              fi
+              sleep 5
+              attempt=$((attempt + 1))
+            done
+            return 1
+          }
+
+          run_priv test -f "${ENV_FILE}"
+          run_priv mkdir -p "${BACKUP_ROOT}" "${RELEASE_DIR}" "${BACKUP_DIR}"
+          run_priv tar -xzf "${REMOTE_ARCHIVE}" -C "${RELEASE_DIR}"
+
+          run_priv rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='.runtime' \
+            --exclude='media' \
+            --exclude='staticfiles' \
+            --exclude='logs' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            "${APP_DIR}/" "${BACKUP_DIR}/"
+
+          run_priv rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='.runtime' \
+            --exclude='media' \
+            --exclude='staticfiles' \
+            --exclude='logs' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='test.sqlite3' \
+            --exclude='tmp' \
+            --exclude='.tmp' \
+            --exclude='pytest-cache-files-*' \
+            --exclude='__pycache__' \
+            "${RELEASE_DIR}/" "${APP_DIR}/"
+
+          cd "${APP_DIR}"
+          run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build web assistant-worker
+          run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
+
+          if ! healthcheck; then
+            rollback
+            healthcheck || true
+            cleanup
+            exit 1
+          fi
+
+          run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
+          cleanup
+          EOS

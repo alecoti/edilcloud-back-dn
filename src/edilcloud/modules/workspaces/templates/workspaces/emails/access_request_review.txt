@@ -1,0 +1,16 @@
+Ciao {{ reviewer_name }},
+
+{{ requester_name }} ha richiesto l'accesso al workspace {{ workspace_name }}.
+
+Email: {{ requester_email }}
+Telefono: {{ requester_phone|default:"-" }}
+Ruolo / posizione: {{ position|default:"-" }}
+Messaggio: {{ message|default:"-" }}
+
+Approva:
+{{ approve_url }}
+
+Rifiuta:
+{{ refuse_url }}
+
+Per supporto: {{ support_email }}

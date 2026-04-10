@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invito al workspace</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f5;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #18181b;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      width: 100%;
+      table-layout: fixed;
+      background-color: #f4f4f5;
+      padding: 60px 0;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border: 1px solid #e4e4e7;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    }
+    .header {
+      padding: 32px 40px;
+      border-bottom: 1px solid #f4f4f5;
+      text-align: center;
+    }
+    .logo {
+      font-size: 24px;
+      font-weight: 600;
+      color: #18181b;
+      letter-spacing: -0.5px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+    .content {
+      padding: 40px;
+    }
+    .title {
+      margin: 0 0 16px;
+      font-size: 20px;
+      font-weight: 600;
+      color: #18181b;
+    }
+    .text {
+      margin: 0 0 24px;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #52525b;
+    }
+    .code-box {
+      margin: 0 0 28px;
+      padding: 20px;
+      border-radius: 14px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      text-align: center;
+    }
+    .code-label {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: #92400e;
+    }
+    .code {
+      margin: 0;
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: 8px;
+      color: #d97706;
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+    }
+    .actions {
+      margin-bottom: 28px;
+      text-align: center;
+    }
+    .btn {
+      display: inline-block;
+      padding: 14px 28px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      margin: 0 6px 12px;
+    }
+    .btn-primary {
+      background-color: #18181b;
+      color: #ffffff !important;
+    }
+    .btn-secondary {
+      background-color: #ffffff;
+      color: #d97706 !important;
+      border: 1px solid #fde68a;
+    }
+    .footer {
+      background-color: #fafafa;
+      padding: 32px 40px;
+      text-align: center;
+      border-top: 1px solid #f4f4f5;
+    }
+    .footer-text {
+      margin: 0;
+      font-size: 12px;
+      color: #a1a1aa;
+      line-height: 1.6;
+    }
+    .link {
+      color: #d97706;
+      text-decoration: none;
+    }
+    @media only screen and (max-width: 600px) {
+      .wrapper {
+        padding: 20px 0;
+      }
+      .container {
+        margin: 0 20px;
+        border-radius: 12px;
+        width: auto;
+      }
+      .content,
+      .header,
+      .footer {
+        padding-left: 24px;
+        padding-right: 24px;
+      }
+      .code {
+        letter-spacing: 5px;
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <div class="logo">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 12px;">
+            <rect width="24" height="24" rx="6" fill="#F59E0B"/>
+            <path d="M6 18V6C6 5.44772 6.44772 5 7 5H11C11.5523 5 12 5.44772 12 6V18M6 18H12M6 18H4M12 18H18M12 18V10C12 9.44772 12.4477 9 13 9H17C17.5523 9 18 9.44772 18 10V18M8 8H10M8 11H10M8 14H10M14 12H16M14 15H16" stroke="#18181B" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          EdilCloud
+        </div>
+      </div>
+      <div class="content">
+        <h1 class="title">Invito al workspace {{ workspace_name }}</h1>
+        <p class="text">
+          <strong>{{ inviter_name }}</strong> ti ha invitato a entrare in <strong>{{ workspace_name }}</strong> su EdilCloud con il ruolo <strong>{{ role_label }}</strong>.
+        </p>
+        <div class="code-box">
+          <p class="code-label">Codice invito</p>
+          <p class="code">{{ invite_code }}</p>
+        </div>
+        <div class="actions">
+          <a href="{{ invite_url }}" class="btn btn-primary">Apri invito</a>
+          <a href="{{ registration_url }}" class="btn btn-secondary">Accedi o crea il main profile</a>
+        </div>
+        <p class="text" style="font-size: 14px; color: #71717a; margin-bottom: 0;">
+          Se arrivi da un nuovo account, completerai prima il tuo profilo principale e verrai poi collegato direttamente alla dashboard dell'azienda invitante.
+        </p>
+      </div>
+      <div class="footer">
+        <p class="footer-text">
+          © 2026 EdilCloud Inc. Tutti i diritti riservati.<br>
+          Hai bisogno di aiuto? <a href="mailto:{{ support_email }}" class="link">Contatta il supporto</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

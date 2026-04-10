@@ -1,0 +1,51 @@
+services:
+  db:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-edilcloud_dn}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+  redis:
+    restart: unless-stopped
+
+  web:
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: edilcloud.settings.prod
+      DEBUG: "false"
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/edilcloud_dn}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SUPERMEMORY_API_KEY: ""
+      SUPERMEMORY_BASE_URL: ""
+    volumes:
+      - media_data:/app/media
+      - staticfiles_data:/app/staticfiles
+
+  assistant-worker:
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: edilcloud.settings.prod
+      DEBUG: "false"
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/edilcloud_dn}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SUPERMEMORY_API_KEY: ""
+      SUPERMEMORY_BASE_URL: ""
+    volumes:
+      - media_data:/app/media
+      - staticfiles_data:/app/staticfiles
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:
+  staticfiles_data:

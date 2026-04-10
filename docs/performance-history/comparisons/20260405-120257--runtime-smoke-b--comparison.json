@@ -1,0 +1,30 @@
+{
+  "status": "pass",
+  "baseline_label": "runtime-smoke-a",
+  "current_label": "runtime-smoke-b",
+  "available_sections": 1,
+  "comparisons": {
+    "runtime_budget": {
+      "status": "pass",
+      "regressions": [],
+      "baseline_score": 20,
+      "current_score": 20
+    },
+    "read_heavy": {
+      "status": "no_data",
+      "regressions": [],
+      "compared_stages": []
+    },
+    "mixed_crud": {
+      "status": "no_data",
+      "regressions": [],
+      "compared_stages": []
+    },
+    "realtime": {
+      "status": "no_data",
+      "regressions": [],
+      "compared_stages": []
+    }
+  },
+  "regressions": []
+}

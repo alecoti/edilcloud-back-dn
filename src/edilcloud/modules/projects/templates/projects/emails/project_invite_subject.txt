@@ -1,0 +1,1 @@
+Invito al progetto {{ project_name }}

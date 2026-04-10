@@ -1,0 +1,14 @@
+Il tuo codice di accesso
+
+Ciao,
+
+Usa il seguente codice di sicurezza per accedere al tuo account EdilCloud:
+
+{{ code }}
+
+Questo codice e valido per i prossimi {{ ttl_minutes }} minuti.
+
+Se non hai richiesto questo codice, puoi ignorare questa email in modo sicuro.
+Nessuno puo accedere al tuo account senza questo codice.
+
+Hai bisogno di aiuto? Scrivi a {{ support_email }}

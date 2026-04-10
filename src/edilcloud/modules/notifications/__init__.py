@@ -1,0 +1,2 @@
+"""Notifications bounded context."""
+

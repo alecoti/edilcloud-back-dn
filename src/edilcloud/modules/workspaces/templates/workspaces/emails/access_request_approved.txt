@@ -1,0 +1,8 @@
+La tua richiesta di accesso a {{ workspace_name }} e stata approvata.
+
+Profilo associato: {{ member_name }}
+
+Accedi qui:
+{{ login_url }}
+
+Per supporto: {{ support_email }}

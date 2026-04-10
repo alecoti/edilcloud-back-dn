@@ -1,0 +1,127 @@
+{
+  "status": "fail",
+  "baseline_label": "smoke-local-matrix-kind",
+  "current_label": "smoke-local-matrix-budget",
+  "available_sections": 6,
+  "comparisons": {
+    "runtime_budget": {
+      "status": "pass",
+      "regressions": [],
+      "baseline_score": 87,
+      "current_score": 87
+    },
+    "read_heavy": {
+      "status": "fail",
+      "regressions": [
+        "read_heavy best passing stage peggiorato da 1 a 0",
+        "read_heavy stage 1: stage passata a fail",
+        "read_heavy stage 1: p95 peggiorato oltre soglia (318.07%)",
+        "read_heavy stage 1: failure ratio aumentato di 1.0"
+      ],
+      "compared_stages": [
+        {
+          "users": 1,
+          "baseline_p95_ms": 388.85,
+          "current_p95_ms": 1625.68,
+          "baseline_failure_ratio": 0.0,
+          "current_failure_ratio": 1.0,
+          "status": "fail",
+          "regressions": [
+            "stage passata a fail",
+            "p95 peggiorato oltre soglia (318.07%)",
+            "failure ratio aumentato di 1.0"
+          ]
+        }
+      ]
+    },
+    "auth_burst": {
+      "status": "fail",
+      "regressions": [
+        "auth_burst best passing stage peggiorato da 1 a 0",
+        "auth_burst stage 1: stage passata a fail",
+        "auth_burst stage 1: p95 peggiorato oltre soglia (477.24%)"
+      ],
+      "compared_stages": [
+        {
+          "users": 1,
+          "baseline_p95_ms": 420.97,
+          "current_p95_ms": 2430.0,
+          "baseline_failure_ratio": 0.0,
+          "current_failure_ratio": 0.0,
+          "status": "fail",
+          "regressions": [
+            "stage passata a fail",
+            "p95 peggiorato oltre soglia (477.24%)"
+          ]
+        }
+      ]
+    },
+    "mixed_crud": {
+      "status": "fail",
+      "regressions": [
+        "mixed_crud stage 1: p95 peggiorato oltre soglia (18.14%)"
+      ],
+      "compared_stages": [
+        {
+          "users": 1,
+          "baseline_p95_ms": 590.54,
+          "current_p95_ms": 697.68,
+          "baseline_failure_ratio": 0.0,
+          "current_failure_ratio": 0.0,
+          "status": "fail",
+          "regressions": [
+            "p95 peggiorato oltre soglia (18.14%)"
+          ]
+        }
+      ]
+    },
+    "realtime": {
+      "status": "fail",
+      "regressions": [
+        "realtime stage 1: stage passata a fail",
+        "realtime stage 1: lag p95 peggiorato oltre soglia (269.47%)"
+      ],
+      "compared_stages": [
+        {
+          "users": 1,
+          "baseline_lag_p95_ms": 529.65,
+          "current_lag_p95_ms": 1956.91,
+          "baseline_delivery_ratio": 1.0,
+          "current_delivery_ratio": 1.0,
+          "status": "fail",
+          "regressions": [
+            "stage passata a fail",
+            "lag p95 peggiorato oltre soglia (269.47%)"
+          ]
+        }
+      ]
+    },
+    "search_benchmark": {
+      "status": "fail",
+      "regressions": [
+        "search benchmark p95 peggiorato oltre soglia (98.28%)"
+      ],
+      "summary": {
+        "baseline_p95_ms": 179.83,
+        "current_p95_ms": 356.57,
+        "baseline_failure_ratio": 0.0,
+        "current_failure_ratio": 0.0,
+        "baseline_empty_ratio": 0.0,
+        "current_empty_ratio": 0.0
+      }
+    }
+  },
+  "regressions": [
+    "read_heavy best passing stage peggiorato da 1 a 0",
+    "read_heavy stage 1: stage passata a fail",
+    "read_heavy stage 1: p95 peggiorato oltre soglia (318.07%)",
+    "read_heavy stage 1: failure ratio aumentato di 1.0",
+    "auth_burst best passing stage peggiorato da 1 a 0",
+    "auth_burst stage 1: stage passata a fail",
+    "auth_burst stage 1: p95 peggiorato oltre soglia (477.24%)",
+    "mixed_crud stage 1: p95 peggiorato oltre soglia (18.14%)",
+    "realtime stage 1: stage passata a fail",
+    "realtime stage 1: lag p95 peggiorato oltre soglia (269.47%)",
+    "search benchmark p95 peggiorato oltre soglia (98.28%)"
+  ]
+}

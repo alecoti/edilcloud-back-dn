@@ -1,0 +1,49 @@
+{
+  "status": "fail",
+  "baseline_label": "milestone-local-core3",
+  "current_label": "milestone-local-core4",
+  "available_sections": 2,
+  "comparisons": {
+    "runtime_budget": {
+      "status": "fail",
+      "regressions": [
+        "runtime budget score peggiorato da 40% a 12%"
+      ],
+      "baseline_score": 40,
+      "current_score": 12
+    },
+    "read_heavy": {
+      "status": "no_data",
+      "regressions": [],
+      "compared_stages": []
+    },
+    "mixed_crud": {
+      "status": "no_data",
+      "regressions": [],
+      "compared_stages": []
+    },
+    "realtime": {
+      "status": "no_data",
+      "regressions": [],
+      "compared_stages": []
+    },
+    "search_benchmark": {
+      "status": "fail",
+      "regressions": [
+        "search benchmark p95 peggiorato oltre soglia (25.06%)"
+      ],
+      "summary": {
+        "baseline_p95_ms": 105.71,
+        "current_p95_ms": 132.2,
+        "baseline_failure_ratio": 0.0,
+        "current_failure_ratio": 0.0,
+        "baseline_empty_ratio": 0.0,
+        "current_empty_ratio": 0.0
+      }
+    }
+  },
+  "regressions": [
+    "runtime budget score peggiorato da 40% a 12%",
+    "search benchmark p95 peggiorato oltre soglia (25.06%)"
+  ]
+}

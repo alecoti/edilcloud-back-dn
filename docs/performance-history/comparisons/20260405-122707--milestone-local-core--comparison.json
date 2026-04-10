@@ -1,0 +1,42 @@
+{
+  "status": "pass",
+  "baseline_label": "milestone-local",
+  "current_label": "milestone-local-core",
+  "available_sections": 2,
+  "comparisons": {
+    "runtime_budget": {
+      "status": "pass",
+      "regressions": [],
+      "baseline_score": 40,
+      "current_score": 100
+    },
+    "read_heavy": {
+      "status": "no_data",
+      "regressions": [],
+      "compared_stages": []
+    },
+    "mixed_crud": {
+      "status": "no_data",
+      "regressions": [],
+      "compared_stages": []
+    },
+    "realtime": {
+      "status": "no_data",
+      "regressions": [],
+      "compared_stages": []
+    },
+    "search_benchmark": {
+      "status": "pass",
+      "regressions": [],
+      "summary": {
+        "baseline_p95_ms": 122.63,
+        "current_p95_ms": 113.9,
+        "baseline_failure_ratio": 0.0,
+        "current_failure_ratio": 0.0,
+        "baseline_empty_ratio": 0.0,
+        "current_empty_ratio": 0.0
+      }
+    }
+  },
+  "regressions": []
+}
