@@ -556,6 +556,66 @@ class PostComment(TimestampedModel):
         return f"Comment #{self.id} on post #{self.post_id}"
 
 
+class ProjectPostTranslation(TimestampedModel):
+    post = models.ForeignKey(
+        ProjectPost,
+        on_delete=models.CASCADE,
+        related_name="translations",
+    )
+    target_language = models.CharField(max_length=8)
+    source_language = models.CharField(max_length=8, blank=True)
+    source_signature = models.CharField(max_length=64, blank=True)
+    translated_text = models.TextField(blank=True)
+    provider = models.CharField(max_length=32, blank=True)
+    model = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        ordering = ("post_id", "target_language", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("post", "target_language"),
+                name="unique_project_post_translation_language",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("post", "target_language")),
+            models.Index(fields=("target_language", "updated_at")),
+        ]
+
+    def __str__(self) -> str:
+        return f"Post translation #{self.id} ({self.target_language})"
+
+
+class PostCommentTranslation(TimestampedModel):
+    comment = models.ForeignKey(
+        PostComment,
+        on_delete=models.CASCADE,
+        related_name="translations",
+    )
+    target_language = models.CharField(max_length=8)
+    source_language = models.CharField(max_length=8, blank=True)
+    source_signature = models.CharField(max_length=64, blank=True)
+    translated_text = models.TextField(blank=True)
+    provider = models.CharField(max_length=32, blank=True)
+    model = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        ordering = ("comment_id", "target_language", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("comment", "target_language"),
+                name="unique_post_comment_translation_language",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("comment", "target_language")),
+            models.Index(fields=("target_language", "updated_at")),
+        ]
+
+    def __str__(self) -> str:
+        return f"Comment translation #{self.id} ({self.target_language})"
+
+
 class ProjectPostSeenState(TimestampedModel):
     post = models.ForeignKey(
         ProjectPost,

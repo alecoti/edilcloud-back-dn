@@ -99,6 +99,7 @@ comments_router = Router(tags=["comments"])
 folders_router = Router(tags=["folders"])
 documents_router = Router(tags=["documents"])
 photos_router = Router(tags=["photos"])
+REQUEST_LOCALE_HEADER = "X-Edilcloud-Locale"
 
 
 def is_multipart_request(request) -> bool:
@@ -123,6 +124,10 @@ def current_profile(request):
         return get_current_profile(user=request.auth.user, claims=request.auth.claims)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
+
+
+def request_locale(request) -> str:
+    return (request.headers.get(REQUEST_LOCALE_HEADER) or "").strip()
 
 
 def parse_post_form_payload(request) -> dict[str, Any]:
@@ -281,10 +286,12 @@ def create_project_endpoint(request, payload: CreateProjectRequestSchema):
 @router.get("/feed", response=ProjectFeedPageSchema, auth=auth)
 def get_project_feed_endpoint(request, limit: int = 50, offset: int = 0):
     try:
+        profile = current_profile(request)
         return list_project_feed(
-            profile=current_profile(request),
+            profile=profile,
             limit=limit,
             offset=offset,
+            target_language=request_locale(request),
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
@@ -312,7 +319,12 @@ def get_project(request, project_id: int):
 @router.get("/{project_id}/overview", response=ProjectOverviewSchema, auth=auth)
 def get_project_overview_endpoint(request, project_id: int):
     try:
-        return get_project_overview(profile=current_profile(request), project_id=project_id)
+        profile = current_profile(request)
+        return get_project_overview(
+            profile=profile,
+            project_id=project_id,
+            target_language=request_locale(request),
+        )
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
 
@@ -501,7 +513,12 @@ def create_project_folder_endpoint(request, project_id: int, payload: CreateProj
 @router.get("/{project_id}/alerts", response=list[dict[str, Any]], auth=auth)
 def get_project_alerts_endpoint(request, project_id: int):
     try:
-        return list_project_alert_posts(profile=current_profile(request), project_id=project_id)
+        profile = current_profile(request)
+        return list_project_alert_posts(
+            profile=profile,
+            project_id=project_id,
+            target_language=request_locale(request),
+        )
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
 
@@ -648,7 +665,12 @@ def create_activity_endpoint(request, task_id: int, payload: CreateTaskActivityR
 @tasks_router.get("/{task_id}/posts", response=list[dict[str, Any]], auth=auth)
 def get_task_posts_endpoint(request, task_id: int):
     try:
-        return list_posts_for_task(profile=current_profile(request), task_id=task_id)
+        profile = current_profile(request)
+        return list_posts_for_task(
+            profile=profile,
+            task_id=task_id,
+            target_language=request_locale(request),
+        )
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
 
@@ -657,9 +679,11 @@ def get_task_posts_endpoint(request, task_id: int):
 def create_task_post_endpoint(request, task_id: int):
     try:
         payload = parse_post_form_payload(request)
+        profile = current_profile(request)
         post = create_task_post(
-            profile=current_profile(request),
+            profile=profile,
             task_id=task_id,
+            target_language=request_locale(request),
             **payload,
         )
     except ValueError as exc:
@@ -691,7 +715,12 @@ def update_activity_endpoint(request, activity_id: int, payload: UpdateTaskActiv
 @activities_router.get("/{activity_id}/posts", response=list[dict[str, Any]], auth=auth)
 def get_activity_posts_endpoint(request, activity_id: int):
     try:
-        return list_posts_for_activity(profile=current_profile(request), activity_id=activity_id)
+        profile = current_profile(request)
+        return list_posts_for_activity(
+            profile=profile,
+            activity_id=activity_id,
+            target_language=request_locale(request),
+        )
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
 
@@ -700,9 +729,11 @@ def get_activity_posts_endpoint(request, activity_id: int):
 def create_activity_post_endpoint(request, activity_id: int):
     try:
         payload = parse_post_form_payload(request)
+        profile = current_profile(request)
         post = create_activity_post(
-            profile=current_profile(request),
+            profile=profile,
             activity_id=activity_id,
+            target_language=request_locale(request),
             **payload,
         )
     except ValueError as exc:
@@ -714,7 +745,13 @@ def create_activity_post_endpoint(request, activity_id: int):
 def update_post_endpoint(request, post_id: int):
     try:
         payload = parse_update_post_payload(request)
-        return update_post(profile=current_profile(request), post_id=post_id, **payload)
+        profile = current_profile(request)
+        return update_post(
+            profile=profile,
+            post_id=post_id,
+            target_language=request_locale(request),
+            **payload,
+        )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
 
@@ -732,7 +769,13 @@ def delete_post_endpoint(request, post_id: int):
 def create_comment_endpoint(request, post_id: int):
     try:
         payload = parse_comment_form_payload(request)
-        comment = create_post_comment(profile=current_profile(request), post_id=post_id, **payload)
+        profile = current_profile(request)
+        comment = create_post_comment(
+            profile=profile,
+            post_id=post_id,
+            target_language=request_locale(request),
+            **payload,
+        )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return Status(201, comment)
@@ -750,7 +793,13 @@ def mark_post_seen_endpoint(request, post_id: int):
 def update_comment_endpoint(request, comment_id: int):
     try:
         payload = parse_update_comment_payload(request)
-        return update_comment(profile=current_profile(request), comment_id=comment_id, **payload)
+        profile = current_profile(request)
+        return update_comment(
+            profile=profile,
+            comment_id=comment_id,
+            target_language=request_locale(request),
+            **payload,
+        )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
 

@@ -15,6 +15,7 @@ from edilcloud.modules.projects.models import (
     PostKind,
     PostAttachment,
     PostComment,
+    PostCommentTranslation,
     Project,
     ProjectActivity,
     ProjectCompanyColor,
@@ -26,11 +27,13 @@ from edilcloud.modules.projects.models import (
     ProjectOperationalEvent,
     ProjectPhoto,
     ProjectPost,
+    ProjectPostTranslation,
     ProjectScheduleLink,
     ProjectStatus,
     ProjectTask,
 )
 from edilcloud.modules.projects.gantt_import import ImportedActivity, ImportedPhase, ImportedPlan
+from edilcloud.modules.projects import services as project_services
 from edilcloud.modules.projects.services import (
     PROJECT_COMPANY_COLOR_PALETTE,
     build_project_company_color,
@@ -2445,3 +2448,203 @@ def test_project_file_download_endpoints_stream_project_assets_and_enforce_acces
         ).status_code
         == 404
     )
+
+
+@pytest.mark.django_db
+def test_activity_posts_are_translated_and_cached_by_requested_locale(monkeypatch):
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.translation.activity@example.com",
+        password="devpass123",
+    )
+    _project, _task, activity, alert_post = create_project_fixture(profile)
+    PostComment.objects.create(
+        post=alert_post,
+        author=profile,
+        text="Serve rinforzo provvisorio lato nord.",
+        original_text="Serve rinforzo provvisorio lato nord.",
+        source_language="it",
+        display_language="it",
+    )
+    headers = auth_headers(client, email="projects.translation.activity@example.com", password="devpass123")
+    calls: list[tuple[str, str]] = []
+
+    def fake_translate(*, source_text: str, source_language: str, target_language: str) -> str:
+        calls.append((source_text, target_language))
+        return f"[{target_language}] {source_text}"
+
+    monkeypatch.setattr(project_services, "generate_project_content_translation", fake_translate)
+
+    response = client.get(
+        f"/api/v1/activities/{activity.id}/posts",
+        HTTP_X_EDILCLOUD_LOCALE="ru",
+        **headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 2
+    translated_alert = next(item for item in payload if item["id"] == alert_post.id)
+    assert translated_alert["display_language"] == "ru"
+    assert translated_alert["is_translated"] is True
+    assert translated_alert["text"].startswith("[ru] ")
+    assert translated_alert["comment_set"][0]["display_language"] == "ru"
+    assert translated_alert["comment_set"][0]["is_translated"] is True
+    assert len(calls) == 3
+    assert ProjectPostTranslation.objects.filter(target_language="ru").count() == 2
+    assert PostCommentTranslation.objects.filter(target_language="ru").count() == 1
+
+    def should_not_run(**_kwargs):
+        raise AssertionError("La traduzione doveva arrivare dalla memoria, non dall'LLM.")
+
+    monkeypatch.setattr(project_services, "generate_project_content_translation", should_not_run)
+    cached_response = client.get(
+        f"/api/v1/activities/{activity.id}/posts",
+        HTTP_X_EDILCLOUD_LOCALE="ru",
+        **headers,
+    )
+    assert cached_response.status_code == 200
+    cached_payload = cached_response.json()
+    cached_alert = next(item for item in cached_payload if item["id"] == alert_post.id)
+    assert cached_alert["text"] == translated_alert["text"]
+    assert cached_alert["comment_set"][0]["text"] == translated_alert["comment_set"][0]["text"]
+
+
+@pytest.mark.django_db
+def test_project_feed_translates_posts_once_and_reuses_saved_memory(monkeypatch):
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.translation.feed@example.com",
+        password="devpass123",
+    )
+    project, task, activity, alert_post = create_project_fixture(profile)
+    ProjectPost.objects.create(
+        project=project,
+        task=task,
+        author=profile,
+        post_kind=PostKind.DOCUMENTATION,
+        text="Verbale pronto per la condivisione.",
+        original_text="Verbale pronto per la condivisione.",
+        source_language="it",
+        display_language="it",
+        alert=False,
+        is_public=False,
+    )
+    headers = auth_headers(client, email="projects.translation.feed@example.com", password="devpass123")
+    translated_ids: list[str] = []
+
+    def fake_translate(*, source_text: str, source_language: str, target_language: str) -> str:
+        translated_ids.append(f"{target_language}:{source_text}")
+        return f"[{target_language}] {source_text}"
+
+    monkeypatch.setattr(project_services, "generate_project_content_translation", fake_translate)
+
+    feed_response = client.get(
+        "/api/v1/projects/feed?limit=10&offset=0",
+        HTTP_X_EDILCLOUD_LOCALE="en",
+        **headers,
+    )
+
+    assert feed_response.status_code == 200
+    feed_payload = feed_response.json()
+    assert len(feed_payload["items"]) >= 3
+    assert all(item["display_language"] == "en" for item in feed_payload["items"][:3])
+    assert all(item["is_translated"] is True for item in feed_payload["items"][:3])
+    assert len(translated_ids) >= 3
+
+    monkeypatch.setattr(
+        project_services,
+        "generate_project_content_translation",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("Il feed doveva riusare la memoria salvata.")),
+    )
+    second_feed_response = client.get(
+        "/api/v1/projects/feed?limit=10&offset=0",
+        HTTP_X_EDILCLOUD_LOCALE="en",
+        **headers,
+    )
+    assert second_feed_response.status_code == 200
+    second_payload = second_feed_response.json()
+    assert second_payload["items"][0]["text"] == feed_payload["items"][0]["text"]
+
+
+@pytest.mark.django_db
+def test_updating_post_and_comment_invalidates_translation_memory(monkeypatch):
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.translation.update@example.com",
+        password="devpass123",
+    )
+    _project, _task, activity, alert_post = create_project_fixture(profile)
+    comment = PostComment.objects.create(
+        post=alert_post,
+        author=profile,
+        text="Prima versione commento",
+        original_text="Prima versione commento",
+        source_language="it",
+        display_language="it",
+    )
+    headers = auth_headers(client, email="projects.translation.update@example.com", password="devpass123")
+
+    monkeypatch.setattr(
+        project_services,
+        "generate_project_content_translation",
+        lambda *, source_text, source_language, target_language: f"[{target_language}] {source_text}",
+    )
+    warmup_response = client.get(
+        f"/api/v1/activities/{activity.id}/posts",
+        HTTP_X_EDILCLOUD_LOCALE="ru",
+        **headers,
+    )
+    assert warmup_response.status_code == 200
+    original_post_translation = ProjectPostTranslation.objects.get(post=alert_post, target_language="ru")
+    original_comment_translation = PostCommentTranslation.objects.get(comment=comment, target_language="ru")
+
+    post_update_calls: list[str] = []
+
+    def fake_translate_after_update(*, source_text: str, source_language: str, target_language: str) -> str:
+        post_update_calls.append(source_text)
+        return f"[{target_language}] aggiornato: {source_text}"
+
+    monkeypatch.setattr(project_services, "generate_project_content_translation", fake_translate_after_update)
+
+    update_post_response = client.patch(
+        f"/api/v1/posts/{alert_post.id}",
+        data=json.dumps(
+            {
+                "text": "Testo aggiornato lato nord",
+                "post_kind": PostKind.ISSUE,
+                "is_public": False,
+                "alert": True,
+                "source_language": "it",
+                "remove_media_ids": [],
+                "mentioned_profile_ids": [],
+            }
+        ),
+        content_type="application/json",
+        HTTP_X_EDILCLOUD_LOCALE="ru",
+        **headers,
+    )
+    assert update_post_response.status_code == 200
+    updated_post_translation = ProjectPostTranslation.objects.get(post=alert_post, target_language="ru")
+    assert updated_post_translation.id == original_post_translation.id
+    assert updated_post_translation.translated_text == "[ru] aggiornato: Testo aggiornato lato nord"
+    assert "Testo aggiornato lato nord" in post_update_calls
+
+    comment_update_response = client.patch(
+        f"/api/v1/comments/{comment.id}",
+        data=json.dumps(
+            {
+                "text": "Commento aggiornato lato ponteggio",
+                "source_language": "it",
+                "remove_media_ids": [],
+                "mentioned_profile_ids": [],
+            }
+        ),
+        content_type="application/json",
+        HTTP_X_EDILCLOUD_LOCALE="ru",
+        **headers,
+    )
+    assert comment_update_response.status_code == 200
+    updated_comment_translation = PostCommentTranslation.objects.get(comment=comment, target_language="ru")
+    assert updated_comment_translation.id == original_comment_translation.id
+    assert updated_comment_translation.translated_text == "[ru] aggiornato: Commento aggiornato lato ponteggio"

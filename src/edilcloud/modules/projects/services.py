@@ -5,13 +5,18 @@ from __future__ import annotations
 import colorsys
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+import hashlib
+import json
 import math
 import mimetypes
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 import uuid
 
-from django.db import transaction
+import httpx
+from django.conf import settings
+from django.db import IntegrityError, transaction
 from django.db.models import Avg, Case, Count, DateTimeField, F, Max, Prefetch, Q, When
 from django.http import FileResponse
 from django.utils import timezone
@@ -37,6 +42,7 @@ from edilcloud.modules.projects.models import (
     CommentAttachment,
     PostAttachment,
     PostComment,
+    PostCommentTranslation,
     PostKind,
     Project,
     ProjectActivity,
@@ -48,6 +54,7 @@ from edilcloud.modules.projects.models import (
     ProjectMemberStatus,
     ProjectPhoto,
     ProjectPost,
+    ProjectPostTranslation,
     ProjectPostSeenState,
     ProjectScheduleLink,
     ProjectScheduleLinkType,
@@ -543,6 +550,397 @@ def emit_feed_realtime_events(
 
 def normalize_text(value: str | None) -> str:
     return (value or "").strip()
+
+
+PROJECT_CONTENT_TRANSLATION_LANGUAGES = {"it", "en", "fr", "ro", "ru", "ar"}
+PROJECT_CONTENT_TRANSLATION_PROVIDER = "openai"
+
+
+def normalize_content_language(value: str | None) -> str:
+    normalized = normalize_text(value).lower().replace("_", "-")
+    if not normalized:
+        return ""
+    primary = normalized.split("-", 1)[0]
+    return primary if primary in PROJECT_CONTENT_TRANSLATION_LANGUAGES else ""
+
+
+def resolve_project_content_language(*, preferred_language: str | None, fallback_language: str | None = None) -> str:
+    return normalize_content_language(preferred_language) or normalize_content_language(fallback_language)
+
+
+def project_content_translation_model() -> str:
+    configured = getattr(settings, "PROJECT_CONTENT_TRANSLATION_MODEL", "").strip()
+    if configured:
+        return configured
+    return getattr(settings, "AI_DRAFT_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
+
+
+def extract_openai_output_text(payload: dict[str, Any]) -> str:
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    collected: list[str] = []
+    for item in payload.get("output") or []:
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content") or []:
+            if not isinstance(content, dict):
+                continue
+            if content.get("type") == "output_text" and isinstance(content.get("text"), str):
+                text_value = content["text"].strip()
+                if text_value:
+                    collected.append(text_value)
+    return "\n\n".join(collected).strip()
+
+
+def build_project_content_translation_signature(*, source_text: str, source_language: str) -> str:
+    digest = hashlib.sha256()
+    digest.update(normalize_text(source_language).encode("utf-8"))
+    digest.update(b"\n")
+    digest.update(normalize_text(source_text).encode("utf-8"))
+    return digest.hexdigest()
+
+
+def project_content_source_text(*, text: str | None, original_text: str | None) -> str:
+    return normalize_text(original_text) or normalize_text(text)
+
+
+def project_content_source_language(*, source_language: str | None, display_language: str | None = None) -> str:
+    return normalize_content_language(source_language) or normalize_content_language(display_language)
+
+
+def should_translate_project_content(
+    *,
+    source_text: str,
+    source_language: str,
+    target_language: str,
+) -> bool:
+    normalized_target = normalize_content_language(target_language)
+    if not normalized_target or not normalize_text(source_text):
+        return False
+    normalized_source = normalize_content_language(source_language)
+    return not normalized_source or normalized_source != normalized_target
+
+
+def generate_project_content_translation(
+    *,
+    source_text: str,
+    source_language: str,
+    target_language: str,
+) -> str:
+    api_key = getattr(settings, "OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY non configurata per le traduzioni dei post.")
+
+    normalized_source_text = normalize_text(source_text)
+    normalized_source_language = normalize_content_language(source_language)
+    normalized_target_language = normalize_content_language(target_language)
+    if not normalized_source_text or not normalized_target_language:
+        raise RuntimeError("Contenuto o lingua di destinazione non validi per la traduzione.")
+
+    source_language_hint = normalized_source_language or "auto-detect"
+    response = httpx.post(
+        f"{settings.OPENAI_API_BASE_URL}/responses",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": project_content_translation_model(),
+            "input": [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                "You translate construction project updates with high fidelity. "
+                                "Return only the translated text in the requested target language. "
+                                "Preserve names, codes, bullets, markdown, line breaks, measurements, dates, "
+                                "and operational meaning. Do not explain your work."
+                            ),
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                f"Source language: {source_language_hint}\n"
+                                f"Target language: {normalized_target_language}\n\n"
+                                "Translate the following project post or comment exactly:\n"
+                                f"{normalized_source_text}"
+                            ),
+                        }
+                    ],
+                },
+            ],
+            "temperature": 0.1,
+            "max_output_tokens": 1600,
+        },
+        timeout=30.0,
+    )
+
+    try:
+        payload = response.json()
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"OpenAI ha restituito una risposta non valida: {exc}") from exc
+
+    if not response.is_success:
+        detail = payload.get("error", {}).get("message") if isinstance(payload.get("error"), dict) else None
+        raise RuntimeError(detail or f"OpenAI HTTP {response.status_code}")
+
+    translated_text = extract_openai_output_text(payload)
+    if not translated_text:
+        raise RuntimeError("OpenAI ha restituito una traduzione vuota.")
+    return translated_text
+
+
+def invalidate_post_translation_memory(post: ProjectPost) -> None:
+    ProjectPostTranslation.objects.filter(post=post).delete()
+
+
+def invalidate_comment_translation_memory(comment: PostComment) -> None:
+    PostCommentTranslation.objects.filter(comment=comment).delete()
+
+
+def upsert_post_translation_memory(
+    *,
+    post: ProjectPost,
+    target_language: str,
+    translated_text: str,
+    source_language: str,
+    source_signature: str,
+) -> ProjectPostTranslation:
+    defaults = {
+        "source_language": source_language,
+        "source_signature": source_signature,
+        "translated_text": translated_text,
+        "provider": PROJECT_CONTENT_TRANSLATION_PROVIDER,
+        "model": project_content_translation_model(),
+    }
+    try:
+        ProjectPostTranslation.objects.update_or_create(
+            post=post,
+            target_language=target_language,
+            defaults=defaults,
+        )
+    except IntegrityError:
+        ProjectPostTranslation.objects.filter(post=post, target_language=target_language).update(**defaults)
+    return ProjectPostTranslation.objects.get(post=post, target_language=target_language)
+
+
+def upsert_comment_translation_memory(
+    *,
+    comment: PostComment,
+    target_language: str,
+    translated_text: str,
+    source_language: str,
+    source_signature: str,
+) -> PostCommentTranslation:
+    defaults = {
+        "source_language": source_language,
+        "source_signature": source_signature,
+        "translated_text": translated_text,
+        "provider": PROJECT_CONTENT_TRANSLATION_PROVIDER,
+        "model": project_content_translation_model(),
+    }
+    try:
+        PostCommentTranslation.objects.update_or_create(
+            comment=comment,
+            target_language=target_language,
+            defaults=defaults,
+        )
+    except IntegrityError:
+        PostCommentTranslation.objects.filter(comment=comment, target_language=target_language).update(**defaults)
+    return PostCommentTranslation.objects.get(comment=comment, target_language=target_language)
+
+
+def resolve_post_translation_memory(
+    posts: list[ProjectPost],
+    *,
+    target_language: str | None,
+    fallback_language: str | None,
+) -> dict[int, ProjectPostTranslation]:
+    normalized_target_language = resolve_project_content_language(
+        preferred_language=target_language,
+        fallback_language=fallback_language,
+    )
+    if not normalized_target_language or not posts:
+        return {}
+
+    translations = {
+        translation.post_id: translation
+        for translation in ProjectPostTranslation.objects.filter(
+            post_id__in=[post.id for post in posts],
+            target_language=normalized_target_language,
+        )
+    }
+    resolved: dict[int, ProjectPostTranslation] = {}
+
+    for post in posts:
+        source_text = project_content_source_text(text=post.text, original_text=post.original_text)
+        source_language = project_content_source_language(
+            source_language=post.source_language,
+            display_language=post.display_language,
+        )
+        if not should_translate_project_content(
+            source_text=source_text,
+            source_language=source_language,
+            target_language=normalized_target_language,
+        ):
+            continue
+
+        source_signature = build_project_content_translation_signature(
+            source_text=source_text,
+            source_language=source_language,
+        )
+        cached_translation = translations.get(post.id)
+        if cached_translation is not None and cached_translation.source_signature == source_signature:
+            resolved[post.id] = cached_translation
+            continue
+
+        try:
+            translated_text = generate_project_content_translation(
+                source_text=source_text,
+                source_language=source_language,
+                target_language=normalized_target_language,
+            )
+        except Exception:
+            continue
+
+        resolved[post.id] = upsert_post_translation_memory(
+            post=post,
+            target_language=normalized_target_language,
+            translated_text=translated_text,
+            source_language=source_language,
+            source_signature=source_signature,
+        )
+
+    return resolved
+
+
+def resolve_comment_translation_memory(
+    comments: list[PostComment],
+    *,
+    target_language: str | None,
+    fallback_language: str | None,
+) -> dict[int, PostCommentTranslation]:
+    normalized_target_language = resolve_project_content_language(
+        preferred_language=target_language,
+        fallback_language=fallback_language,
+    )
+    if not normalized_target_language or not comments:
+        return {}
+
+    translations = {
+        translation.comment_id: translation
+        for translation in PostCommentTranslation.objects.filter(
+            comment_id__in=[comment.id for comment in comments],
+            target_language=normalized_target_language,
+        )
+    }
+    resolved: dict[int, PostCommentTranslation] = {}
+
+    for comment in comments:
+        source_text = project_content_source_text(text=comment.text, original_text=comment.original_text)
+        source_language = project_content_source_language(
+            source_language=comment.source_language,
+            display_language=comment.display_language,
+        )
+        if not should_translate_project_content(
+            source_text=source_text,
+            source_language=source_language,
+            target_language=normalized_target_language,
+        ):
+            continue
+
+        source_signature = build_project_content_translation_signature(
+            source_text=source_text,
+            source_language=source_language,
+        )
+        cached_translation = translations.get(comment.id)
+        if cached_translation is not None and cached_translation.source_signature == source_signature:
+            resolved[comment.id] = cached_translation
+            continue
+
+        try:
+            translated_text = generate_project_content_translation(
+                source_text=source_text,
+                source_language=source_language,
+                target_language=normalized_target_language,
+            )
+        except Exception:
+            continue
+
+        resolved[comment.id] = upsert_comment_translation_memory(
+            comment=comment,
+            target_language=normalized_target_language,
+            translated_text=translated_text,
+            source_language=source_language,
+            source_signature=source_signature,
+        )
+
+    return resolved
+
+
+def localized_post_content(
+    post: ProjectPost,
+    *,
+    translation: ProjectPostTranslation | None = None,
+) -> dict[str, Any]:
+    source_text = project_content_source_text(text=post.text, original_text=post.original_text)
+    source_language = project_content_source_language(
+        source_language=post.source_language,
+        display_language=post.display_language,
+    )
+    if translation is None:
+        return {
+            "text": post.text or None,
+            "original_text": source_text or None,
+            "source_language": source_language or None,
+            "display_language": normalize_content_language(post.display_language or post.source_language) or source_language or None,
+            "is_translated": bool(post.is_translated),
+        }
+
+    return {
+        "text": translation.translated_text or source_text or None,
+        "original_text": source_text or None,
+        "source_language": source_language or None,
+        "display_language": translation.target_language or None,
+        "is_translated": True,
+    }
+
+
+def localized_comment_content(
+    comment: PostComment,
+    *,
+    translation: PostCommentTranslation | None = None,
+) -> dict[str, Any]:
+    source_text = project_content_source_text(text=comment.text, original_text=comment.original_text)
+    source_language = project_content_source_language(
+        source_language=comment.source_language,
+        display_language=comment.display_language,
+    )
+    if translation is None:
+        return {
+            "text": comment.text or None,
+            "original_text": source_text or None,
+            "source_language": source_language or None,
+            "display_language": normalize_content_language(comment.display_language or comment.source_language) or source_language or None,
+            "is_translated": bool(comment.is_translated),
+        }
+
+    return {
+        "text": translation.translated_text or source_text or None,
+        "original_text": source_text or None,
+        "source_language": source_language or None,
+        "display_language": translation.target_language or None,
+        "is_translated": True,
+    }
 
 
 def normalize_import_lookup(value: str | None) -> str:
@@ -1495,19 +1893,20 @@ def serialize_comment(
     membership: ProjectMember,
     comments_by_parent: dict[int | None, list[PostComment]] | None = None,
     company_colors_by_workspace_id: dict[int, str] | None = None,
+    translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
 ) -> dict:
     replies = (
         comments_by_parent.get(comment.id, [])
         if comments_by_parent is not None
         else list(comment.replies.all())
     )
+    localized_content = localized_comment_content(
+        comment,
+        translation=(translation_by_comment_id or {}).get(comment.id),
+    )
     return {
         "id": comment.id,
-        "text": comment.text or None,
-        "original_text": comment.original_text or None,
-        "source_language": comment.source_language or None,
-        "display_language": comment.display_language or None,
-        "is_translated": comment.is_translated,
+        **localized_content,
         "is_deleted": comment.is_deleted,
         "deleted_at": comment.deleted_at,
         "edited_at": comment.edited_at,
@@ -1527,6 +1926,7 @@ def serialize_comment(
                 membership=membership,
                 comments_by_parent=comments_by_parent,
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
+                translation_by_comment_id=translation_by_comment_id,
             )
             for reply in replies
         ],
@@ -1538,6 +1938,7 @@ def serialize_comment_tree(
     comments: list[PostComment],
     membership: ProjectMember,
     company_colors_by_workspace_id: dict[int, str] | None = None,
+    translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
 ) -> list[dict]:
     comments_by_parent: dict[int | None, list[PostComment]] = defaultdict(list)
     for comment in comments:
@@ -1548,6 +1949,7 @@ def serialize_comment_tree(
             membership=membership,
             comments_by_parent=comments_by_parent,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_comment_id=translation_by_comment_id,
         )
         for comment in comments_by_parent.get(None, [])
     ]
@@ -1561,6 +1963,8 @@ def serialize_post(
     viewer_profile: Profile | None = None,
     effective_last_activity_at: datetime | None = None,
     company_colors_by_workspace_id: dict[int, str] | None = None,
+    translation_by_post_id: dict[int, ProjectPostTranslation] | None = None,
+    translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
 ) -> dict:
     effective_comments = comments if comments is not None else list(post.comments.all())
     last_activity_at = effective_last_activity_at or compute_post_last_activity_at(
@@ -1569,6 +1973,10 @@ def serialize_post(
     )
     viewer_seen_state = get_viewer_seen_state_for_post(post=post, viewer_profile=viewer_profile)
     viewer_seen_at = viewer_seen_state.seen_at if viewer_seen_state is not None else None
+    localized_content = localized_post_content(
+        post,
+        translation=(translation_by_post_id or {}).get(post.id),
+    )
     return {
         "id": post.id,
         "author": serialize_project_profile(
@@ -1593,11 +2001,7 @@ def serialize_post(
             bool(viewer_profile) and last_activity_at is not None and (viewer_seen_at is None or viewer_seen_at < last_activity_at)
         ),
         "post_kind": post.post_kind,
-        "text": post.text or None,
-        "original_text": post.original_text or None,
-        "source_language": post.source_language or None,
-        "display_language": post.display_language or None,
-        "is_translated": post.is_translated,
+        **localized_content,
         "is_deleted": post.is_deleted,
         "deleted_at": post.deleted_at,
         "edited_at": post.edited_at,
@@ -1612,6 +2016,7 @@ def serialize_post(
             comments=effective_comments,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_comment_id=translation_by_comment_id,
         ),
     }
 
@@ -1623,11 +2028,17 @@ def serialize_post_summary(
     viewer_profile: Profile | None = None,
     effective_last_activity_at: datetime | None = None,
     company_colors_by_workspace_id: dict[int, str] | None = None,
+    translation_by_post_id: dict[int, ProjectPostTranslation] | None = None,
+    translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
 ) -> dict:
     """Serialize the overview-safe post shape without the full comment tree."""
     last_activity_at = effective_last_activity_at or compute_post_last_activity_at(post=post)
     viewer_seen_state = get_viewer_seen_state_for_post(post=post, viewer_profile=viewer_profile)
     viewer_seen_at = viewer_seen_state.seen_at if viewer_seen_state is not None else None
+    localized_content = localized_post_content(
+        post,
+        translation=(translation_by_post_id or {}).get(post.id),
+    )
     return {
         "id": post.id,
         "author": serialize_project_profile(
@@ -1652,11 +2063,7 @@ def serialize_post_summary(
             bool(viewer_profile) and last_activity_at is not None and (viewer_seen_at is None or viewer_seen_at < last_activity_at)
         ),
         "post_kind": post.post_kind,
-        "text": post.text or None,
-        "original_text": post.original_text or None,
-        "source_language": post.source_language or None,
-        "display_language": post.display_language or None,
-        "is_translated": post.is_translated,
+        **localized_content,
         "is_deleted": post.is_deleted,
         "deleted_at": post.deleted_at,
         "edited_at": post.edited_at,
@@ -2456,7 +2863,13 @@ def project_posts_queryset():
     )
 
 
-def list_project_alert_posts(*, profile: Profile, project_id: int, lightweight: bool = False) -> list[dict]:
+def list_project_alert_posts(
+    *,
+    profile: Profile,
+    project_id: int,
+    lightweight: bool = False,
+    target_language: str | None = None,
+) -> list[dict]:
     project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
     posts = list(
         annotate_posts_with_feed_activity(project_posts_queryset())
@@ -2465,12 +2878,28 @@ def list_project_alert_posts(*, profile: Profile, project_id: int, lightweight: 
     )
     serializer = serialize_post_summary if lightweight else serialize_post
     company_colors_by_workspace_id = project_company_colors_for_context(project=project, members=members)
+    post_translation_map = resolve_post_translation_memory(
+        posts,
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    comment_translation_map = (
+        {}
+        if lightweight
+        else resolve_comment_translation_memory(
+            [comment for post in posts for comment in post.comments.all()],
+            target_language=target_language,
+            fallback_language=profile.language,
+        )
+    )
     return [
         serializer(
             post=post,
             membership=membership,
             effective_last_activity_at=getattr(post, "effective_last_activity_at", None),
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_post_id=post_translation_map,
+            translation_by_comment_id=comment_translation_map,
         )
         for post in posts
     ]
@@ -2482,6 +2911,7 @@ def list_project_recent_posts(
     project_id: int,
     limit: int = 8,
     lightweight: bool = False,
+    target_language: str | None = None,
 ) -> list[dict]:
     project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
     posts = list(
@@ -2491,12 +2921,28 @@ def list_project_recent_posts(
     )
     serializer = serialize_post_summary if lightweight else serialize_post
     company_colors_by_workspace_id = project_company_colors_for_context(project=project, members=members)
+    post_translation_map = resolve_post_translation_memory(
+        posts,
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    comment_translation_map = (
+        {}
+        if lightweight
+        else resolve_comment_translation_memory(
+            [comment for post in posts for comment in post.comments.all()],
+            target_language=target_language,
+            fallback_language=profile.language,
+        )
+    )
     return [
         serializer(
             post=post,
             membership=membership,
             effective_last_activity_at=getattr(post, "effective_last_activity_at", None),
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_post_id=post_translation_map,
+            translation_by_comment_id=comment_translation_map,
         )
         for post in posts
     ]
@@ -2507,6 +2953,7 @@ def list_project_feed(
     profile: Profile,
     limit: int = 50,
     offset: int = 0,
+    target_language: str | None = None,
 ) -> dict:
     safe_limit = min(max(int(limit or 50), 1), 250)
     safe_offset = max(int(offset or 0), 0)
@@ -2523,6 +2970,16 @@ def list_project_feed(
             disabled=False,
         ).select_related("profile")
     }
+    post_translation_map = resolve_post_translation_memory(
+        page_posts,
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    comment_translation_map = resolve_comment_translation_memory(
+        [comment for post in page_posts for comment in post.comments.all()],
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
 
     items = [
         serialize_post(
@@ -2530,6 +2987,8 @@ def list_project_feed(
             membership=membership_by_project_id[post.project_id],
             viewer_profile=profile,
             effective_last_activity_at=getattr(post, "effective_last_activity_at", None),
+            translation_by_post_id=post_translation_map,
+            translation_by_comment_id=comment_translation_map,
         )
         for post in page_posts
         if post.project_id in membership_by_project_id
@@ -2611,7 +3070,7 @@ def mark_feed_posts_seen(*, profile: Profile, post_ids: list[int] | None = None)
     }
 
 
-def get_project_overview(*, profile: Profile, project_id: int) -> dict:
+def get_project_overview(*, profile: Profile, project_id: int, target_language: str | None = None) -> dict:
     project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
     tasks = list(project_tasks_queryset(project))
     documents = list(project.documents.select_related("folder").order_by("-updated_at", "-id"))
@@ -2625,11 +3084,13 @@ def get_project_overview(*, profile: Profile, project_id: int) -> dict:
         profile=profile,
         project_id=project_id,
         lightweight=True,
+        target_language=target_language,
     )
     recent_posts = list_project_recent_posts(
         profile=profile,
         project_id=project_id,
         lightweight=True,
+        target_language=target_language,
     )
 
     return {
@@ -2658,7 +3119,7 @@ def get_project_overview(*, profile: Profile, project_id: int) -> dict:
     }
 
 
-def list_posts_for_task(*, profile: Profile, task_id: int) -> list[dict]:
+def list_posts_for_task(*, profile: Profile, task_id: int, target_language: str | None = None) -> list[dict]:
     task = ProjectTask.objects.select_related("project").filter(id=task_id).first()
     if task is None:
         raise ValueError("Task non trovato.")
@@ -2669,17 +3130,29 @@ def list_posts_for_task(*, profile: Profile, task_id: int) -> list[dict]:
         .order_by("-published_date", "-id")
     )
     company_colors_by_workspace_id = project_company_colors_for_context(project=project, members=members)
+    post_translation_map = resolve_post_translation_memory(
+        posts,
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    comment_translation_map = resolve_comment_translation_memory(
+        [comment for post in posts for comment in post.comments.all()],
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
     return [
         serialize_post(
             post=post,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_post_id=post_translation_map,
+            translation_by_comment_id=comment_translation_map,
         )
         for post in posts
     ]
 
 
-def list_posts_for_activity(*, profile: Profile, activity_id: int) -> list[dict]:
+def list_posts_for_activity(*, profile: Profile, activity_id: int, target_language: str | None = None) -> list[dict]:
     activity = (
         ProjectActivity.objects.select_related("task", "task__project")
         .filter(id=activity_id)
@@ -2697,11 +3170,23 @@ def list_posts_for_activity(*, profile: Profile, activity_id: int) -> list[dict]
         .order_by("-published_date", "-id")
     )
     company_colors_by_workspace_id = project_company_colors_for_context(project=project, members=members)
+    post_translation_map = resolve_post_translation_memory(
+        posts,
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    comment_translation_map = resolve_comment_translation_memory(
+        [comment for post in posts for comment in post.comments.all()],
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
     return [
         serialize_post(
             post=post,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_post_id=post_translation_map,
+            translation_by_comment_id=comment_translation_map,
         )
         for post in posts
     ]
@@ -3927,6 +4412,7 @@ def create_task_post(
     files: list[object] | None = None,
     mentioned_profile_ids: list[int] | None = None,
     weather_payload: dict | None = None,
+    target_language: str | None = None,
 ) -> dict:
     task = ProjectTask.objects.select_related("project").filter(id=task_id).first()
     if task is None:
@@ -4003,6 +4489,11 @@ def create_task_post(
         post=post,
         membership=membership,
         company_colors_by_workspace_id=company_colors_by_workspace_id,
+        translation_by_post_id=resolve_post_translation_memory(
+            [post],
+            target_language=target_language,
+            fallback_language=profile.language,
+        ),
     )
 
 
@@ -4019,6 +4510,7 @@ def create_activity_post(
     files: list[object] | None = None,
     mentioned_profile_ids: list[int] | None = None,
     weather_payload: dict | None = None,
+    target_language: str | None = None,
 ) -> dict:
     activity = (
         ProjectActivity.objects.select_related("task", "task__project")
@@ -4105,6 +4597,11 @@ def create_activity_post(
         post=post,
         membership=membership,
         company_colors_by_workspace_id=company_colors_by_workspace_id,
+        translation_by_post_id=resolve_post_translation_memory(
+            [post],
+            target_language=target_language,
+            fallback_language=profile.language,
+        ),
     )
 
 
@@ -4118,6 +4615,7 @@ def create_post_comment(
     source_language: str = "",
     files: list[object] | None = None,
     mentioned_profile_ids: list[int] | None = None,
+    target_language: str | None = None,
 ) -> dict:
     post, membership = get_post_for_profile(profile=profile, post_id=post_id)
     _project, _membership, members = get_project_with_team_context(profile=profile, project_id=post.project_id)
@@ -4192,6 +4690,11 @@ def create_post_comment(
         comment,
         membership=membership,
         company_colors_by_workspace_id=company_colors_by_workspace_id,
+        translation_by_comment_id=resolve_comment_translation_memory(
+            [comment],
+            target_language=target_language,
+            fallback_language=profile.language,
+        ),
     )
 
 
@@ -4208,6 +4711,7 @@ def update_post(
     files: list[object] | None = None,
     remove_media_ids: list[int] | None = None,
     mentioned_profile_ids: list[int] | None = None,
+    target_language: str | None = None,
 ) -> dict:
     post, membership = get_post_for_profile(profile=profile, post_id=post_id)
     _project, _membership, members = get_project_with_team_context(profile=profile, project_id=post.project_id)
@@ -4338,6 +4842,11 @@ def update_post(
         post=refreshed,
         membership=membership,
         company_colors_by_workspace_id=company_colors_by_workspace_id,
+        translation_by_post_id=resolve_post_translation_memory(
+            [refreshed],
+            target_language=target_language,
+            fallback_language=profile.language,
+        ),
     )
 
 
@@ -4408,6 +4917,7 @@ def update_comment(
     files: list[object] | None = None,
     remove_media_ids: list[int] | None = None,
     mentioned_profile_ids: list[int] | None = None,
+    target_language: str | None = None,
 ) -> dict:
     comment, membership = get_comment_for_profile(profile=profile, comment_id=comment_id)
     _project, _membership, members = get_project_with_team_context(profile=profile, project_id=comment.post.project_id)
@@ -4501,6 +5011,11 @@ def update_comment(
         refreshed,
         membership=membership,
         company_colors_by_workspace_id=company_colors_by_workspace_id,
+        translation_by_comment_id=resolve_comment_translation_memory(
+            [refreshed],
+            target_language=target_language,
+            fallback_language=profile.language,
+        ),
     )
 
 
