@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -59,6 +60,8 @@ def create_project_for_workspace(profile):
         created_by=profile,
         name="Progetto Billing",
         address="Via Milano 10",
+        date_start=date(2026, 1, 1),
+        date_end=date(2026, 12, 31),
     )
     ProjectMember.objects.create(
         project=project,
@@ -251,6 +254,15 @@ def test_billing_checkout_endpoint_creates_local_checkout_session(monkeypatch):
     monkeypatch.setattr(
         "edilcloud.modules.billing.services.get_stripe_client",
         lambda: FakeStripe(),
+    )
+    monkeypatch.setattr(
+        "edilcloud.modules.billing.services.get_env_price",
+        lambda name: {
+            "STRIPE_PRICE_PLAN_FONDAZIONI_MONTHLY": "price_fondazioni_month",
+            "STRIPE_PRICE_ADDON_WORKSPACE_MONTHLY": "price_workspace_month",
+            "STRIPE_PRICE_ADDON_SEAT_MONTHLY": "price_seat_month",
+            "STRIPE_PRICE_ADDON_STORAGE_100GB_MONTHLY": "price_storage_month",
+        }.get(name, ""),
     )
     headers = auth_headers(client, email="billing.checkout@example.com", password="devpass123")
 

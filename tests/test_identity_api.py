@@ -11,6 +11,7 @@ from django.test import Client
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from edilcloud.modules.identity import services as identity_services
+from edilcloud.modules.billing.services import ensure_workspace_attached_to_owner_account
 from edilcloud.modules.workspaces.models import (
     AccessRequestStatus,
     Profile,
@@ -30,6 +31,28 @@ def extract_email_code(index: int = -1) -> str:
 
 def extract_access_code() -> str:
     return extract_email_code()
+
+
+def create_workspace_with_owner(*, workspace_name: str, email: str = "owner@example.com"):
+    owner = get_user_model().objects.create_user(
+        email=email,
+        password="devpass123",
+        username=email.split("@")[0],
+        first_name="Owner",
+        last_name="User",
+        language="it",
+    )
+    workspace = Workspace.objects.create(name=workspace_name, email=email)
+    workspace.profiles.create(
+        user=owner,
+        email=owner.email,
+        role=WorkspaceRole.OWNER,
+        first_name="Owner",
+        last_name="User",
+        language="it",
+    )
+    ensure_workspace_attached_to_owner_account(workspace, owner_user=owner)
+    return owner, workspace
 
 
 @pytest.mark.django_db
@@ -696,7 +719,10 @@ def test_onboarding_rejects_phone_already_bound_to_another_main_profile():
 
 @pytest.mark.django_db
 def test_onboarding_can_list_and_accept_workspace_invite():
-    workspace = Workspace.objects.create(name="Invito Cantiere")
+    _owner, workspace = create_workspace_with_owner(
+        workspace_name="Invito Cantiere",
+        email="owner.invito@example.com",
+    )
     invited_email = "invitee@example.com"
     WorkspaceInvite.objects.create(
         workspace=workspace,
@@ -760,7 +786,10 @@ def test_onboarding_can_list_and_accept_workspace_invite():
 
 @pytest.mark.django_db
 def test_onboarding_can_accept_workspace_invite_by_code():
-    workspace = Workspace.objects.create(name="Codice Cantiere")
+    _owner, workspace = create_workspace_with_owner(
+        workspace_name="Codice Cantiere",
+        email="owner.codice@example.com",
+    )
     invited_email = "coded.invitee@example.com"
     invite = WorkspaceInvite.objects.create(
         workspace=workspace,
@@ -824,15 +853,16 @@ def test_workspace_invite_email_contains_invite_code():
         last_name="User",
         language="it",
     )
-    workspace = Workspace.objects.create(name="Invite Mail SRL")
+    workspace = Workspace.objects.create(name="Invite Mail SRL", email="delegate@example.com")
     profile = workspace.profiles.create(
         user=inviter,
         email=inviter.email,
-        role=WorkspaceRole.DELEGATE,
+        role=WorkspaceRole.OWNER,
         first_name="Delegate",
         last_name="User",
         language="it",
     )
+    ensure_workspace_attached_to_owner_account(workspace, owner_user=inviter)
     client = Client()
     login_response = client.post(
         "/api/v1/auth/login",

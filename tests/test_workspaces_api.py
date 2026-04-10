@@ -122,7 +122,7 @@ def test_login_and_refresh_can_target_real_workspace_profile():
 
     refresh_response = client.post(
         f"/api/v1/auth/token/refresh/{second_profile.id}",
-        data=json.dumps({"token": login_payload["token"]}),
+        data=json.dumps({"refresh_token": login_payload["refresh_token"]}),
         content_type="application/json",
     )
 
