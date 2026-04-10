@@ -45,12 +45,15 @@ jobs:
     timeout-minutes: 45
     needs:
       - validate
+    environment: production
 
     env:
       PROD_HOST: ${{ secrets.PROD_HOST }}
       PROD_PORT: ${{ secrets.PROD_PORT }}
       PROD_USER: ${{ secrets.PROD_USER }}
       PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+      PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+      PROD_DEPLOY_CONFIG: ${{ secrets.PROD_DEPLOY_CONFIG }}
 
     steps:
       - name: Checkout
@@ -61,6 +64,7 @@ jobs:
           test -n "$PROD_HOST" || (echo "Missing secret: PROD_HOST" && exit 1)
           test -n "$PROD_USER" || (echo "Missing secret: PROD_USER" && exit 1)
           test -n "$PROD_SSH_KEY" || (echo "Missing secret: PROD_SSH_KEY" && exit 1)
+          test -n "$PROD_ENV_FILE" || (echo "Missing secret: PROD_ENV_FILE" && exit 1)
 
       - name: Build release archive
         run: |
@@ -76,6 +80,7 @@ jobs:
             --exclude='.env' \
             --exclude='.env.local' \
             --exclude='.env.production' \
+            --exclude='.deploy.production' \
             --exclude='test.sqlite3' \
             --exclude='tmp' \
             --exclude='.tmp' \
@@ -100,11 +105,33 @@ jobs:
           scp -P "$PORT" "$ARCHIVE" "${PROD_USER}@${PROD_HOST}:${REMOTE_ARCHIVE}"
           echo "REMOTE_ARCHIVE=$REMOTE_ARCHIVE" >> "$GITHUB_ENV"
 
+      - name: Upload server config files
+        run: |
+          set -euo pipefail
+          PORT="${PROD_PORT:-22}"
+          LOCAL_ENV_FILE="$(mktemp)"
+          REMOTE_ENV_FILE="/tmp/edilcloud-back-dn-env-${GITHUB_SHA}"
+          printf '%s' "$PROD_ENV_FILE" > "$LOCAL_ENV_FILE"
+          chmod 600 "$LOCAL_ENV_FILE"
+          scp -P "$PORT" "$LOCAL_ENV_FILE" "${PROD_USER}@${PROD_HOST}:${REMOTE_ENV_FILE}"
+          rm -f "$LOCAL_ENV_FILE"
+          echo "REMOTE_ENV_FILE=$REMOTE_ENV_FILE" >> "$GITHUB_ENV"
+
+          if [ -n "$PROD_DEPLOY_CONFIG" ]; then
+            LOCAL_DEPLOY_CONFIG_FILE="$(mktemp)"
+            REMOTE_DEPLOY_CONFIG_FILE="/tmp/edilcloud-back-dn-deploy-${GITHUB_SHA}"
+            printf '%s' "$PROD_DEPLOY_CONFIG" > "$LOCAL_DEPLOY_CONFIG_FILE"
+            chmod 600 "$LOCAL_DEPLOY_CONFIG_FILE"
+            scp -P "$PORT" "$LOCAL_DEPLOY_CONFIG_FILE" "${PROD_USER}@${PROD_HOST}:${REMOTE_DEPLOY_CONFIG_FILE}"
+            rm -f "$LOCAL_DEPLOY_CONFIG_FILE"
+            echo "REMOTE_DEPLOY_CONFIG_FILE=$REMOTE_DEPLOY_CONFIG_FILE" >> "$GITHUB_ENV"
+          fi
+
       - name: Deploy on server
         run: |
           PORT="${PROD_PORT:-22}"
           ssh -p "$PORT" "${PROD_USER}@${PROD_HOST}" \
-            "GITHUB_SHA='${GITHUB_SHA}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' bash -s" <<'EOS'
+            "GITHUB_SHA='${GITHUB_SHA}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' REMOTE_ENV_FILE='${REMOTE_ENV_FILE}' REMOTE_DEPLOY_CONFIG_FILE='${REMOTE_DEPLOY_CONFIG_FILE:-}' bash -s" <<'EOS'
           set -euo pipefail
 
           APP_DIR="/opt/edilcloud/back-dn"
@@ -113,6 +140,11 @@ jobs:
           BACKUP_DIR="${BACKUP_ROOT}/back-dn-pre-${GITHUB_SHA}"
           COMPOSE_FILE="${APP_DIR}/docker-compose.server.yml"
           ENV_FILE="${APP_DIR}/.env.production"
+          DEPLOY_CONFIG_FILE="${APP_DIR}/.deploy.production"
+          RUNTIME_DIR="${APP_DIR}/.runtime"
+          ACTIVE_SLOT_FILE="${RUNTIME_DIR}/active-slot"
+          ACTIVE_SLOT="blue"
+          NEXT_SLOT="green"
 
           run_priv() {
             if [ "$(id -u)" -eq 0 ]; then
@@ -123,11 +155,10 @@ jobs:
           }
 
           cleanup() {
-            run_priv rm -rf "${RELEASE_DIR}" "${REMOTE_ARCHIVE}"
+            run_priv rm -rf "${RELEASE_DIR}" "${REMOTE_ARCHIVE}" "${REMOTE_ENV_FILE:-}" "${REMOTE_DEPLOY_CONFIG_FILE:-}"
           }
 
-          rollback() {
-            echo "Deploy healthcheck failed. Rolling back previous code..." >&2
+          restore_code() {
             run_priv rsync -a --delete \
               --exclude='.git' \
               --exclude='.venv' \
@@ -137,19 +168,100 @@ jobs:
               --exclude='logs' \
               --exclude='.env' \
               --exclude='.env.*' \
+              --exclude='.deploy.production' \
               "${BACKUP_DIR}/" "${APP_DIR}/"
-            cd "${APP_DIR}"
-            run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build web assistant-worker
-            run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
+          }
+
+          install_server_config() {
+            if [ -n "${REMOTE_ENV_FILE:-}" ] && run_priv test -f "${REMOTE_ENV_FILE}"; then
+              run_priv install -D -m 600 "${REMOTE_ENV_FILE}" "${ENV_FILE}"
+            fi
+
+            if [ -n "${REMOTE_DEPLOY_CONFIG_FILE:-}" ] && run_priv test -f "${REMOTE_DEPLOY_CONFIG_FILE}"; then
+              run_priv install -D -m 600 "${REMOTE_DEPLOY_CONFIG_FILE}" "${DEPLOY_CONFIG_FILE}"
+            fi
+          }
+
+          load_deploy_config() {
+            if run_priv test -f "${DEPLOY_CONFIG_FILE}"; then
+              set -a
+              . "${DEPLOY_CONFIG_FILE}"
+              set +a
+            fi
+
+            DEPLOY_STRATEGY="${DEPLOY_STRATEGY:-rolling}"
+            PROXY_SWITCH_STRATEGY="${PROXY_SWITCH_STRATEGY:-none}"
+            PROXY_UPSTREAM_FILE="${PROXY_UPSTREAM_FILE:-/etc/nginx/conf.d/edilcloud-back-upstream.conf}"
+            PROXY_VALIDATE_COMMAND="${PROXY_VALIDATE_COMMAND:-nginx -t}"
+            PROXY_RELOAD_COMMAND="${PROXY_RELOAD_COMMAND:-systemctl reload nginx}"
+            LIVE_HOST_HEADER="${LIVE_HOST_HEADER:-back.edilcloud.eu}"
+            BACKEND_BLUE_PORT="${BACKEND_BLUE_PORT:-18001}"
+            BACKEND_GREEN_PORT="${BACKEND_GREEN_PORT:-18002}"
+            KEEP_PREVIOUS_SLOT_HOT="${KEEP_PREVIOUS_SLOT_HOT:-false}"
+
+            if [ "${DEPLOY_STRATEGY}" = "blue_green" ] && [ "${PROXY_SWITCH_STRATEGY}" = "none" ]; then
+              echo "Blue/green requested but proxy switching is disabled. Falling back to rolling deploy."
+              DEPLOY_STRATEGY="rolling"
+            fi
+          }
+
+          compose_cmd() {
+            run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+          }
+
+          slot_port() {
+            case "$1" in
+              blue) printf '%s\n' "${BACKEND_BLUE_PORT}" ;;
+              green) printf '%s\n' "${BACKEND_GREEN_PORT}" ;;
+              *) echo "Unknown deploy slot: $1" >&2; return 1 ;;
+            esac
+          }
+
+          slot_web_service() {
+            printf 'web-%s\n' "$1"
+          }
+
+          slot_worker_service() {
+            printf 'assistant-worker-%s\n' "$1"
+          }
+
+          other_slot() {
+            if [ "$1" = "blue" ]; then
+              printf 'green\n'
+            else
+              printf 'blue\n'
+            fi
+          }
+
+          read_active_slot() {
+            if run_priv test -f "${ACTIVE_SLOT_FILE}"; then
+              run_priv cat "${ACTIVE_SLOT_FILE}"
+            else
+              printf 'blue\n'
+            fi
+          }
+
+          write_active_slot() {
+            local slot="$1"
+            local tmp_file
+            tmp_file="$(mktemp)"
+            printf '%s\n' "${slot}" > "${tmp_file}"
+            run_priv install -D -m 644 "${tmp_file}" "${ACTIVE_SLOT_FILE}"
+            rm -f "${tmp_file}"
+          }
+
+          ensure_runtime_dirs() {
+            run_priv mkdir -p "${BACKUP_ROOT}" "${RELEASE_DIR}" "${BACKUP_DIR}" "${RUNTIME_DIR}"
           }
 
           healthcheck() {
+            local port="$1"
             local attempt=1
             while [ "$attempt" -le 18 ]; do
               if run_priv curl -fsS --max-time 10 \
-                -H 'Host: back.edilcloud.eu' \
+                -H "Host: ${LIVE_HOST_HEADER}" \
                 -H 'X-Forwarded-Proto: https' \
-                http://127.0.0.1:18001/api/v1/health >/dev/null; then
+                "http://127.0.0.1:${port}/api/v1/health" >/dev/null; then
                 return 0
               fi
               sleep 5
@@ -158,8 +270,117 @@ jobs:
             return 1
           }
 
+          switch_live_backend() {
+            local port="$1"
+            local tmp_file
+
+            case "${PROXY_SWITCH_STRATEGY}" in
+              none)
+                echo "Proxy switch disabled. Keeping rolling deploy semantics."
+                return 0
+                ;;
+              nginx_upstream_file)
+                tmp_file="$(mktemp)"
+                cat > "${tmp_file}" <<EOF
+upstream edilcloud_backend_upstream {
+    server 127.0.0.1:${port};
+    keepalive 32;
+}
+EOF
+                run_priv install -D -m 644 "${tmp_file}" "${PROXY_UPSTREAM_FILE}"
+                rm -f "${tmp_file}"
+                run_priv sh -lc "${PROXY_VALIDATE_COMMAND}"
+                run_priv sh -lc "${PROXY_RELOAD_COMMAND}"
+                return 0
+                ;;
+              *)
+                echo "Unsupported PROXY_SWITCH_STRATEGY: ${PROXY_SWITCH_STRATEGY}" >&2
+                return 1
+                ;;
+            esac
+          }
+
+          build_slot() {
+            local slot="$1"
+            compose_cmd build "$(slot_web_service "${slot}")" "$(slot_worker_service "${slot}")"
+          }
+
+          start_slot_web() {
+            local slot="$1"
+            compose_cmd up -d --remove-orphans db redis wordpress-db "$(slot_web_service "${slot}")"
+          }
+
+          start_slot_worker() {
+            local slot="$1"
+            compose_cmd up -d "$(slot_worker_service "${slot}")"
+          }
+
+          stop_slot() {
+            local slot="$1"
+            compose_cmd stop "$(slot_worker_service "${slot}")" "$(slot_web_service "${slot}")" || true
+          }
+
+          rollback() {
+            local previous_slot="$1"
+            local failed_slot="$2"
+            echo "Deploy failed. Rolling back previous code and live slot..." >&2
+            restore_code
+            cd "${APP_DIR}"
+
+            build_slot "${previous_slot}"
+            start_slot_web "${previous_slot}"
+            healthcheck "$(slot_port "${previous_slot}")" || true
+
+            if [ "${PROXY_SWITCH_STRATEGY}" != "none" ]; then
+              switch_live_backend "$(slot_port "${previous_slot}")" || true
+            fi
+
+            start_slot_worker "${previous_slot}" || true
+            if [ "${failed_slot}" != "${previous_slot}" ]; then
+              stop_slot "${failed_slot}" || true
+            fi
+            write_active_slot "${previous_slot}"
+          }
+
+          deploy_rolling() {
+            build_slot "${ACTIVE_SLOT}"
+            start_slot_web "${ACTIVE_SLOT}"
+
+            if ! healthcheck "$(slot_port "${ACTIVE_SLOT}")"; then
+              return 1
+            fi
+
+            start_slot_worker "${ACTIVE_SLOT}"
+            stop_slot "${NEXT_SLOT}" || true
+            write_active_slot "${ACTIVE_SLOT}"
+            return 0
+          }
+
+          deploy_blue_green() {
+            build_slot "${NEXT_SLOT}"
+            start_slot_web "${NEXT_SLOT}"
+
+            if ! healthcheck "$(slot_port "${NEXT_SLOT}")"; then
+              return 1
+            fi
+
+            switch_live_backend "$(slot_port "${NEXT_SLOT}")"
+            start_slot_worker "${NEXT_SLOT}"
+            compose_cmd stop "$(slot_worker_service "${ACTIVE_SLOT}")" || true
+
+            if [ "${KEEP_PREVIOUS_SLOT_HOT}" != "true" ]; then
+              compose_cmd stop "$(slot_web_service "${ACTIVE_SLOT}")" || true
+            fi
+
+            write_active_slot "${NEXT_SLOT}"
+            return 0
+          }
+
+          load_deploy_config
           run_priv test -f "${ENV_FILE}"
-          run_priv mkdir -p "${BACKUP_ROOT}" "${RELEASE_DIR}" "${BACKUP_DIR}"
+          ensure_runtime_dirs
+          ACTIVE_SLOT="$(read_active_slot)"
+          NEXT_SLOT="$(other_slot "${ACTIVE_SLOT}")"
           run_priv tar -xzf "${REMOTE_ARCHIVE}" -C "${RELEASE_DIR}"
 
           run_priv rsync -a --delete \
@@ -171,6 +392,7 @@ jobs:
             --exclude='logs' \
             --exclude='.env' \
             --exclude='.env.*' \
+            --exclude='.deploy.production' \
             "${APP_DIR}/" "${BACKUP_DIR}/"
 
           run_priv rsync -a --delete \
@@ -182,6 +404,7 @@ jobs:
             --exclude='logs' \
             --exclude='.env' \
             --exclude='.env.*' \
+            --exclude='.deploy.production' \
             --exclude='test.sqlite3' \
             --exclude='tmp' \
             --exclude='.tmp' \
@@ -190,16 +413,31 @@ jobs:
             "${RELEASE_DIR}/" "${APP_DIR}/"
 
           cd "${APP_DIR}"
-          run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build web assistant-worker
-          run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
+          install_server_config
 
-          if ! healthcheck; then
-            rollback
-            healthcheck || true
+          if [ "${DEPLOY_STRATEGY}" = "blue_green" ]; then
+            if ! deploy_blue_green; then
+              rollback "${ACTIVE_SLOT}" "${NEXT_SLOT}"
+              healthcheck "$(slot_port "${ACTIVE_SLOT}")" || true
+              cleanup
+              exit 1
+            fi
+          else
+            if ! deploy_rolling; then
+              rollback "${ACTIVE_SLOT}" "${ACTIVE_SLOT}"
+              healthcheck "$(slot_port "${ACTIVE_SLOT}")" || true
+              cleanup
+              exit 1
+            fi
+          fi
+
+          if ! healthcheck "$(slot_port "$(read_active_slot)")"; then
+            rollback "${ACTIVE_SLOT}" "${NEXT_SLOT}"
+            healthcheck "$(slot_port "${ACTIVE_SLOT}")" || true
             cleanup
             exit 1
           fi
 
-          run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps
+          compose_cmd ps
           cleanup
           EOS

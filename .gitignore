@@ -30,6 +30,7 @@ edilcloud-back-dn-manual-*.tar.gz
 .env.local
 .env.prod
 .env.production
+.deploy.production
 
 # IDE
 .idea/

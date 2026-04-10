@@ -40,6 +40,7 @@ docker compose logs -f assistant-worker
 ```
 
 Per la produzione prepara prima il file `.env.production` partendo da `.env.production.example`.
+Se vuoi deploy senza micro-interruzioni, prepara anche `.deploy.production` partendo da `.deploy.production.example`.
 
 Comandi utili:
 
@@ -84,6 +85,8 @@ cd "c:\Users\acoti\Desktop\EDILCLOUD\EDILCLOUD 3.0\edilcloud-back-dn"
 - CI backend: `.github/workflows/ci.yml`
 - deploy produzione: `.github/workflows/deploy-production.yml`
 - compose server produzione: `docker-compose.server.yml`
+- strategia zero-downtime: `docs/PRODUCTION_ZERO_DOWNTIME.md`
+- setup credenziali GitHub Actions: `docs/GITHUB_ACTIONS_PRODUCTION_SECRETS.md`
 - reindex manuale assistant: `..\venv\Scripts\python.exe manage.py run_assistant_indexer --project-id 1`
 
 ## Priorita residue

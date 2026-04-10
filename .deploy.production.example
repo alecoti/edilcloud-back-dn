@@ -1,0 +1,7 @@
+DEPLOY_STRATEGY=blue_green
+PROXY_SWITCH_STRATEGY=nginx_upstream_file
+PROXY_UPSTREAM_FILE=/etc/nginx/conf.d/edilcloud-back-upstream.conf
+PROXY_VALIDATE_COMMAND=nginx -t
+PROXY_RELOAD_COMMAND=systemctl reload nginx
+LIVE_HOST_HEADER=back.edilcloud.eu
+KEEP_PREVIOUS_SLOT_HOT=false

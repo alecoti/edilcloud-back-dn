@@ -52,7 +52,7 @@ services:
       timeout: 5s
       retries: 20
 
-  web:
+  web-blue:
     build:
       context: .
     restart: unless-stopped
@@ -62,13 +62,14 @@ services:
       APP_ENV: production
       DJANGO_SETTINGS_MODULE: edilcloud.settings.prod
       DEBUG: "false"
+      DEPLOY_SLOT: blue
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     ports:
-      - "${BACKEND_BIND_IP}:${BACKEND_PORT}:8001"
+      - "${BACKEND_BIND_IP}:${BACKEND_BLUE_PORT:-18001}:8001"
     volumes:
       - ./media:/app/media
       - ./staticfiles:/app/staticfiles
@@ -91,7 +92,47 @@ services:
       retries: 12
       start_period: 20s
 
-  assistant-worker:
+  web-green:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: edilcloud.settings.prod
+      DEBUG: "false"
+      DEPLOY_SLOT: green
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_BIND_IP}:${BACKEND_GREEN_PORT:-18002}:8001"
+    volumes:
+      - ./media:/app/media
+      - ./staticfiles:/app/staticfiles
+    command:
+      - sh
+      - -c
+      - |
+        python scripts/wait_for_services.py db:5432 redis:6379 &&
+        python manage.py migrate &&
+        python manage.py collectstatic --noinput &&
+        exec gunicorn edilcloud.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8001 --workers ${GUNICORN_WORKERS:-4} --timeout 120
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; req=urllib.request.Request('http://127.0.0.1:8001/api/v1/health', headers={'Host':'localhost','X-Forwarded-Proto':'https'}); urllib.request.urlopen(req, timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  assistant-worker-blue:
     build:
       context: .
     restart: on-failure
@@ -101,8 +142,33 @@ services:
       APP_ENV: production
       DJANGO_SETTINGS_MODULE: edilcloud.settings.prod
       DEBUG: "false"
+      DEPLOY_SLOT: blue
     depends_on:
-      web:
+      web-blue:
+        condition: service_healthy
+    volumes:
+      - ./media:/app/media
+      - ./staticfiles:/app/staticfiles
+    command:
+      - sh
+      - -c
+      - |
+        python scripts/wait_for_services.py db:5432 redis:6379 &&
+        exec python manage.py run_assistant_indexer --sleep-seconds ${ASSISTANT_INDEXER_POLL_SECONDS:-10} --batch-size ${ASSISTANT_INDEXER_BATCH_SIZE:-4}
+
+  assistant-worker-green:
+    build:
+      context: .
+    restart: on-failure
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: edilcloud.settings.prod
+      DEBUG: "false"
+      DEPLOY_SLOT: green
+    depends_on:
+      web-green:
         condition: service_healthy
     volumes:
       - ./media:/app/media
