@@ -281,12 +281,7 @@ jobs:
                 ;;
               nginx_upstream_file)
                 tmp_file="$(mktemp)"
-                cat > "${tmp_file}" <<EOF
-upstream edilcloud_backend_upstream {
-    server 127.0.0.1:${port};
-    keepalive 32;
-}
-EOF
+                printf 'upstream edilcloud_backend_upstream {\n    server 127.0.0.1:%s;\n    keepalive 32;\n}\n' "${port}" > "${tmp_file}"
                 run_priv install -D -m 644 "${tmp_file}" "${PROXY_UPSTREAM_FILE}"
                 rm -f "${tmp_file}"
                 run_priv sh -lc "${PROXY_VALIDATE_COMMAND}"
