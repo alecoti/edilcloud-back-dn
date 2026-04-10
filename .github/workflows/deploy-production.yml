@@ -133,7 +133,7 @@ jobs:
         run: |
           PORT="${PROD_PORT:-22}"
           ssh -p "$PORT" "${PROD_USER}@${PROD_HOST}" \
-            "GITHUB_SHA='${GITHUB_SHA}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' REMOTE_ENV_FILE='${REMOTE_ENV_FILE}' REMOTE_DEPLOY_CONFIG_FILE='${REMOTE_DEPLOY_CONFIG_FILE:-}' bash -s" <<'EOS'
+            "sudo env GITHUB_SHA='${GITHUB_SHA}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' REMOTE_ENV_FILE='${REMOTE_ENV_FILE}' REMOTE_DEPLOY_CONFIG_FILE='${REMOTE_DEPLOY_CONFIG_FILE:-}' bash -s" <<'EOS'
           set -euo pipefail
 
           APP_DIR="/opt/edilcloud/back-dn"
