@@ -256,6 +256,15 @@ jobs:
             run_priv mkdir -p "${BACKUP_ROOT}" "${RELEASE_DIR}" "${BACKUP_DIR}" "${RUNTIME_DIR}"
           }
 
+          repair_runtime_permissions() {
+            run_priv mkdir -p \
+              "${APP_DIR}/.runtime/postgres" \
+              "${APP_DIR}/.runtime/mariadb" \
+              "${APP_DIR}/.runtime/redis"
+            run_priv chown -R 999:999 "${APP_DIR}/.runtime/postgres" "${APP_DIR}/.runtime/mariadb"
+            run_priv chown -R 999:1000 "${APP_DIR}/.runtime/redis"
+          }
+
           healthcheck() {
             local port="$1"
             local attempt=1
@@ -376,6 +385,7 @@ jobs:
           load_deploy_config
           run_priv test -f "${ENV_FILE}"
           ensure_runtime_dirs
+          repair_runtime_permissions
           ACTIVE_SLOT="$(read_active_slot)"
           NEXT_SLOT="$(other_slot "${ACTIVE_SLOT}")"
           run_priv tar -xzf "${REMOTE_ARCHIVE}" -C "${RELEASE_DIR}"
