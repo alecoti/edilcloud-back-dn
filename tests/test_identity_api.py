@@ -529,6 +529,33 @@ def test_access_code_onboarding_profile_and_complete_flow_creates_workspace():
 
 
 @pytest.mark.django_db
+def test_email_access_code_onboarding_prefill_leaves_names_empty():
+    client = Client()
+    email = "a.coti1987@example.com"
+
+    request_response = client.post(
+        "/api/v1/auth/access-code/request",
+        data=json.dumps({"email": email}),
+        content_type="application/json",
+    )
+    assert request_response.status_code == 200
+
+    code = extract_access_code()
+    confirm_response = client.post(
+        "/api/v1/auth/access-code/confirm",
+        data=json.dumps({"email": email, "code": code}),
+        content_type="application/json",
+    )
+    assert confirm_response.status_code == 200
+
+    payload = confirm_response.json()
+    assert payload["status"] == "onboarding_required"
+    assert payload["prefill"]["email"] == email
+    assert payload["prefill"]["first_name"] == ""
+    assert payload["prefill"]["last_name"] == ""
+
+
+@pytest.mark.django_db
 def test_onboarding_profile_photo_upload_is_attached_to_created_profile():
     client = Client()
     email = "photo.user@example.com"

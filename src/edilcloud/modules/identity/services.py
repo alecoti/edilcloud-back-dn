@@ -269,20 +269,8 @@ def normalize_identity_names(
     first_name: str = "",
     last_name: str = "",
 ) -> tuple[str, str]:
-    normalized_email = normalize_email(email)
-    local_part = normalized_email.split("@", 1)[0] if normalized_email else ""
-    tokens = [token for token in local_part.replace("_", ".").replace("-", ".").split(".") if token]
-
     normalized_first_name = (first_name or "").strip()
     normalized_last_name = (last_name or "").strip()
-
-    if not normalized_first_name:
-        fallback_first = tokens[0] if tokens else "utente"
-        normalized_first_name = fallback_first[:1].upper() + fallback_first[1:]
-
-    if not normalized_last_name:
-        fallback_last = tokens[1] if len(tokens) > 1 else "Profilo"
-        normalized_last_name = fallback_last[:1].upper() + fallback_last[1:]
 
     return normalized_first_name, normalized_last_name
 
@@ -673,8 +661,9 @@ def resolve_onboarding_session(onboarding_token: str) -> AccessSession:
 def build_prefill(session: AccessSession, user=None) -> dict:
     payload = get_session_payload(session)
 
-    existing_first_name = getattr(user, "first_name", "") if user else ""
-    existing_last_name = getattr(user, "last_name", "") if user else ""
+    use_existing_names = session.provider == AuthProvider.GOOGLE
+    existing_first_name = getattr(user, "first_name", "") if user and use_existing_names else ""
+    existing_last_name = getattr(user, "last_name", "") if user and use_existing_names else ""
     existing_phone = getattr(user, "phone", "") if user else ""
     existing_language = getattr(user, "language", "it") if user else "it"
     existing_picture = file_field_url(getattr(user, "photo", None)) if user else ""
