@@ -7,6 +7,11 @@ from ninja import Router, Schema
 from ninja.errors import HttpError
 from ninja.responses import Status
 
+from edilcloud.modules.assistant.document_drafting import (
+    autocomplete_project_document_draft,
+    generate_project_document_draft,
+    translate_project_document_text,
+)
 from edilcloud.modules.assistant.services import (
     ask_project_assistant,
     create_assistant_thread_for_project,
@@ -61,6 +66,63 @@ class UpdateProjectAssistantSettingsRequestSchema(Schema):
     preferred_model: str | None = None
     monthly_token_limit: int | None = None
     reset: bool = False
+
+
+class ProjectDocumentWeatherSnapshotSchema(Schema):
+    source: str | None = None
+    recorded_at: str | None = None
+    summary: str | None = None
+    condition_type: str | None = None
+    temperature_c: float | None = None
+    feels_like_c: float | None = None
+    humidity: float | None = None
+    precipitation_probability: float | None = None
+    precipitation_type: str | None = None
+    wind_speed_kph: float | None = None
+    wind_direction: str | None = None
+    source_post_id: int | None = None
+
+
+class ProjectDocumentEvidenceSchema(Schema):
+    post_count: int = 0
+    comment_count: int = 0
+    media_count: int = 0
+    document_count: int = 0
+    photo_count: int = 0
+    excerpts: list[str] = []
+    weather_snapshots: list[ProjectDocumentWeatherSnapshotSchema] = []
+
+
+class ProjectDocumentOperatorInputSchema(Schema):
+    notes: str = ""
+    voice_original: str | None = None
+    voice_italian: str | None = None
+
+
+class GenerateProjectDocumentDraftRequestSchema(Schema):
+    document_type: str
+    locale: str = "it"
+    source_language: str | None = None
+    task_id: int
+    task_name: str
+    activity_id: int | None = None
+    activity_title: str | None = None
+    date_from: str | None = None
+    date_to: str | None = None
+    evidence: ProjectDocumentEvidenceSchema
+    operator_input: ProjectDocumentOperatorInputSchema
+
+
+class AutocompleteProjectDocumentDraftRequestSchema(Schema):
+    document_type: str | None = None
+    locale: str = "it"
+    draft_text: str
+
+
+class TranslateProjectDocumentTextRequestSchema(Schema):
+    text: str
+    source_language: str | None = None
+    target_language: str | None = None
 
 
 @router.get("/{project_id}/assistant", response=dict[str, Any], auth=auth)
@@ -194,6 +256,68 @@ def get_project_drafting_context_endpoint(
             voice_italian=payload.voice_italian,
             draft_text=payload.draft_text,
             evidence_excerpts=payload.evidence_excerpts,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/{project_id}/assistant/document-draft", response=dict[str, Any], auth=auth)
+def generate_project_document_draft_endpoint(
+    request,
+    project_id: int,
+    payload: GenerateProjectDocumentDraftRequestSchema,
+):
+    try:
+        return generate_project_document_draft(
+            profile=current_profile(request),
+            project_id=project_id,
+            document_type=payload.document_type,
+            locale=payload.locale,
+            source_language=payload.source_language,
+            task_id=payload.task_id,
+            task_name=payload.task_name,
+            activity_id=payload.activity_id,
+            activity_title=payload.activity_title,
+            date_from=payload.date_from,
+            date_to=payload.date_to,
+            evidence=payload.evidence.dict(),
+            operator_input=payload.operator_input.dict(),
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/{project_id}/assistant/document-draft/autocomplete", response=dict[str, Any], auth=auth)
+def autocomplete_project_document_draft_endpoint(
+    request,
+    project_id: int,
+    payload: AutocompleteProjectDocumentDraftRequestSchema,
+):
+    try:
+        return autocomplete_project_document_draft(
+            profile=current_profile(request),
+            project_id=project_id,
+            document_type=payload.document_type,
+            locale=payload.locale,
+            draft_text=payload.draft_text,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/{project_id}/assistant/document-draft/translate", response=dict[str, Any], auth=auth)
+def translate_project_document_text_endpoint(
+    request,
+    project_id: int,
+    payload: TranslateProjectDocumentTextRequestSchema,
+):
+    try:
+        return translate_project_document_text(
+            profile=current_profile(request),
+            project_id=project_id,
+            text=payload.text,
+            source_language=payload.source_language,
+            target_language=payload.target_language,
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
