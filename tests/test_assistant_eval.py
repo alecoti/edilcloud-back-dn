@@ -21,6 +21,7 @@ from edilcloud.modules.assistant.services import (
     extract_supported_file_text,
     merge_ranked_citations,
 )
+from edilcloud.modules.assistant.document_drafting import apply_guided_rapportino_interview
 from edilcloud.modules.projects.models import (
     PostKind,
     ProjectDocument,
@@ -254,6 +255,66 @@ def test_drafting_context_sources_and_markdown_include_voice_notes_and_excerpts(
     assert any(source.source_type == "voice_transcript" for source in contextual_sources)
     assert any(source.source_type == "draft_fragment" for source in contextual_sources)
     assert any(source.source_type == "evidence_excerpt" for source in contextual_sources)
+
+
+def test_guided_rapportino_interview_is_split_into_print_payload_sections():
+    guided_notes = """## Intervista guidata rapportino
+
+Q1 - Dati identificativi
+Prompt: Indicami data effettiva, squadra, area cantiere e riferimenti principali della giornata.
+Risposta: "Oggi 6 aprile 2026 siamo nel cantiere Residenza Le Querce, area impianto idraulico lato blocco A. Squadra Edilizia Coti presente, riferimento principale della giornata Alessandro Coti, con presenza del committente Mike Duffy per coordinamento iniziale."
+
+Q2 - Manodopera
+Prompt: Detta gli operatori presenti con ruolo, badge e ore lavorate per centro di costo/fase.
+Risposta: "Presente Alessandro Coti, ruolo titolare e operativo, badge non applicato, totale 8 ore lavorate sulla fase impianto idraulico. Non presenti altri operatori."
+
+Q3 - Materiali e consumi
+Prompt: Elenca i materiali utilizzati con unita di misura e quantita.
+Risposta: "Utilizzati circa 25 metri di tubazione PVC, 12 raccordi idraulici e circa 20 collari di fissaggio."
+
+Q4 - Mezzi e noleggi
+Prompt: Indica mezzi/noleggi usati, ore di utilizzo e impiego operativo.
+Risposta: "Utilizzato trapano elettrico per circa 4 ore, livella laser per circa 3 ore e attrezzatura manuale per l'intera giornata. Nessun mezzo a noleggio."
+
+Q5 - Note operative e sicurezza
+Prompt: Descrivi avanzamento, criticita, coordinamento, near miss e azioni preventive.
+Risposta: "La giornata e iniziata con coordinamento con il committente, poi verifica dell'area e avvio predisposizione linee impianto idraulico. Lavorazioni svolte regolarmente senza criticita. Nessun rischio rilevato."
+"""
+
+    payload = apply_guided_rapportino_interview(
+        {
+            "site": {"name": "Residenza le querce", "address": "Via S. Giovanni Bosco, 3", "date": "11 aprile 2026"},
+            "client": {"name": "", "vat": ""},
+            "work_description": guided_notes,
+            "workforce": [],
+            "equipment": [],
+            "materials": [],
+            "operational_notes": "",
+            "missing_data": [
+                "Manodopera, ore ordinarie/straordinarie e trasferte da dichiarare.",
+                "Mezzi e attrezzature utilizzati da dichiarare se non indicati nelle evidenze.",
+                "Materiali utilizzati e quantita da dichiarare se non indicati nelle evidenze.",
+            ],
+        },
+        guided_notes,
+    )
+
+    assert payload["site"]["date"] == "6 aprile 2026"
+    assert payload["client"]["name"] == "Mike Duffy"
+    assert payload["workforce"][0]["name"] == "Alessandro Coti"
+    assert payload["workforce"][0]["ordinary_hours"] == "8"
+    assert payload["materials"] == [
+        {"description": "tubazione PVC", "unit": "m", "quantity": "25", "notes": ""},
+        {"description": "raccordi idraulici", "unit": "pz", "quantity": "12", "notes": ""},
+        {"description": "collari di fissaggio", "unit": "pz", "quantity": "20", "notes": ""},
+    ]
+    assert payload["equipment"] == [
+        {"description": "trapano elettrico", "quantity_hours": "4 ore", "notes": ""},
+        {"description": "livella laser", "quantity_hours": "3 ore", "notes": ""},
+        {"description": "attrezzatura manuale", "quantity_hours": "intera giornata", "notes": ""},
+    ]
+    assert "Q1 -" not in payload["work_description"]
+    assert payload["missing_data"] == []
 
 
 @pytest.mark.django_db

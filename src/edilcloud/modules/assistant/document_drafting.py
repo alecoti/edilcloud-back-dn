@@ -23,7 +23,7 @@ from edilcloud.modules.workspaces.models import Profile
 
 DocumentType = Literal["giornale", "rapportino", "sopralluogo"]
 
-PROMPT_PROFILE = "edilcloud-doc-backend-v1-2026-04-11"
+PROMPT_PROFILE = "edilcloud-doc-backend-v2-2026-04-11"
 
 GIORNALE_SYSTEM_PROMPT = """SEI UN REDATTORE TECNICO-AMMINISTRATIVO SPECIALIZZATO NELLA STESURA DEL GIORNALE DEI LAVORI DI CANTIERE IN ITALIA.
 
@@ -245,6 +245,22 @@ GIORNALE_CONTEXT_TEMPLATE = """CONTESTO OPERATIVO
 - restituire solo il testo finale del giornale dei lavori"""
 
 HTML_TAG_RE = re.compile(r"<[^>]+>")
+RAPPORTINO_GUIDED_QUESTION_RE = re.compile(
+    r"Q(?P<number>\d+)\s*-\s*(?P<title>[^\n\r]+)\s*[\r\n]+"
+    r"Prompt:\s*(?P<prompt>.*?)[\r\n]+"
+    r"Risposta:\s*(?P<answer>.*?)(?=(?:[\r\n]+Q\d+\s*-)|(?:[\r\n]+##\s+Note integrative)|\Z)",
+    re.IGNORECASE | re.DOTALL,
+)
+RAPPORTINO_GUIDED_NOTES_RE = re.compile(
+    r"##\s+Note integrative\s*(?P<notes>.*?)(?=(?:[\r\n]+##\s+)|\Z)",
+    re.IGNORECASE | re.DOTALL,
+)
+ITALIAN_TEXT_DATE_RE = re.compile(
+    r"\b\d{1,2}\s+"
+    r"(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)"
+    r"\s+\d{4}\b",
+    re.IGNORECASE,
+)
 
 GIORNALE_PRINT_JSON_SYSTEM_PROMPT = """You are a senior Italian construction documentation specialist.
 You transform site evidence into a safe structured JSON payload for a printable "Giornale dei Lavori".
@@ -315,6 +331,10 @@ All user-facing values must be in the target language requested by the input.
 Never invent names, hours, quantities, materials, equipment, travel flags, document references, costs or acceptance statements.
 If data is missing, use an empty string, an empty array, or add the missing point to "missing_data".
 HTML is forbidden in every value. Use plain text only.
+If INPUT_JSON.operator_input.notes contains a guided interview ("Intervista guidata rapportino" with Q1/Q2/etc.), treat it as raw source evidence to extract.
+Never copy question labels, "Prompt:" lines, "Risposta:" labels, markdown headings, or the full interview transcript into work_description.
+Map guided interview answers strictly as follows: Q1 identifies date/site/area/client references; Q2 fills workforce; Q3 fills materials; Q4 fills equipment; Q5 fills work_description and operational_notes; Q6 fills validation/signature notes only when useful.
+For materials and equipment, split each explicitly stated item into its own array row with quantity/unit or hours when present.
 
 The JSON object must match this shape:
 {
@@ -904,12 +924,15 @@ def resolve_primary_audio_transcript(payload: dict[str, Any]) -> str:
     operator_input = payload.get("operator_input") or {}
     voice_italian = normalize_text(operator_input.get("voice_italian"))
     voice_original = normalize_text(operator_input.get("voice_original"))
+    notes = normalize_text(operator_input.get("notes"))
     if voice_italian and voice_original and voice_italian != voice_original:
         return f"Trascrizione italiana:\n{voice_italian}\n\nTrascrizione originale:\n{voice_original}"
     if voice_italian:
         return voice_italian
     if voice_original:
         return voice_original
+    if notes:
+        return notes
     return "dato non disponibile"
 
 
@@ -1288,6 +1311,239 @@ def build_default_work_description(
     )
 
 
+def clean_guided_rapportino_answer(value: Any, *, max_chars: int = 3000) -> str:
+    text = clean_print_text(value, max_chars=max_chars)
+    if not text:
+        return ""
+    text = text.strip().strip("\"'“”‘’")
+    sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", text) if sentence.strip()]
+    if len(sentences) <= 1:
+        return text
+    deduped: list[str] = []
+    for sentence in sentences:
+        if not deduped or deduped[-1] != sentence:
+            deduped.append(sentence)
+    return " ".join(deduped)
+
+
+def parse_guided_rapportino_interview(value: Any) -> dict[str, Any]:
+    text = normalize_text(value)
+    if not text or not re.search(r"\bQ1\s*-|Intervista guidata rapportino", text, re.IGNORECASE):
+        return {}
+
+    answers: dict[str, str] = {}
+    for match in RAPPORTINO_GUIDED_QUESTION_RE.finditer(text):
+        number = clean_print_text(match.group("number"), max_chars=8)
+        answer = clean_guided_rapportino_answer(match.group("answer"))
+        if number and answer:
+            answers[f"q{number}"] = answer
+
+    notes_match = RAPPORTINO_GUIDED_NOTES_RE.search(text)
+    extra_notes = clean_guided_rapportino_answer(notes_match.group("notes"), max_chars=2400) if notes_match else ""
+    if not answers and not extra_notes:
+        return {}
+    return {"answers": answers, "extra_notes": extra_notes}
+
+
+def parse_rapportino_text_date(value: str) -> str:
+    match = ITALIAN_TEXT_DATE_RE.search(value or "")
+    return clean_print_text(match.group(0), max_chars=80) if match else ""
+
+
+def parse_rapportino_client(value: str) -> str:
+    match = re.search(r"\bcommittente\s+(.+?)(?:\s+per\s+|,|\.|$)", value or "", re.IGNORECASE)
+    return clean_print_text(match.group(1), max_chars=180) if match else ""
+
+
+def split_guided_items(value: str, *, split_text_items: bool = False) -> list[str]:
+    text = clean_print_text(value, max_chars=2400).strip(" .;:\"'“”‘’")
+    text = re.sub(r"^(?:utilizzat[ioe]|usat[ioe]|impiegat[ioe]|elenca[ti]*)\s+", "", text, flags=re.IGNORECASE)
+    splitter = r",|\s+e\s+(?=(?:circa\s+)?\d)" if split_text_items else r",|\s+e\s+"
+    items: list[str] = []
+    for part in re.split(splitter, text, flags=re.IGNORECASE):
+        cleaned = clean_print_text(part.strip(" .;:\"'“”‘’"), max_chars=700)
+        if cleaned:
+            items.append(cleaned)
+    return items
+
+
+def normalize_material_unit(unit: str, description: str) -> str:
+    normalized = clean_print_text(unit, max_chars=40).lower()
+    if normalized in {"metro", "metri", "m", "ml"}:
+        return "m"
+    if normalized in {"pezzo", "pezzi", "pz", "unita", "unità"}:
+        return "pz"
+    if normalized:
+        return normalized
+    return "pz" if description else ""
+
+
+def parse_guided_rapportino_materials(value: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for item in split_guided_items(value, split_text_items=True):
+        cleaned = re.sub(r"^(?:circa|n\.|nr\.)\s+", "", item, flags=re.IGNORECASE)
+        match = re.match(
+            r"(?P<quantity>\d+(?:[,.]\d+)?)\s*"
+            r"(?P<unit>metri|metro|m|ml|mq|mc|kg|litri|l|pz|pezzi|unita|unità)?"
+            r"(?:\s+di)?\s+(?P<description>.+)",
+            cleaned,
+            re.IGNORECASE,
+        )
+        if not match:
+            continue
+        description = clean_print_text(match.group("description"), max_chars=500)
+        quantity = clean_print_text(match.group("quantity"), max_chars=80)
+        unit = normalize_material_unit(match.group("unit") or "", description)
+        if description and quantity:
+            rows.append({"description": description, "unit": unit, "quantity": quantity, "notes": ""})
+    return rows[:40]
+
+
+def parse_guided_rapportino_equipment(value: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for item in split_guided_items(value):
+        item = re.split(r"\bnessun[ao]?\b", item, maxsplit=1, flags=re.IGNORECASE)[0].strip(" .;:")
+        if not item:
+            continue
+        cleaned = re.sub(r"^(?:utilizzat[ioe]|usat[ioe]|impiegat[ioe])\s+", "", item, flags=re.IGNORECASE)
+        match = re.match(
+            r"(?P<description>.+?)\s+per\s+(?:circa\s+)?"
+            r"(?P<quantity>\d+(?:[,.]\d+)?\s*ore?|l['\u2019]intera giornata|intera giornata|tutta la giornata)",
+            cleaned,
+            re.IGNORECASE,
+        )
+        if match:
+            description = clean_print_text(match.group("description"), max_chars=500)
+            quantity = clean_print_text(match.group("quantity"), max_chars=120)
+            quantity = re.sub(r"^l['\u2019](intera giornata)$", r"\1", quantity, flags=re.IGNORECASE)
+        else:
+            description = clean_print_text(cleaned, max_chars=500)
+            quantity = ""
+        if description:
+            rows.append({"description": description, "quantity_hours": quantity, "notes": ""})
+    return rows[:40]
+
+
+def parse_guided_rapportino_workforce(value: str) -> list[dict[str, str]]:
+    text = clean_print_text(value, max_chars=2400)
+    if not text:
+        return []
+    rows: list[dict[str, str]] = []
+    pattern = re.compile(
+        r"(?:presente|operatore|addetto)?\s*"
+        r"(?P<name>[A-ZÀ-Ý][\w'`\-À-ÿ]+(?:\s+[A-ZÀ-Ý][\w'`\-À-ÿ]+)+)"
+        r".*?(?:ruolo|qualifica)\s+(?P<qualification>[^,.;]+)"
+        r".*?(?:totale\s+)?(?P<hours>\d+(?:[,.]\d+)?)\s*ore",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in pattern.finditer(text):
+        name = clean_print_text(match.group("name"), max_chars=180)
+        qualification = clean_print_text(match.group("qualification"), max_chars=180)
+        hours = clean_print_text(match.group("hours"), max_chars=80)
+        notes: list[str] = []
+        badge_match = re.search(r"\bbadge\s+([^,.;]+)", text, re.IGNORECASE)
+        phase_match = re.search(r"\bfase\s+([^,.;]+)", text, re.IGNORECASE)
+        if badge_match:
+            notes.append(f"Badge {clean_print_text(badge_match.group(1), max_chars=160)}")
+        if phase_match:
+            notes.append(f"Fase {clean_print_text(phase_match.group(1), max_chars=160)}")
+        travel = ""
+        travel_match = re.search(r"\btrasferta\s*[:\-]?\s*(si|sì|no)\b", text, re.IGNORECASE)
+        if travel_match:
+            travel = "Si" if travel_match.group(1).lower() in {"si", "sì"} else "No"
+        if name:
+            rows.append(
+                {
+                    "name": name,
+                    "qualification": qualification,
+                    "ordinary_hours": hours,
+                    "overtime_hours": "",
+                    "travel": travel,
+                    "company": "",
+                    "notes": "; ".join(note for note in notes if note),
+                }
+            )
+    return rows[:40]
+
+
+def filter_rapportino_missing_data(payload: dict[str, Any]) -> None:
+    missing = payload.get("missing_data") if isinstance(payload.get("missing_data"), list) else []
+    if not missing:
+        return
+    has_workforce = bool(payload.get("workforce"))
+    has_equipment = bool(payload.get("equipment"))
+    has_materials = bool(payload.get("materials"))
+    filtered: list[str] = []
+    for item in missing:
+        text = clean_print_text(item, max_chars=500)
+        lowered = text.lower()
+        if has_workforce and ("manodopera" in lowered or "ore ordinarie" in lowered or "trasferte" in lowered):
+            continue
+        if has_equipment and ("mezzi" in lowered or "attrezzature" in lowered):
+            continue
+        if has_materials and "material" in lowered:
+            continue
+        if text:
+            filtered.append(text)
+    payload["missing_data"] = filtered
+
+
+def apply_guided_rapportino_interview(payload: dict[str, Any], source_text: Any) -> dict[str, Any]:
+    guided = parse_guided_rapportino_interview(source_text)
+    if not guided:
+        return payload
+
+    answers = guided.get("answers") or {}
+    q1 = answers.get("q1") or ""
+    q2 = answers.get("q2") or ""
+    q3 = answers.get("q3") or ""
+    q4 = answers.get("q4") or ""
+    q5 = answers.get("q5") or ""
+    q6 = answers.get("q6") or ""
+    extra_notes = guided.get("extra_notes") or ""
+
+    if q1:
+        site = dict(payload.get("site") or {})
+        date = parse_rapportino_text_date(q1)
+        if date:
+            site["date"] = date
+        payload["site"] = site
+        client_name = parse_rapportino_client(q1)
+        if client_name:
+            client = dict(payload.get("client") or {})
+            client["name"] = client_name
+            payload["client"] = client
+
+    work_description = clean_print_text(q5 or q1, max_chars=1200)
+    current_description = clean_print_text(payload.get("work_description"), max_chars=2600)
+    if work_description and (
+        not current_description
+        or re.search(r"\bQ1\s*-|Intervista guidata rapportino|Prompt:|Risposta:", current_description, re.IGNORECASE)
+    ):
+        payload["work_description"] = work_description
+
+    workforce = parse_guided_rapportino_workforce(q2)
+    if workforce:
+        payload["workforce"] = workforce
+
+    materials = parse_guided_rapportino_materials(q3)
+    if materials:
+        payload["materials"] = materials
+
+    equipment = parse_guided_rapportino_equipment(q4)
+    if equipment:
+        payload["equipment"] = equipment
+
+    operational_parts = [part for part in [q5, extra_notes, q6] if clean_print_text(part)]
+    if operational_parts:
+        current_notes = clean_print_text(payload.get("operational_notes"), max_chars=2600)
+        if not current_notes or re.search(r"\bQ1\s*-|Intervista guidata rapportino|Prompt:|Risposta:", current_notes, re.IGNORECASE):
+            payload["operational_notes"] = "\n\n".join(operational_parts)
+
+    filter_rapportino_missing_data(payload)
+    return payload
+
+
 def build_default_rapportino_print_payload(
     *,
     project_id: int,
@@ -1320,7 +1576,7 @@ def build_default_rapportino_print_payload(
     if not work_description:
         missing_data.append("Descrizione dei lavori eseguiti da completare con evidenze operative.")
 
-    return {
+    result = {
         "document_type": "rapportino",
         "document_title": "Rapportino",
         "document_subtitle": "Intervento / Lavori",
@@ -1341,6 +1597,7 @@ def build_default_rapportino_print_payload(
         "signatures": default_rapportino_signatures(),
         "footer_note": "Il presente rapporto costituisce documento valido ai fini della contabilizzazione dei lavori solo dopo verifica e sottoscrizione dei soggetti competenti.",
     }
+    return apply_guided_rapportino_interview(result, (payload.get("operator_input") or {}).get("notes"))
 
 
 def build_default_sopralluogo_attendees(prompt_context: dict[str, Any]) -> list[dict[str, str]]:
@@ -1672,7 +1929,8 @@ def sanitize_rapportino_print_payload(value: Any, fallback: dict[str, Any]) -> d
         fallback=fallback.get("signatures") or default_rapportino_signatures(),
         max_items=6,
     )
-    return result
+    guided_source = normalize_text(source.get("work_description")) or normalize_text(source.get("operational_notes"))
+    return apply_guided_rapportino_interview(result, guided_source)
 
 
 def sanitize_sopralluogo_print_payload(value: Any, fallback: dict[str, Any]) -> dict[str, Any]:
