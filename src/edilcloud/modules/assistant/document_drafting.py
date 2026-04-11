@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 from datetime import datetime
@@ -261,6 +262,23 @@ ITALIAN_TEXT_DATE_RE = re.compile(
     r"\s+\d{4}\b",
     re.IGNORECASE,
 )
+MARKDOWN_REF_RE = re.compile(r"^\*\*Rif\.\s*Doc:\*\*\s*(?P<value>.+?)\s*$", re.IGNORECASE)
+MARKDOWN_BOLD_LINE_RE = re.compile(r"^\*\*(?P<value>.+?)\*\*\s*$")
+MARKDOWN_KEY_VALUE_RE = re.compile(r"^-\s+(?P<label>[^:]+):\s*(?P<value>.*)$")
+MARKDOWN_SIGNATURE_RE = re.compile(r"^-\s+(?P<label>.*?)\s*\((?P<subtitle>.*?)\)\s*$")
+MARKDOWN_ORARIO_RE = re.compile(r"^\*\*Orario:\*\*\s*(?P<value>.*)$", re.IGNORECASE)
+MARKDOWN_STATO_RE = re.compile(r"^\*\*Stato:\*\*\s*(?P<value>.*)$", re.IGNORECASE)
+MARKDOWN_EMPTY_SECTION_LINES = {
+    "nessun dato dichiarato.",
+    "nessuna lavorazione strutturata disponibile.",
+    "mezzi e attrezzature non dichiarati.",
+    "materiali non dichiarati.",
+    "manodopera non dichiarata.",
+    "persone presenti da confermare.",
+    "nessun rilievo strutturato disponibile.",
+    "nessuna prescrizione strutturata disponibile.",
+    "descrizione lavori da completare o verificare.",
+}
 
 GIORNALE_PRINT_JSON_SYSTEM_PROMPT = """You are a senior Italian construction documentation specialist.
 You transform site evidence into a safe structured JSON payload for a printable "Giornale dei Lavori".
