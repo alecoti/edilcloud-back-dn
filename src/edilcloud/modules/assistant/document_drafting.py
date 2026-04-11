@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any, Literal
 
@@ -242,6 +243,176 @@ GIORNALE_CONTEXT_TEMPLATE = """CONTESTO OPERATIVO
 - non inventare dati assenti
 - evidenziare i punti da verificare
 - restituire solo il testo finale del giornale dei lavori"""
+
+HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+GIORNALE_PRINT_JSON_SYSTEM_PROMPT = """You are a senior Italian construction documentation specialist.
+You transform site evidence into a safe structured JSON payload for a printable "Giornale dei Lavori".
+
+Return ONLY one valid JSON object. Do not return markdown, HTML, code fences, comments or explanatory text.
+All user-facing values must be in Italian.
+Never invent facts, names, times, quantities, companies, document numbers, compliance statements or legal conclusions.
+If data is missing, use an empty string, an empty array, or add the missing point to "missing_data".
+HTML is forbidden in every value. Use plain text only.
+
+The JSON object must match this shape:
+{
+  "document_title": "Giornale dei Lavori",
+  "document_subtitle": "Rapporto Giornaliero",
+  "document_reference": "GL-...",
+  "company": {
+    "name": "",
+    "address": "",
+    "vat": "",
+    "email": ""
+  },
+  "project": {
+    "site": "",
+    "job_reference": "",
+    "location": "",
+    "client": "",
+    "works_director": "",
+    "site_contact": "",
+    "date": "",
+    "weather": ""
+  },
+  "summary": "",
+  "personnel": [
+    {"label": "", "quantity": "", "company": "", "notes": ""}
+  ],
+  "equipment": [
+    {"label": "", "status": "", "quantity": "", "notes": ""}
+  ],
+  "activities": [
+    {"time_start": "", "time_end": "", "title": "", "description": ""}
+  ],
+  "materials_notes": {
+    "items": [""],
+    "closing_note": ""
+  },
+  "safety": {
+    "summary": "",
+    "items": [""]
+  },
+  "orders_communications": {
+    "items": [""]
+  },
+  "missing_data": [""],
+  "normative_references": [""],
+  "final_formula": "",
+  "signatures": [
+    {"label": "L'Impresa Esecutrice", "subtitle": "Il Capocantiere"},
+    {"label": "Il Direttore dei Lavori", "subtitle": "Per presa visione"},
+    {"label": "Il Committente", "subtitle": "Per accettazione"}
+  ]
+}"""
+
+RAPPORTINO_PRINT_JSON_SYSTEM_PROMPT = """You are a senior Italian construction documentation specialist.
+You transform site evidence into a safe structured JSON payload for a printable "Rapportino Giornaliero di Cantiere".
+
+Return ONLY one valid JSON object. Do not return markdown, HTML, code fences, comments or explanatory text.
+All user-facing values must be in the target language requested by the input.
+Never invent names, hours, quantities, materials, equipment, travel flags, document references, costs or acceptance statements.
+If data is missing, use an empty string, an empty array, or add the missing point to "missing_data".
+HTML is forbidden in every value. Use plain text only.
+
+The JSON object must match this shape:
+{
+  "document_type": "rapportino",
+  "document_title": "Rapportino",
+  "document_subtitle": "Intervento / Lavori",
+  "document_reference": "RAP-...",
+  "company": {
+    "name": "",
+    "address": "",
+    "vat": "",
+    "email": ""
+  },
+  "client": {
+    "name": "",
+    "vat": ""
+  },
+  "site": {
+    "name": "",
+    "address": "",
+    "date": ""
+  },
+  "work_description": "",
+  "workforce": [
+    {"name": "", "qualification": "", "ordinary_hours": "", "overtime_hours": "", "travel": "", "company": "", "notes": ""}
+  ],
+  "equipment": [
+    {"description": "", "quantity_hours": "", "notes": ""}
+  ],
+  "materials": [
+    {"description": "", "unit": "", "quantity": "", "notes": ""}
+  ],
+  "operational_notes": "",
+  "missing_data": [""],
+  "signatures": [
+    {"label": "Il Tecnico / Caposquadra", "subtitle": "Per l'Impresa Esecutrice"},
+    {"label": "Il Cliente / Committente", "subtitle": "Per accettazione lavori e materiali"}
+  ],
+  "footer_note": ""
+}"""
+
+SOPRALLUOGO_PRINT_JSON_SYSTEM_PROMPT = """You are a senior Italian construction documentation specialist.
+You transform site evidence into a safe structured JSON payload for a printable "Verbale di Sopralluogo".
+
+Return ONLY one valid JSON object. Do not return markdown, HTML, code fences, comments or explanatory text.
+All user-facing values must be in the target language requested by the input.
+Never invent attendees, roles, start/end times, findings, prescriptions, assignees, deadlines, attachments or compliance conclusions.
+If data is missing, use an empty string, an empty array, or add the missing point to "missing_data".
+HTML is forbidden in every value. Use plain text only.
+
+The JSON object must match this shape:
+{
+  "document_type": "sopralluogo",
+  "document_title": "Verbale",
+  "document_subtitle": "di Sopralluogo",
+  "document_reference": "VS-...",
+  "company": {
+    "name": "",
+    "address": "",
+    "vat": "",
+    "email": ""
+  },
+  "project": {
+    "site": "",
+    "location": "",
+    "client": "",
+    "date": "",
+    "weather": ""
+  },
+  "inspection": {
+    "start_time": "",
+    "end_time": "",
+    "object": ""
+  },
+  "attendees": [
+    {"name": "", "role": "", "company": ""}
+  ],
+  "findings": [
+    {"status": "neutral", "title": "", "description": ""}
+  ],
+  "prescriptions": [
+    {"number": "", "action": "", "assignee": "", "deadline": ""}
+  ],
+  "attachments": [""],
+  "missing_data": [""],
+  "signatures": [
+    {"label": "Il Direttore dei Lavori", "subtitle": ""},
+    {"label": "L'Impresa Esecutrice", "subtitle": ""},
+    {"label": "Il Coord. Sicurezza (CSE)", "subtitle": ""}
+  ],
+  "footer_note": ""
+}"""
+
+PRINT_JSON_SYSTEM_PROMPTS: dict[DocumentType, str] = {
+    "giornale": GIORNALE_PRINT_JSON_SYSTEM_PROMPT,
+    "rapportino": RAPPORTINO_PRINT_JSON_SYSTEM_PROMPT,
+    "sopralluogo": SOPRALLUOGO_PRINT_JSON_SYSTEM_PROMPT,
+}
 
 
 def document_draft_model() -> str:
@@ -823,6 +994,1146 @@ def build_giornale_user_prompt(
     return prompt
 
 
+def clean_print_text(value: Any, max_chars: int = 1200) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value
+    elif isinstance(value, (int, float, bool)):
+        text = str(value)
+    else:
+        try:
+            text = json.dumps(value, ensure_ascii=False, default=str)
+        except Exception:
+            text = str(value)
+    text = normalize_text(text)
+    if not text:
+        return ""
+    text = HTML_TAG_RE.sub("", text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
+    return truncate_text(text, max_chars)
+
+
+def first_print_text(*values: Any, max_chars: int = 500) -> str:
+    for value in values:
+        text = clean_print_text(value, max_chars=max_chars)
+        if text:
+            return text
+    return ""
+
+
+def format_print_time(value: Any) -> str:
+    text = clean_print_text(value, max_chars=80)
+    if not text:
+        return ""
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).strftime("%H:%M")
+    except ValueError:
+        return text
+
+
+def build_print_weather_label(payload: dict[str, Any]) -> str:
+    for item in build_weather_context(payload):
+        summary = clean_print_text(item.get("summary"), max_chars=180)
+        condition = clean_print_text(item.get("condition_type"), max_chars=80)
+        temperature = item.get("temperature_c")
+        wind_speed = item.get("wind_speed_kph")
+        wind_direction = clean_print_text(item.get("wind_direction"), max_chars=40)
+        parts = [summary or condition]
+        if temperature not in (None, ""):
+            parts.append(f"{temperature} C")
+        if wind_speed not in (None, ""):
+            wind_label = f"vento {wind_speed} km/h"
+            if wind_direction:
+                wind_label = f"{wind_label} {wind_direction}"
+            parts.append(wind_label)
+        label = ", ".join(part for part in parts if clean_print_text(part))
+        if label:
+            return label
+    return ""
+
+
+def default_giornale_signatures() -> list[dict[str, str]]:
+    return [
+        {"label": "L'Impresa Esecutrice", "subtitle": "Il Capocantiere"},
+        {"label": "Il Direttore dei Lavori", "subtitle": "Per presa visione"},
+        {"label": "Il Committente", "subtitle": "Per accettazione"},
+    ]
+
+
+def default_rapportino_signatures() -> list[dict[str, str]]:
+    return [
+        {"label": "Il Tecnico / Caposquadra", "subtitle": "Per l'Impresa Esecutrice"},
+        {"label": "Il Cliente / Committente", "subtitle": "Per accettazione lavori e materiali"},
+    ]
+
+
+def default_sopralluogo_signatures() -> list[dict[str, str]]:
+    return [
+        {"label": "Il Direttore dei Lavori", "subtitle": ""},
+        {"label": "L'Impresa Esecutrice", "subtitle": ""},
+        {"label": "Il Coord. Sicurezza (CSE)", "subtitle": ""},
+    ]
+
+
+def build_default_company_print_section(prompt_context: dict[str, Any]) -> dict[str, str]:
+    company_tags = build_company_tags(prompt_context)
+    company = company_tags[0] if company_tags else {}
+    return {
+        "name": clean_print_text(company.get("ragione_sociale"), max_chars=180),
+        "address": "",
+        "vat": clean_print_text(company.get("identificativo_fiscale"), max_chars=80),
+        "email": clean_print_text(company.get("email"), max_chars=180),
+    }
+
+
+def build_default_giornale_personnel(prompt_context: dict[str, Any]) -> list[dict[str, str]]:
+    people = build_people_tags(prompt_context)
+    active_people = [
+        person for person in people if person.get("attivo_nell_ambito_selezionato")
+    ] or people
+    rows: list[dict[str, str]] = []
+    for person in active_people[:16]:
+        label = first_print_text(person.get("ruolo"), person.get("nominativo"), max_chars=160)
+        company = clean_print_text(person.get("impresa"), max_chars=160)
+        notes = first_print_text(person.get("nominativo"), person.get("funzione_cantiere"), max_chars=220)
+        if not label and not company and not notes:
+            continue
+        rows.append(
+            {
+                "label": label or "Addetto",
+                "quantity": "1" if person.get("nominativo") else "",
+                "company": company,
+                "notes": notes,
+            }
+        )
+    return rows
+
+
+def build_default_giornale_activities(
+    payload: dict[str, Any],
+    prompt_context: dict[str, Any],
+) -> list[dict[str, str]]:
+    selected_task = prompt_context.get("selected_task") or {}
+    selected_activity = prompt_context.get("selected_activity") or {}
+    context = payload.get("context") or {}
+    operator_input = payload.get("operator_input") or {}
+    evidence = payload.get("evidence") or {}
+
+    rows: list[dict[str, str]] = []
+    if selected_activity:
+        title = first_print_text(selected_activity.get("title"), context.get("activity_title"), max_chars=180)
+        description = first_print_text(
+            selected_activity.get("description"),
+            selected_activity.get("note"),
+            operator_input.get("notes"),
+            max_chars=1600,
+        )
+        progress = clean_print_text(selected_activity.get("progress"), max_chars=40)
+        status = clean_print_text(selected_activity.get("status"), max_chars=80)
+        if progress or status:
+            suffix = "; ".join(part for part in [f"stato: {status}" if status else "", f"avanzamento: {progress}%" if progress else ""] if part)
+            description = f"{description}\n{suffix}".strip()
+        rows.append(
+            {
+                "time_start": format_print_time(selected_activity.get("datetime_start")),
+                "time_end": format_print_time(selected_activity.get("datetime_end")),
+                "title": title or "Lavorazione selezionata",
+                "description": description or "Dettaglio operativo da verificare.",
+            }
+        )
+    elif selected_task:
+        title = first_print_text(selected_task.get("name"), context.get("task_name"), max_chars=180)
+        description = first_print_text(
+            selected_task.get("note"),
+            selected_task.get("description"),
+            operator_input.get("notes"),
+            max_chars=1600,
+        )
+        rows.append(
+            {
+                "time_start": format_print_time(selected_task.get("date_start")),
+                "time_end": format_print_time(selected_task.get("date_end")),
+                "title": title or "Fase selezionata",
+                "description": description or "Dettaglio operativo da verificare.",
+            }
+        )
+
+    if operator_input.get("notes") and not any(operator_input.get("notes") in row.get("description", "") for row in rows):
+        rows.append(
+            {
+                "time_start": "",
+                "time_end": "",
+                "title": "Note operative dell'operatore",
+                "description": clean_print_text(operator_input.get("notes"), max_chars=1600),
+            }
+        )
+
+    for index, excerpt in enumerate((evidence.get("excerpts") or [])[:5]):
+        rows.append(
+            {
+                "time_start": "",
+                "time_end": "",
+                "title": f"Evidenza dal thread {index + 1}",
+                "description": clean_print_text(excerpt, max_chars=1400),
+            }
+        )
+
+    return [row for row in rows if row.get("title") or row.get("description")][:12]
+
+
+def build_default_giornale_print_payload(
+    *,
+    project_id: int,
+    payload: dict[str, Any],
+    prompt_context: dict[str, Any],
+    generated_at: str,
+) -> dict[str, Any]:
+    project = prompt_context.get("project") or {}
+    context = payload.get("context") or {}
+    company_section = build_default_company_print_section(prompt_context)
+    document_date = clean_print_text(resolve_single_entry_date(payload), max_chars=80)
+    if not document_date or document_date == "dato non disponibile":
+        document_date = generated_at[:10]
+    weather = build_print_weather_label(payload)
+    activities = build_default_giornale_activities(payload, prompt_context)
+    personnel = build_default_giornale_personnel(prompt_context)
+    missing_data: list[str] = []
+    if not company_section.get("name"):
+        missing_data.append("Dati dell'impresa intestataria non disponibili nel contesto.")
+    if not personnel:
+        missing_data.append("Personale presente non dichiarato in modo strutturato.")
+    if not weather:
+        missing_data.append("Condizioni meteo non disponibili.")
+    if not activities:
+        missing_data.append("Lavorazioni da compilare o verificare con evidenze operative.")
+
+    return {
+        "document_type": "giornale",
+        "document_title": "Giornale dei Lavori",
+        "document_subtitle": "Rapporto Giornaliero",
+        "document_reference": f"GL-{document_date.replace('-', '')}-P{project_id}",
+        "company": company_section,
+        "project": {
+            "site": first_print_text(project.get("name"), context.get("task_name"), max_chars=220),
+            "job_reference": first_print_text(context.get("activity_title"), context.get("task_name"), max_chars=220),
+            "location": clean_print_text(project.get("address"), max_chars=260),
+            "client": "",
+            "works_director": "",
+            "site_contact": "",
+            "date": document_date,
+            "weather": weather,
+        },
+        "summary": "",
+        "personnel": personnel,
+        "equipment": [],
+        "activities": activities,
+        "materials_notes": {
+            "items": [],
+            "closing_note": "Eventuali materiali, forniture e note non strutturate devono essere verificati prima della firma.",
+        },
+        "safety": {"summary": "", "items": []},
+        "orders_communications": {"items": []},
+        "missing_data": missing_data,
+        "normative_references": [],
+        "final_formula": "La presente registrazione e redatta sulla base delle evidenze disponibili e deve essere verificata e confermata dai soggetti competenti prima della sottoscrizione.",
+        "signatures": default_giornale_signatures(),
+    }
+
+
+def build_default_rapportino_workforce(prompt_context: dict[str, Any]) -> list[dict[str, str]]:
+    people = build_people_tags(prompt_context)
+    active_people = [
+        person for person in people if person.get("attivo_nell_ambito_selezionato")
+    ] or people[:0]
+    rows: list[dict[str, str]] = []
+    for person in active_people[:16]:
+        name = clean_print_text(person.get("nominativo"), max_chars=180)
+        qualification = first_print_text(person.get("ruolo"), person.get("funzione_cantiere"), max_chars=180)
+        company = clean_print_text(person.get("impresa"), max_chars=180)
+        if not name and not qualification and not company:
+            continue
+        rows.append(
+            {
+                "name": name,
+                "qualification": qualification,
+                "ordinary_hours": "",
+                "overtime_hours": "",
+                "travel": "",
+                "company": company,
+                "notes": "",
+            }
+        )
+    return rows
+
+
+def build_default_work_description(
+    payload: dict[str, Any],
+    prompt_context: dict[str, Any],
+    *,
+    max_chars: int = 2400,
+) -> str:
+    selected_task = prompt_context.get("selected_task") or {}
+    selected_activity = prompt_context.get("selected_activity") or {}
+    operator_input = payload.get("operator_input") or {}
+    evidence = payload.get("evidence") or {}
+    excerpts = evidence.get("excerpts") or []
+    return first_print_text(
+        selected_activity.get("description"),
+        selected_activity.get("note"),
+        selected_task.get("note"),
+        operator_input.get("notes"),
+        *(excerpts[:3]),
+        max_chars=max_chars,
+    )
+
+
+def build_default_rapportino_print_payload(
+    *,
+    project_id: int,
+    payload: dict[str, Any],
+    prompt_context: dict[str, Any],
+    generated_at: str,
+) -> dict[str, Any]:
+    project = prompt_context.get("project") or {}
+    context = payload.get("context") or {}
+    company_section = build_default_company_print_section(prompt_context)
+    document_date = clean_print_text(resolve_single_entry_date(payload), max_chars=80)
+    if not document_date or document_date == "dato non disponibile":
+        document_date = generated_at[:10]
+
+    workforce = build_default_rapportino_workforce(prompt_context)
+    work_description = build_default_work_description(payload, prompt_context)
+    missing_data: list[str] = []
+    if not company_section.get("name"):
+        missing_data.append("Dati dell'impresa intestataria non disponibili nel contesto.")
+    if not workforce:
+        missing_data.append("Manodopera, ore ordinarie/straordinarie e trasferte da dichiarare.")
+    else:
+        missing_data.append("Ore ordinarie, ore straordinarie e trasferte della manodopera da verificare.")
+    missing_data.extend(
+        [
+            "Mezzi e attrezzature utilizzati da dichiarare se non indicati nelle evidenze.",
+            "Materiali utilizzati e quantita da dichiarare se non indicati nelle evidenze.",
+        ]
+    )
+    if not work_description:
+        missing_data.append("Descrizione dei lavori eseguiti da completare con evidenze operative.")
+
+    return {
+        "document_type": "rapportino",
+        "document_title": "Rapportino",
+        "document_subtitle": "Intervento / Lavori",
+        "document_reference": f"RAP-{document_date.replace('-', '')}-P{project_id}",
+        "company": company_section,
+        "client": {"name": "", "vat": ""},
+        "site": {
+            "name": first_print_text(project.get("name"), context.get("task_name"), max_chars=220),
+            "address": clean_print_text(project.get("address"), max_chars=260),
+            "date": document_date,
+        },
+        "work_description": work_description,
+        "workforce": workforce,
+        "equipment": [],
+        "materials": [],
+        "operational_notes": "",
+        "missing_data": missing_data,
+        "signatures": default_rapportino_signatures(),
+        "footer_note": "Il presente rapporto costituisce documento valido ai fini della contabilizzazione dei lavori solo dopo verifica e sottoscrizione dei soggetti competenti.",
+    }
+
+
+def build_default_sopralluogo_attendees(prompt_context: dict[str, Any]) -> list[dict[str, str]]:
+    attendees: list[dict[str, str]] = []
+    for person in build_people_tags(prompt_context):
+        if not person.get("attivo_nell_ambito_selezionato"):
+            continue
+        name = clean_print_text(person.get("nominativo"), max_chars=180)
+        role = first_print_text(person.get("ruolo"), person.get("funzione_cantiere"), max_chars=180)
+        company = clean_print_text(person.get("impresa"), max_chars=180)
+        if name or role or company:
+            attendees.append({"name": name, "role": role, "company": company})
+    return attendees[:16]
+
+
+def build_default_sopralluogo_findings(
+    payload: dict[str, Any],
+    prompt_context: dict[str, Any],
+) -> list[dict[str, str]]:
+    selected_task = prompt_context.get("selected_task") or {}
+    selected_activity = prompt_context.get("selected_activity") or {}
+    evidence = payload.get("evidence") or {}
+    rows: list[dict[str, str]] = []
+    title = first_print_text(selected_activity.get("title"), selected_task.get("name"), max_chars=180)
+    description = build_default_work_description(payload, prompt_context, max_chars=1800)
+    if title or description:
+        rows.append(
+            {
+                "status": "neutral",
+                "title": title or "Rilievo da sopralluogo",
+                "description": description or "Dettaglio da verificare con le evidenze disponibili.",
+            }
+        )
+    for index, excerpt in enumerate((evidence.get("excerpts") or [])[:4]):
+        excerpt_text = clean_print_text(excerpt, max_chars=1400)
+        if excerpt_text and excerpt_text not in [row.get("description") for row in rows]:
+            rows.append(
+                {
+                    "status": "neutral",
+                    "title": f"Evidenza dal thread {index + 1}",
+                    "description": excerpt_text,
+                }
+            )
+    return rows[:12]
+
+
+def build_default_sopralluogo_print_payload(
+    *,
+    project_id: int,
+    payload: dict[str, Any],
+    prompt_context: dict[str, Any],
+    generated_at: str,
+) -> dict[str, Any]:
+    project = prompt_context.get("project") or {}
+    context = payload.get("context") or {}
+    company_section = build_default_company_print_section(prompt_context)
+    document_date = clean_print_text(resolve_single_entry_date(payload), max_chars=80)
+    if not document_date or document_date == "dato non disponibile":
+        document_date = generated_at[:10]
+    weather = build_print_weather_label(payload)
+    attendees = build_default_sopralluogo_attendees(prompt_context)
+    findings = build_default_sopralluogo_findings(payload, prompt_context)
+    missing_data: list[str] = []
+    if not company_section.get("name"):
+        missing_data.append("Dati dell'impresa intestataria non disponibili nel contesto.")
+    if not attendees:
+        missing_data.append("Persone presenti al sopralluogo da confermare.")
+    if not findings:
+        missing_data.append("Rilievi e constatazioni da compilare con evidenze operative.")
+    if not weather:
+        missing_data.append("Condizioni meteo non disponibili.")
+
+    return {
+        "document_type": "sopralluogo",
+        "document_title": "Verbale",
+        "document_subtitle": "di Sopralluogo",
+        "document_reference": f"VS-{document_date.replace('-', '')}-P{project_id}",
+        "company": company_section,
+        "project": {
+            "site": first_print_text(project.get("name"), context.get("task_name"), max_chars=220),
+            "location": clean_print_text(project.get("address"), max_chars=260),
+            "client": "",
+            "date": document_date,
+            "weather": weather,
+        },
+        "inspection": {
+            "start_time": "",
+            "end_time": "",
+            "object": first_print_text(context.get("activity_title"), context.get("task_name"), max_chars=500),
+        },
+        "attendees": attendees,
+        "findings": findings,
+        "prescriptions": [],
+        "attachments": [],
+        "missing_data": missing_data,
+        "signatures": default_sopralluogo_signatures(),
+        "footer_note": "Il presente verbale deve essere verificato, confermato e sottoscritto dai presenti prima dell'uso ufficiale.",
+    }
+
+
+def build_default_document_print_payload(
+    *,
+    document_type: DocumentType,
+    project_id: int,
+    payload: dict[str, Any],
+    prompt_context: dict[str, Any],
+    generated_at: str,
+) -> dict[str, Any]:
+    if document_type == "rapportino":
+        return build_default_rapportino_print_payload(
+            project_id=project_id,
+            payload=payload,
+            prompt_context=prompt_context,
+            generated_at=generated_at,
+        )
+    if document_type == "sopralluogo":
+        return build_default_sopralluogo_print_payload(
+            project_id=project_id,
+            payload=payload,
+            prompt_context=prompt_context,
+            generated_at=generated_at,
+        )
+    return build_default_giornale_print_payload(
+        project_id=project_id,
+        payload=payload,
+        prompt_context=prompt_context,
+        generated_at=generated_at,
+    )
+
+
+def sanitize_string_list(value: Any, *, fallback: list[str] | None = None, max_items: int = 20) -> list[str]:
+    items = value if isinstance(value, list) else []
+    result = [
+        clean_print_text(item, max_chars=900)
+        for item in items[:max_items]
+        if clean_print_text(item, max_chars=900)
+    ]
+    return result or list(fallback or [])
+
+
+def sanitize_record_list(
+    value: Any,
+    *,
+    keys: list[str],
+    fallback: list[dict[str, str]] | None = None,
+    max_items: int = 20,
+) -> list[dict[str, str]]:
+    items = value if isinstance(value, list) else []
+    result: list[dict[str, str]] = []
+    for item in items[:max_items]:
+        source = item if isinstance(item, dict) else {keys[0]: item}
+        row = {
+            key: clean_print_text(
+                source.get(key),
+                max_chars=1800 if key in {"description", "action", "notes"} else 500,
+            )
+            for key in keys
+        }
+        if any(row.values()):
+            result.append(row)
+    return result or list(fallback or [])
+
+
+def sanitize_text_section(
+    value: Any,
+    *,
+    fallback: dict[str, Any],
+    keys: list[str],
+    max_chars: int = 500,
+) -> dict[str, str]:
+    source = value if isinstance(value, dict) else {}
+    fallback_section = fallback if isinstance(fallback, dict) else {}
+    return {
+        key: clean_print_text(source.get(key), max_chars=max_chars)
+        or clean_print_text(fallback_section.get(key), max_chars=max_chars)
+        for key in keys
+    }
+
+
+def sanitize_nested_section(
+    value: Any,
+    *,
+    fallback: dict[str, Any],
+    text_keys: list[str],
+    list_keys: list[str],
+) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    section = dict(fallback)
+    for key in text_keys:
+        text = clean_print_text(source.get(key), max_chars=1200)
+        if text:
+            section[key] = text
+    for key in list_keys:
+        section[key] = sanitize_string_list(source.get(key), fallback=fallback.get(key) or [])
+    return section
+
+
+def sanitize_giornale_print_payload(value: Any, fallback: dict[str, Any]) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    result = dict(fallback)
+    result["document_type"] = "giornale"
+    for key in ("document_title", "document_subtitle", "document_reference", "summary", "final_formula"):
+        text = clean_print_text(source.get(key), max_chars=1600)
+        if text:
+            result[key] = text
+
+    for section_name, keys in {
+        "company": ["name", "address", "vat", "email"],
+        "project": ["site", "job_reference", "location", "client", "works_director", "site_contact", "date", "weather"],
+    }.items():
+        result[section_name] = sanitize_text_section(
+            source.get(section_name),
+            fallback=fallback.get(section_name) or {},
+            keys=keys,
+        )
+
+    result["personnel"] = sanitize_record_list(
+        source.get("personnel"),
+        keys=["label", "quantity", "company", "notes"],
+        fallback=fallback.get("personnel") or [],
+        max_items=30,
+    )
+    result["equipment"] = sanitize_record_list(
+        source.get("equipment"),
+        keys=["label", "status", "quantity", "notes"],
+        fallback=fallback.get("equipment") or [],
+        max_items=30,
+    )
+    result["activities"] = sanitize_record_list(
+        source.get("activities"),
+        keys=["time_start", "time_end", "title", "description"],
+        fallback=fallback.get("activities") or [],
+        max_items=30,
+    )
+    result["materials_notes"] = sanitize_nested_section(
+        source.get("materials_notes"),
+        fallback=fallback.get("materials_notes") or {"items": [], "closing_note": ""},
+        text_keys=["closing_note"],
+        list_keys=["items"],
+    )
+    result["safety"] = sanitize_nested_section(
+        source.get("safety"),
+        fallback=fallback.get("safety") or {"summary": "", "items": []},
+        text_keys=["summary"],
+        list_keys=["items"],
+    )
+    result["orders_communications"] = sanitize_nested_section(
+        source.get("orders_communications"),
+        fallback=fallback.get("orders_communications") or {"items": []},
+        text_keys=[],
+        list_keys=["items"],
+    )
+    result["missing_data"] = sanitize_string_list(
+        source.get("missing_data"),
+        fallback=fallback.get("missing_data") or [],
+        max_items=30,
+    )
+    result["normative_references"] = sanitize_string_list(
+        source.get("normative_references"),
+        fallback=fallback.get("normative_references") or [],
+        max_items=12,
+    )
+    result["signatures"] = sanitize_record_list(
+        source.get("signatures"),
+        keys=["label", "subtitle"],
+        fallback=fallback.get("signatures") or default_giornale_signatures(),
+        max_items=6,
+    )
+    return result
+
+
+def sanitize_rapportino_print_payload(value: Any, fallback: dict[str, Any]) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    result = dict(fallback)
+    result["document_type"] = "rapportino"
+    for key in (
+        "document_title",
+        "document_subtitle",
+        "document_reference",
+        "work_description",
+        "operational_notes",
+        "footer_note",
+    ):
+        text = clean_print_text(source.get(key), max_chars=2400 if key == "work_description" else 1600)
+        if text:
+            result[key] = text
+
+    result["company"] = sanitize_text_section(
+        source.get("company"),
+        fallback=fallback.get("company") or {},
+        keys=["name", "address", "vat", "email"],
+    )
+    result["client"] = sanitize_text_section(
+        source.get("client"),
+        fallback=fallback.get("client") or {},
+        keys=["name", "vat"],
+    )
+    result["site"] = sanitize_text_section(
+        source.get("site"),
+        fallback=fallback.get("site") or {},
+        keys=["name", "address", "date"],
+    )
+    result["workforce"] = sanitize_record_list(
+        source.get("workforce"),
+        keys=["name", "qualification", "ordinary_hours", "overtime_hours", "travel", "company", "notes"],
+        fallback=fallback.get("workforce") or [],
+        max_items=40,
+    )
+    result["equipment"] = sanitize_record_list(
+        source.get("equipment"),
+        keys=["description", "quantity_hours", "notes"],
+        fallback=fallback.get("equipment") or [],
+        max_items=40,
+    )
+    result["materials"] = sanitize_record_list(
+        source.get("materials"),
+        keys=["description", "unit", "quantity", "notes"],
+        fallback=fallback.get("materials") or [],
+        max_items=60,
+    )
+    result["missing_data"] = sanitize_string_list(
+        source.get("missing_data"),
+        fallback=fallback.get("missing_data") or [],
+        max_items=40,
+    )
+    result["signatures"] = sanitize_record_list(
+        source.get("signatures"),
+        keys=["label", "subtitle"],
+        fallback=fallback.get("signatures") or default_rapportino_signatures(),
+        max_items=6,
+    )
+    return result
+
+
+def sanitize_sopralluogo_print_payload(value: Any, fallback: dict[str, Any]) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    result = dict(fallback)
+    result["document_type"] = "sopralluogo"
+    for key in ("document_title", "document_subtitle", "document_reference", "footer_note"):
+        text = clean_print_text(source.get(key), max_chars=1600)
+        if text:
+            result[key] = text
+
+    result["company"] = sanitize_text_section(
+        source.get("company"),
+        fallback=fallback.get("company") or {},
+        keys=["name", "address", "vat", "email"],
+    )
+    result["project"] = sanitize_text_section(
+        source.get("project"),
+        fallback=fallback.get("project") or {},
+        keys=["site", "location", "client", "date", "weather"],
+    )
+    result["inspection"] = sanitize_text_section(
+        source.get("inspection"),
+        fallback=fallback.get("inspection") or {},
+        keys=["start_time", "end_time", "object"],
+        max_chars=800,
+    )
+    result["attendees"] = sanitize_record_list(
+        source.get("attendees"),
+        keys=["name", "role", "company"],
+        fallback=fallback.get("attendees") or [],
+        max_items=40,
+    )
+    result["findings"] = sanitize_record_list(
+        source.get("findings"),
+        keys=["status", "title", "description"],
+        fallback=fallback.get("findings") or [],
+        max_items=40,
+    )
+    for finding in result["findings"]:
+        if finding.get("status") not in {"positive", "warning", "critical", "neutral"}:
+            finding["status"] = "neutral"
+    result["prescriptions"] = sanitize_record_list(
+        source.get("prescriptions"),
+        keys=["number", "action", "assignee", "deadline"],
+        fallback=fallback.get("prescriptions") or [],
+        max_items=40,
+    )
+    result["attachments"] = sanitize_string_list(
+        source.get("attachments"),
+        fallback=fallback.get("attachments") or [],
+        max_items=40,
+    )
+    result["missing_data"] = sanitize_string_list(
+        source.get("missing_data"),
+        fallback=fallback.get("missing_data") or [],
+        max_items=40,
+    )
+    result["signatures"] = sanitize_record_list(
+        source.get("signatures"),
+        keys=["label", "subtitle"],
+        fallback=fallback.get("signatures") or default_sopralluogo_signatures(),
+        max_items=8,
+    )
+    return result
+
+
+def sanitize_document_print_payload(
+    document_type: DocumentType,
+    value: Any,
+    fallback: dict[str, Any],
+) -> dict[str, Any]:
+    if document_type == "rapportino":
+        return sanitize_rapportino_print_payload(value, fallback)
+    if document_type == "sopralluogo":
+        return sanitize_sopralluogo_print_payload(value, fallback)
+    return sanitize_giornale_print_payload(value, fallback)
+
+
+def parse_giornale_print_payload(raw_text: str, fallback: dict[str, Any]) -> dict[str, Any]:
+    return parse_document_print_payload(raw_text, "giornale", fallback)
+
+
+def parse_document_print_payload(
+    raw_text: str,
+    document_type: DocumentType,
+    fallback: dict[str, Any],
+) -> dict[str, Any]:
+    text = normalize_text(raw_text)
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        text = text[start : end + 1]
+    parsed = json.loads(text)
+    return sanitize_document_print_payload(document_type, parsed, fallback)
+
+
+def build_giornale_print_json_prompt(
+    payload: dict[str, Any],
+    memory_brief: dict[str, Any] | None,
+    prompt_context: dict[str, Any],
+) -> str:
+    return build_document_print_json_prompt(payload, memory_brief, prompt_context, "giornale")
+
+
+def build_document_print_json_prompt(
+    payload: dict[str, Any],
+    memory_brief: dict[str, Any] | None,
+    prompt_context: dict[str, Any],
+    document_type: DocumentType,
+) -> str:
+    label = type_label(document_type)
+    return "\n".join(
+        [
+            f"Compila il JSON del documento '{label}' usando esclusivamente i dati disponibili.",
+            "Usa il vocale/trascrizione come fonte primaria dei fatti della giornata.",
+            "Usa backend, persone e aziende per nomi ufficiali, ruoli, commessa, cantiere e meteo.",
+            "Se persone, mezzi, materiali, orari o scadenze non sono esplicitamente presenti, lascia il campo vuoto e segnala la mancanza.",
+            "Non usare HTML. Non usare markdown. Non inserire testo fuori dal JSON.",
+            "",
+            "TRASCRIZIONE_PRINCIPALE:",
+            resolve_primary_audio_transcript(payload),
+            "",
+            "BACKEND_STRUCTURED_DATA_JSON:",
+            format_json_block(build_structured_backend_data(payload, prompt_context)),
+            "",
+            "PEOPLE_TAGS_JSON:",
+            format_json_block(build_people_tags(prompt_context)),
+            "",
+            "COMPANY_TAGS_JSON:",
+            format_json_block(build_company_tags(prompt_context)),
+            "",
+            "WEATHER_CONTEXT_JSON:",
+            format_json_block(build_weather_context(payload)),
+            "",
+            "SUPER_MEMORY_BRIEF:",
+            normalize_prompt_value((memory_brief or {}).get("context_markdown")),
+            "",
+            "INPUT_JSON:",
+            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        ]
+    )
+
+
+def markdown_cell(value: Any) -> str:
+    text = clean_print_text(value, max_chars=900)
+    return text.replace("|", "\\|") if text else "-"
+
+
+def render_giornale_print_payload_markdown(print_payload: dict[str, Any]) -> str:
+    company = print_payload.get("company") or {}
+    project = print_payload.get("project") or {}
+    materials_notes = print_payload.get("materials_notes") or {}
+    safety = print_payload.get("safety") or {}
+    orders = print_payload.get("orders_communications") or {}
+
+    lines: list[str] = [
+        f"# {clean_print_text(print_payload.get('document_title')) or 'Giornale dei Lavori'}",
+        "",
+        f"**{clean_print_text(print_payload.get('document_subtitle')) or 'Rapporto Giornaliero'}**",
+        f"**Rif. Doc:** {clean_print_text(print_payload.get('document_reference')) or '-'}",
+        "",
+        "## Intestazione",
+        f"- Impresa / intestatario: {clean_print_text(company.get('name')) or '-'}",
+        f"- Indirizzo impresa: {clean_print_text(company.get('address')) or '-'}",
+        f"- P.IVA / CF: {clean_print_text(company.get('vat')) or '-'}",
+        f"- Email: {clean_print_text(company.get('email')) or '-'}",
+        "",
+        "## Dati del cantiere",
+        f"- Cantiere: {clean_print_text(project.get('site')) or '-'}",
+        f"- Commessa / fase: {clean_print_text(project.get('job_reference')) or '-'}",
+        f"- Ubicazione: {clean_print_text(project.get('location')) or '-'}",
+        f"- Committente: {clean_print_text(project.get('client')) or '-'}",
+        f"- Direzione lavori / referente: {clean_print_text(project.get('works_director')) or clean_print_text(project.get('site_contact')) or '-'}",
+        f"- Data: {clean_print_text(project.get('date')) or '-'}",
+        f"- Condizioni meteo: {clean_print_text(project.get('weather')) or '-'}",
+    ]
+
+    if clean_print_text(print_payload.get("summary")):
+        lines.extend(["", "## Sintesi della giornata", clean_print_text(print_payload.get("summary"), max_chars=2400)])
+
+    personnel = print_payload.get("personnel") or []
+    lines.extend(["", "## Personale e imprese presenti"])
+    if personnel:
+        lines.extend(["| Qualifica / ruolo | Quantita | Impresa | Note |", "| --- | --- | --- | --- |"])
+        lines.extend(
+            f"| {markdown_cell(item.get('label'))} | {markdown_cell(item.get('quantity'))} | {markdown_cell(item.get('company'))} | {markdown_cell(item.get('notes'))} |"
+            for item in personnel
+            if isinstance(item, dict)
+        )
+    else:
+        lines.append("- Nessun dato dichiarato.")
+
+    equipment = print_payload.get("equipment") or []
+    lines.extend(["", "## Mezzi, attrezzature e materiali"])
+    if equipment:
+        lines.extend(["| Mezzo / attrezzatura | Stato | Quantita | Note |", "| --- | --- | --- | --- |"])
+        lines.extend(
+            f"| {markdown_cell(item.get('label'))} | {markdown_cell(item.get('status'))} | {markdown_cell(item.get('quantity'))} | {markdown_cell(item.get('notes'))} |"
+            for item in equipment
+            if isinstance(item, dict)
+        )
+    else:
+        lines.append("- Mezzi e attrezzature non dichiarati.")
+
+    material_items = materials_notes.get("items") or []
+    if material_items:
+        lines.extend(f"- {clean_print_text(item)}" for item in material_items if clean_print_text(item))
+    if clean_print_text(materials_notes.get("closing_note")):
+        lines.append(clean_print_text(materials_notes.get("closing_note"), max_chars=1600))
+
+    activities = print_payload.get("activities") or []
+    lines.extend(["", "## Descrizione delle lavorazioni"])
+    if activities:
+        for item in activities:
+            if not isinstance(item, dict):
+                continue
+            time_label = " - ".join(
+                part
+                for part in [clean_print_text(item.get("time_start")), clean_print_text(item.get("time_end"))]
+                if part
+            )
+            heading = clean_print_text(item.get("title")) or "Lavorazione"
+            lines.extend(
+                [
+                    "",
+                    f"### {heading}",
+                    f"**Orario:** {time_label or '-'}",
+                    clean_print_text(item.get("description"), max_chars=2400) or "-",
+                ]
+            )
+    else:
+        lines.append("- Nessuna lavorazione strutturata disponibile.")
+
+    if clean_print_text(safety.get("summary")) or safety.get("items"):
+        lines.extend(["", "## Sicurezza e criticita"])
+        if clean_print_text(safety.get("summary")):
+            lines.append(clean_print_text(safety.get("summary"), max_chars=1600))
+        lines.extend(f"- {clean_print_text(item)}" for item in safety.get("items") or [] if clean_print_text(item))
+
+    if orders.get("items"):
+        lines.extend(["", "## Ordini, comunicazioni e disposizioni"])
+        lines.extend(f"- {clean_print_text(item)}" for item in orders.get("items") or [] if clean_print_text(item))
+
+    if print_payload.get("missing_data"):
+        lines.extend(["", "## Dati mancanti o da verificare"])
+        lines.extend(f"- {clean_print_text(item)}" for item in print_payload.get("missing_data") or [] if clean_print_text(item))
+
+    if print_payload.get("normative_references"):
+        lines.extend(["", "## Riferimenti normativi richiamati"])
+        lines.extend(f"- {clean_print_text(item)}" for item in print_payload.get("normative_references") or [] if clean_print_text(item))
+
+    lines.extend(
+        [
+            "",
+            "## Formula di chiusura",
+            clean_print_text(print_payload.get("final_formula"), max_chars=1600) or "-",
+            "",
+            "## Firme",
+        ]
+    )
+    for signature in print_payload.get("signatures") or default_giornale_signatures():
+        if not isinstance(signature, dict):
+            continue
+        lines.append(f"- {clean_print_text(signature.get('label')) or '-'} ({clean_print_text(signature.get('subtitle')) or '-'})")
+
+    return "\n".join(lines).strip()
+
+
+def render_rapportino_print_payload_markdown(print_payload: dict[str, Any]) -> str:
+    company = print_payload.get("company") or {}
+    client = print_payload.get("client") or {}
+    site = print_payload.get("site") or {}
+    workforce = print_payload.get("workforce") or []
+    equipment = print_payload.get("equipment") or []
+    materials = print_payload.get("materials") or []
+
+    lines: list[str] = [
+        f"# {clean_print_text(print_payload.get('document_title')) or 'Rapportino'}",
+        "",
+        f"**{clean_print_text(print_payload.get('document_subtitle')) or 'Intervento / Lavori'}**",
+        f"**Rif. Doc:** {clean_print_text(print_payload.get('document_reference')) or '-'}",
+        "",
+        "## Intestazione",
+        f"- Impresa / intestatario: {clean_print_text(company.get('name')) or '-'}",
+        f"- Indirizzo impresa: {clean_print_text(company.get('address')) or '-'}",
+        f"- P.IVA / CF: {clean_print_text(company.get('vat')) or '-'}",
+        f"- Email: {clean_print_text(company.get('email')) or '-'}",
+        "",
+        "## Cliente e cantiere",
+        f"- Cliente / committente: {clean_print_text(client.get('name')) or '-'}",
+        f"- P.IVA cliente: {clean_print_text(client.get('vat')) or '-'}",
+        f"- Luogo intervento / cantiere: {clean_print_text(site.get('name')) or '-'}",
+        f"- Indirizzo cantiere: {clean_print_text(site.get('address')) or '-'}",
+        f"- Data: {clean_print_text(site.get('date')) or '-'}",
+        "",
+        "## Descrizione dei lavori eseguiti",
+        clean_print_text(print_payload.get("work_description"), max_chars=3000)
+        or "Descrizione lavori da completare o verificare.",
+        "",
+        "## Manodopera",
+    ]
+    if workforce:
+        lines.extend(
+            [
+                "| Nome e cognome | Qualifica | Ore ord. | Ore stra. | Trasferta | Azienda | Note |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
+            ]
+        )
+        lines.extend(
+            f"| {markdown_cell(item.get('name'))} | {markdown_cell(item.get('qualification'))} | {markdown_cell(item.get('ordinary_hours'))} | {markdown_cell(item.get('overtime_hours'))} | {markdown_cell(item.get('travel'))} | {markdown_cell(item.get('company'))} | {markdown_cell(item.get('notes'))} |"
+            for item in workforce
+            if isinstance(item, dict)
+        )
+    else:
+        lines.append("- Manodopera non dichiarata.")
+
+    lines.extend(["", "## Mezzi e attrezzature"])
+    if equipment:
+        lines.extend(["| Descrizione | Ore / quantita | Note |", "| --- | --- | --- |"])
+        lines.extend(
+            f"| {markdown_cell(item.get('description'))} | {markdown_cell(item.get('quantity_hours'))} | {markdown_cell(item.get('notes'))} |"
+            for item in equipment
+            if isinstance(item, dict)
+        )
+    else:
+        lines.append("- Mezzi e attrezzature non dichiarati.")
+
+    lines.extend(["", "## Materiali utilizzati"])
+    if materials:
+        lines.extend(["| Descrizione | U.M. | Quantita | Note |", "| --- | --- | --- | --- |"])
+        lines.extend(
+            f"| {markdown_cell(item.get('description'))} | {markdown_cell(item.get('unit'))} | {markdown_cell(item.get('quantity'))} | {markdown_cell(item.get('notes'))} |"
+            for item in materials
+            if isinstance(item, dict)
+        )
+    else:
+        lines.append("- Materiali non dichiarati.")
+
+    if clean_print_text(print_payload.get("operational_notes")):
+        lines.extend(["", "## Note operative", clean_print_text(print_payload.get("operational_notes"), max_chars=2400)])
+
+    if print_payload.get("missing_data"):
+        lines.extend(["", "## Dati mancanti o da verificare"])
+        lines.extend(f"- {clean_print_text(item)}" for item in print_payload.get("missing_data") or [] if clean_print_text(item))
+
+    lines.extend(["", "## Firme"])
+    for signature in print_payload.get("signatures") or default_rapportino_signatures():
+        if not isinstance(signature, dict):
+            continue
+        lines.append(f"- {clean_print_text(signature.get('label')) or '-'} ({clean_print_text(signature.get('subtitle')) or '-'})")
+
+    if clean_print_text(print_payload.get("footer_note")):
+        lines.extend(["", "## Nota finale", clean_print_text(print_payload.get("footer_note"), max_chars=1600)])
+    return "\n".join(lines).strip()
+
+
+def render_sopralluogo_print_payload_markdown(print_payload: dict[str, Any]) -> str:
+    company = print_payload.get("company") or {}
+    project = print_payload.get("project") or {}
+    inspection = print_payload.get("inspection") or {}
+    attendees = print_payload.get("attendees") or []
+    findings = print_payload.get("findings") or []
+    prescriptions = print_payload.get("prescriptions") or []
+    attachments = print_payload.get("attachments") or []
+
+    lines: list[str] = [
+        f"# {clean_print_text(print_payload.get('document_title')) or 'Verbale'} {clean_print_text(print_payload.get('document_subtitle')) or 'di Sopralluogo'}",
+        "",
+        f"**Rif. Doc:** {clean_print_text(print_payload.get('document_reference')) or '-'}",
+        "",
+        "## Intestazione",
+        f"- Impresa / intestatario: {clean_print_text(company.get('name')) or '-'}",
+        f"- Indirizzo impresa: {clean_print_text(company.get('address')) or '-'}",
+        f"- P.IVA / CF: {clean_print_text(company.get('vat')) or '-'}",
+        f"- Email: {clean_print_text(company.get('email')) or '-'}",
+        "",
+        "## Cantiere e sopralluogo",
+        f"- Cantiere / luogo: {clean_print_text(project.get('site')) or '-'}",
+        f"- Ubicazione: {clean_print_text(project.get('location')) or '-'}",
+        f"- Committente: {clean_print_text(project.get('client')) or '-'}",
+        f"- Data: {clean_print_text(project.get('date')) or '-'}",
+        f"- Meteo: {clean_print_text(project.get('weather')) or '-'}",
+        f"- Ora inizio: {clean_print_text(inspection.get('start_time')) or '-'}",
+        f"- Ora fine: {clean_print_text(inspection.get('end_time')) or '-'}",
+        f"- Oggetto della visita: {clean_print_text(inspection.get('object')) or '-'}",
+        "",
+        "## Persone presenti",
+    ]
+    if attendees:
+        lines.extend(["| Nome e cognome | Ruolo / qualifica | Azienda / ente |", "| --- | --- | --- |"])
+        lines.extend(
+            f"| {markdown_cell(item.get('name'))} | {markdown_cell(item.get('role'))} | {markdown_cell(item.get('company'))} |"
+            for item in attendees
+            if isinstance(item, dict)
+        )
+    else:
+        lines.append("- Persone presenti da confermare.")
+
+    lines.extend(["", "## Rilievi e constatazioni"])
+    if findings:
+        for item in findings:
+            if not isinstance(item, dict):
+                continue
+            status = clean_print_text(item.get("status")) or "neutral"
+            title = clean_print_text(item.get("title")) or "Rilievo"
+            lines.extend(
+                [
+                    "",
+                    f"### {title}",
+                    f"**Stato:** {status}",
+                    clean_print_text(item.get("description"), max_chars=2400) or "-",
+                ]
+            )
+    else:
+        lines.append("- Nessun rilievo strutturato disponibile.")
+
+    lines.extend(["", "## Disposizioni e prescrizioni"])
+    if prescriptions:
+        lines.extend(["| # | Azione richiesta | Incaricato | Entro il |", "| --- | --- | --- | --- |"])
+        lines.extend(
+            f"| {markdown_cell(item.get('number'))} | {markdown_cell(item.get('action'))} | {markdown_cell(item.get('assignee'))} | {markdown_cell(item.get('deadline'))} |"
+            for item in prescriptions
+            if isinstance(item, dict)
+        )
+    else:
+        lines.append("- Nessuna prescrizione strutturata disponibile.")
+
+    if attachments:
+        lines.extend(["", "## Allegati"])
+        lines.extend(f"- {clean_print_text(item)}" for item in attachments if clean_print_text(item))
+
+    if print_payload.get("missing_data"):
+        lines.extend(["", "## Dati mancanti o da verificare"])
+        lines.extend(f"- {clean_print_text(item)}" for item in print_payload.get("missing_data") or [] if clean_print_text(item))
+
+    lines.extend(["", "## Firme"])
+    for signature in print_payload.get("signatures") or default_sopralluogo_signatures():
+        if not isinstance(signature, dict):
+            continue
+        lines.append(f"- {clean_print_text(signature.get('label')) or '-'} ({clean_print_text(signature.get('subtitle')) or '-'})")
+
+    if clean_print_text(print_payload.get("footer_note")):
+        lines.extend(["", "## Nota finale", clean_print_text(print_payload.get("footer_note"), max_chars=1600)])
+    return "\n".join(lines).strip()
+
+
+def render_document_print_payload_markdown(document_type: DocumentType, print_payload: dict[str, Any]) -> str:
+    if document_type == "rapportino":
+        return render_rapportino_print_payload_markdown(print_payload)
+    if document_type == "sopralluogo":
+        return render_sopralluogo_print_payload_markdown(print_payload)
+    return render_giornale_print_payload_markdown(print_payload)
+
+
+def resolve_print_payload_date(document_type: DocumentType, print_payload: dict[str, Any]) -> str:
+    if document_type == "rapportino":
+        return clean_print_text((print_payload.get("site") or {}).get("date"), max_chars=80)
+    return clean_print_text((print_payload.get("project") or {}).get("date"), max_chars=80)
+
+
 def build_generic_system_prompt(locale: str, document_type: DocumentType) -> str:
     target_language = language_label(locale)
     return "\n".join(
@@ -1021,6 +2332,7 @@ def build_draft_fallback(
     project_id: int,
     payload: dict[str, Any],
     memory_brief: dict[str, Any] | None,
+    prompt_context: dict[str, Any] | None = None,
     reason: str | None = None,
 ) -> dict[str, Any]:
     document_type = payload["document_type"]
@@ -1086,7 +2398,7 @@ def build_draft_fallback(
     prompt_preview = build_prompt_preview(payload)
     if reason:
         prompt_preview = f"{prompt_preview}\nFALLBACK_REASON={reason}".strip()
-    return {
+    result = {
         "title": title,
         "markdown": markdown,
         "generated_at": generated_at,
@@ -1096,6 +2408,15 @@ def build_draft_fallback(
         "fallback": True,
         "prompt_profile": PROMPT_PROFILE,
     }
+    if document_type in PRINT_JSON_SYSTEM_PROMPTS and prompt_context is not None:
+        result["print_payload"] = build_default_document_print_payload(
+            document_type=document_type,
+            project_id=project_id,
+            payload=payload,
+            prompt_context=prompt_context,
+            generated_at=generated_at,
+        )
+    return result
 
 
 def generate_project_document_draft(
@@ -1158,9 +2479,46 @@ def generate_project_document_draft(
     memory_brief = build_memory_brief(profile=profile, project_id=project_id, payload=payload)
 
     try:
-        if normalized_type == "giornale":
-            system_prompt = GIORNALE_SYSTEM_PROMPT
-            user_prompt = build_giornale_user_prompt(payload, memory_brief, prompt_context)
+        if normalized_type in PRINT_JSON_SYSTEM_PROMPTS:
+            generated_at = datetime.utcnow().isoformat() + "Z"
+            fallback_print_payload = build_default_document_print_payload(
+                document_type=normalized_type,
+                project_id=project_id,
+                payload=payload,
+                prompt_context=prompt_context,
+                generated_at=generated_at,
+            )
+            user_prompt = build_document_print_json_prompt(
+                payload,
+                memory_brief,
+                prompt_context,
+                normalized_type,
+            )
+            raw_print_payload = invoke_openai_text(
+                system_prompt=PRINT_JSON_SYSTEM_PROMPTS[normalized_type],
+                user_prompt=user_prompt,
+                model=document_draft_model(),
+                max_output_tokens=5200,
+                temperature=0.1,
+            )
+            print_payload = parse_document_print_payload(
+                raw_print_payload,
+                normalized_type,
+                fallback_print_payload,
+            )
+            markdown = render_document_print_payload_markdown(normalized_type, print_payload)
+            title_date = resolve_print_payload_date(normalized_type, print_payload) or generated_at[:10]
+            return {
+                "title": f"{type_label(normalized_type)} - Progetto {project_id} - {title_date}",
+                "markdown": markdown,
+                "generated_at": generated_at,
+                "prompt_preview": build_prompt_preview(payload),
+                "provider": "openai",
+                "model": document_draft_model(),
+                "fallback": False,
+                "prompt_profile": PROMPT_PROFILE,
+                "print_payload": print_payload,
+            }
         else:
             system_prompt = build_generic_system_prompt(normalized_locale, normalized_type)
             user_prompt = build_generic_user_prompt(payload, memory_brief, prompt_context)
@@ -1188,6 +2546,7 @@ def generate_project_document_draft(
             project_id=project_id,
             payload=payload,
             memory_brief=memory_brief,
+            prompt_context=prompt_context,
             reason=str(exc),
         )
 
