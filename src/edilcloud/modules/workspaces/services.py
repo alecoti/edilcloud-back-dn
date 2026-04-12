@@ -9,12 +9,12 @@ from urllib.request import urlopen
 
 from django.contrib.auth import get_user_model
 from django.core.files import File
-from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from edilcloud.modules.files.media_optimizer import optimize_media_content, optimize_media_for_storage
 from edilcloud.modules.workspaces.emails import (
     send_workspace_access_approved_email,
     send_workspace_access_request_review_email,
@@ -493,7 +493,11 @@ def attach_profile_photo_from_remote_url(
 
     profile.photo.save(
         f"remote-avatar{extension}",
-        ContentFile(content),
+        optimize_media_content(
+            filename=f"remote-avatar{extension}",
+            content=content,
+            content_type=content_type,
+        ),
         save=True,
     )
     return True
@@ -733,6 +737,7 @@ def create_workspace_for_user(
 
     assert_workspace_creation_allowed(user)
 
+    prepared_company_logo = optimize_media_for_storage(company_logo) if company_logo else None
     workspace = Workspace.objects.create(
         name=workspace_name,
         email=(company_email or user.email or "").strip(),
@@ -740,7 +745,7 @@ def create_workspace_for_user(
         website=company_website.strip(),
         vat_number=company_vat_number.strip(),
         description=company_description.strip(),
-        logo=company_logo,
+        logo=prepared_company_logo,
         workspace_type=workspace_type.strip(),
     )
     profile = Profile.objects.create(

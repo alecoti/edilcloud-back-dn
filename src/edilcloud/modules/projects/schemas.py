@@ -193,3 +193,24 @@ class UpdateProjectFolderRequestSchema(Schema):
     parent: int | None = None
     is_public: bool | None = None
     is_root: bool | None = None
+
+
+class CreateDemoMasterSnapshotRequestSchema(Schema):
+    version: str | None = None
+    business_date: date | None = None
+    notes: str = ""
+    validate: bool = False
+    activate: bool = False
+    write_json: bool = False
+
+
+class ResetDemoMasterProjectRequestSchema(Schema):
+    skip_active_snapshot_link: bool = False
+
+
+class RestoreDemoMasterSnapshotRequestSchema(Schema):
+    snapshot_version: str
+
+
+class RunDemoMasterScenarioRequestSchema(Schema):
+    scenario_id: str

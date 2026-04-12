@@ -1,3 +1,5 @@
+import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -16,6 +18,7 @@ from edilcloud.modules.projects.models import (
     ProjectPost,
     ProjectTask,
 )
+from edilcloud.modules.projects.demo_master_snapshot import build_demo_snapshot_payload
 from edilcloud.modules.workspaces.models import Profile, Workspace, WorkspaceRole
 
 
@@ -72,3 +75,17 @@ def test_seed_rich_demo_project_creates_accessible_realistic_project(tmp_path, s
     assert CommentAttachment.objects.filter(comment__post__project=project).exists()
     assert ProjectPost.objects.filter(project=project, post_kind=PostKind.ISSUE, alert=True).exists()
     assert ProjectPost.objects.filter(project=project, post_kind=PostKind.ISSUE, alert=False).exists()
+
+
+@pytest.mark.django_db
+def test_demo_snapshot_payload_is_json_serializable(tmp_path, settings):
+    settings.MEDIA_ROOT = Path(tmp_path) / "media"
+
+    call_command("seed_rich_demo_project")
+
+    project = Project.objects.get(name="Residenza Parco Naviglio - Lotto A")
+    payload = build_demo_snapshot_payload(project=project, business_date=date(2026, 4, 12))
+
+    serialized = json.dumps(payload)
+
+    assert '"business_date": "2026-04-12"' in serialized

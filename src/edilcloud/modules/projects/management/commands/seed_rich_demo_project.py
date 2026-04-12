@@ -1,20 +1,34 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from typing import Any
 
 from django.contrib.auth import get_user_model
-from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
+from edilcloud.modules.files.media_optimizer import optimize_media_content
+from edilcloud.modules.projects.demo_master_assets import (
+    AVATAR_SOURCE_EXTENSIONS,
+    DEMO_ASSET_SOURCE_ROOT,
+    DEMO_ASSET_VERSION,
+    DOCUMENT_SOURCE_EXTENSIONS,
+    IMAGE_SOURCE_EXTENSIONS,
+    LOGO_SOURCE_EXTENSIONS,
+    asset_code_for_filename,
+    asset_placeholder_kind,
+    find_demo_source_file,
+    visual_source_dir_for_filename,
+)
 from edilcloud.modules.projects.models import (
     CommentAttachment,
     PostAttachment,
     PostComment,
     PostKind,
+    ProjectCompanyColor,
     Project,
     ProjectActivity,
     ProjectDocument,
@@ -49,6 +63,18 @@ PROJECT_BLUEPRINT = {
     "date_end": "2026-04-30",
 }
 
+DEMO_PROJECT_COMPANY_COLORS: dict[str, str] = {
+    "studio": "#51606f",
+    "gc": "#2e6f65",
+    "strutture": "#3f5f8a",
+    "elettrico": "#2b7a91",
+    "meccanico": "#9a6536",
+    "serramenti": "#6a6487",
+    "finiture": "#9a5668",
+    "committente": "#6a7352",
+}
+DEMO_VIEWER_PROJECT_COLOR = "#4b5563"
+
 COMPANIES: list[dict[str, Any]] = [
     {
         "code": "studio",
@@ -57,9 +83,10 @@ COMPANIES: list[dict[str, Any]] = [
         "vat": "11873450961",
         "color": "#b45309",
         "people": [
-            ("laura-ferretti", "Laura", "Ferretti", "laura.ferretti@ferretti-associati.it", "Direzione lavori", WorkspaceRole.OWNER),
-            ("davide-sala", "Davide", "Sala", "davide.sala@ferretti-associati.it", "BIM coordinator", WorkspaceRole.MANAGER),
-            ("serena-costantini", "Serena", "Costantini", "serena.costantini@ferretti-associati.it", "Coordinatrice sicurezza", WorkspaceRole.DELEGATE),
+            ("laura-ferretti", "Laura", "Ferretti", "laura.ferretti@ferretti-associati.it", "Direzione lavori", WorkspaceRole.OWNER, ["responsabile_lavori", "cse"]),
+            ("davide-sala", "Davide", "Sala", "davide.sala@ferretti-associati.it", "BIM coordinator", WorkspaceRole.MANAGER, ["csp"]),
+            ("serena-costantini", "Serena", "Costantini", "serena.costantini@ferretti-associati.it", "Coordinatrice sicurezza", WorkspaceRole.DELEGATE, ["rspp"]),
+            ("fabio-conti", "Fabio", "Conti", "fabio.conti@ferretti-associati.it", "Assistente DL", WorkspaceRole.WORKER, ["lavoratore"]),
         ],
     },
     {
@@ -69,10 +96,11 @@ COMPANIES: list[dict[str, Any]] = [
         "vat": "10866270158",
         "color": "#0f766e",
         "people": [
-            ("marco-rinaldi", "Marco", "Rinaldi", "marco.rinaldi@auroracostruzioni.it", "Project manager", WorkspaceRole.OWNER),
-            ("luca-gatti", "Luca", "Gatti", "luca.gatti@auroracostruzioni.it", "Capocantiere", WorkspaceRole.MANAGER),
-            ("omar-elidrissi", "Omar", "El Idrissi", "omar.elidrissi@auroracostruzioni.it", "Caposquadra opere edili", WorkspaceRole.DELEGATE),
-            ("samuele-rota", "Samuele", "Rota", "samuele.rota@auroracostruzioni.it", "Operaio specializzato", WorkspaceRole.WORKER),
+            ("marco-rinaldi", "Marco", "Rinaldi", "marco.rinaldi@auroracostruzioni.it", "Project manager", WorkspaceRole.OWNER, ["datore_lavoro"]),
+            ("luca-gatti", "Luca", "Gatti", "luca.gatti@auroracostruzioni.it", "Capocantiere", WorkspaceRole.MANAGER, ["preposto", "addetto_primo_soccorso"]),
+            ("omar-elidrissi", "Omar", "El Idrissi", "omar.elidrissi@auroracostruzioni.it", "Caposquadra opere edili", WorkspaceRole.DELEGATE, ["preposto"]),
+            ("enrico-vitali", "Enrico", "Vitali", "enrico.vitali@auroracostruzioni.it", "Gruista", WorkspaceRole.WORKER, ["lavoratore"]),
+            ("samuele-rota", "Samuele", "Rota", "samuele.rota@auroracostruzioni.it", "Operaio specializzato", WorkspaceRole.WORKER, ["lavoratore", "addetto_antincendio_emergenza"]),
         ],
     },
     {
@@ -82,10 +110,11 @@ COMPANIES: list[dict[str, Any]] = [
         "vat": "10244710964",
         "color": "#1d4ed8",
         "people": [
-            ("elisa-brambilla", "Elisa", "Brambilla", "elisa.brambilla@strutturenord.it", "Responsabile strutture", WorkspaceRole.OWNER),
-            ("giorgio-bellini", "Giorgio", "Bellini", "giorgio.bellini@strutturenord.it", "Caposquadra carpentieri", WorkspaceRole.MANAGER),
-            ("cristian-pavan", "Cristian", "Pavan", "cristian.pavan@strutturenord.it", "Ferrista", WorkspaceRole.WORKER),
-            ("ionut-marin", "Ionut", "Marin", "ionut.marin@strutturenord.it", "Operatore betonpompa", WorkspaceRole.WORKER),
+            ("elisa-brambilla", "Elisa", "Brambilla", "elisa.brambilla@strutturenord.it", "Responsabile strutture", WorkspaceRole.OWNER, ["datore_lavoro"]),
+            ("giorgio-bellini", "Giorgio", "Bellini", "giorgio.bellini@strutturenord.it", "Caposquadra carpentieri", WorkspaceRole.MANAGER, ["preposto"]),
+            ("cristian-pavan", "Cristian", "Pavan", "cristian.pavan@strutturenord.it", "Ferrista", WorkspaceRole.WORKER, ["lavoratore"]),
+            ("ionut-marin", "Ionut", "Marin", "ionut.marin@strutturenord.it", "Operatore betonpompa", WorkspaceRole.WORKER, ["lavoratore"]),
+            ("bogdan-muresan", "Bogdan", "Muresan", "bogdan.muresan@strutturenord.it", "Carpentiere casseri", WorkspaceRole.WORKER, ["lavoratore"]),
         ],
     },
     {
@@ -95,10 +124,11 @@ COMPANIES: list[dict[str, Any]] = [
         "vat": "09761530960",
         "color": "#0ea5e9",
         "people": [
-            ("paolo-longhi", "Paolo", "Longhi", "paolo.longhi@elettrolombardi.it", "Capo commessa elettrico", WorkspaceRole.OWNER),
-            ("andrea-fontana", "Andrea", "Fontana", "andrea.fontana@elettrolombardi.it", "Caposquadra impianti elettrici", WorkspaceRole.MANAGER),
-            ("nicolas-moretti", "Nicolas", "Moretti", "nicolas.moretti@elettrolombardi.it", "Impiantista", WorkspaceRole.WORKER),
-            ("matteo-cerri", "Matteo", "Cerri", "matteo.cerri@elettrolombardi.it", "Special systems", WorkspaceRole.DELEGATE),
+            ("paolo-longhi", "Paolo", "Longhi", "paolo.longhi@elettrolombardi.it", "Capo commessa elettrico", WorkspaceRole.OWNER, ["datore_lavoro"]),
+            ("andrea-fontana", "Andrea", "Fontana", "andrea.fontana@elettrolombardi.it", "Caposquadra impianti elettrici", WorkspaceRole.MANAGER, ["preposto"]),
+            ("nicolas-moretti", "Nicolas", "Moretti", "nicolas.moretti@elettrolombardi.it", "Impiantista", WorkspaceRole.WORKER, ["lavoratore"]),
+            ("marius-dumitru", "Marius", "Dumitru", "marius.dumitru@elettrolombardi.it", "Tiracavi", WorkspaceRole.WORKER, ["lavoratore"]),
+            ("matteo-cerri", "Matteo", "Cerri", "matteo.cerri@elettrolombardi.it", "Special systems", WorkspaceRole.DELEGATE, ["addetto_antincendio_emergenza"]),
         ],
     },
     {
@@ -108,24 +138,50 @@ COMPANIES: list[dict[str, Any]] = [
         "vat": "10574490154",
         "color": "#ea580c",
         "people": [
-            ("giulia-roversi", "Giulia", "Roversi", "giulia.roversi@idrotermicafutura.it", "Project manager HVAC", WorkspaceRole.OWNER),
-            ("stefano-riva", "Stefano", "Riva", "stefano.riva@idrotermicafutura.it", "Caposquadra idraulico", WorkspaceRole.MANAGER),
-            ("ahmed-bensalem", "Ahmed", "Bensalem", "ahmed.bensalem@idrotermicafutura.it", "Canalista", WorkspaceRole.WORKER),
-            ("filippo-orsenigo", "Filippo", "Orsenigo", "filippo.orsenigo@idrotermicafutura.it", "Frigorista", WorkspaceRole.DELEGATE),
+            ("giulia-roversi", "Giulia", "Roversi", "giulia.roversi@idrotermicafutura.it", "Project manager HVAC", WorkspaceRole.OWNER, ["datore_lavoro"]),
+            ("stefano-riva", "Stefano", "Riva", "stefano.riva@idrotermicafutura.it", "Caposquadra idraulico", WorkspaceRole.MANAGER, ["preposto"]),
+            ("ahmed-bensalem", "Ahmed", "Bensalem", "ahmed.bensalem@idrotermicafutura.it", "Canalista", WorkspaceRole.WORKER, ["lavoratore"]),
+            ("filippo-orsenigo", "Filippo", "Orsenigo", "filippo.orsenigo@idrotermicafutura.it", "Frigorista", WorkspaceRole.DELEGATE, ["lavoratore"]),
+            ("rachid-ziani", "Rachid", "Ziani", "rachid.ziani@idrotermicafutura.it", "Tubista", WorkspaceRole.WORKER, ["lavoratore"]),
+        ],
+    },
+    {
+        "code": "serramenti",
+        "name": "Serramenti Milano Contract",
+        "email": "cantieri@serramentimilano.it",
+        "vat": "11988050966",
+        "color": "#7c3aed",
+        "people": [
+            ("martina-cattaneo", "Martina", "Cattaneo", "martina.cattaneo@serramentimilano.it", "Responsabile commessa serramenti", WorkspaceRole.OWNER, ["datore_lavoro"]),
+            ("davide-pini", "Davide", "Pini", "davide.pini@serramentimilano.it", "Caposquadra posa serramenti", WorkspaceRole.MANAGER, ["preposto"]),
+            ("cosmin-petrescu", "Cosmin", "Petrescu", "cosmin.petrescu@serramentimilano.it", "Posatore serramenti", WorkspaceRole.WORKER, ["lavoratore"]),
+            ("ivan-russo", "Ivan", "Russo", "ivan.russo@serramentimilano.it", "Addetto sigillature e nastri", WorkspaceRole.WORKER, ["lavoratore"]),
         ],
     },
     {
         "code": "finiture",
-        "name": "Facciate e Interni Bianchi",
-        "email": "project@bianchifacade.it",
+        "name": "Interni Bianchi Srl",
+        "email": "cantieri@internibianchi.it",
         "vat": "11266870963",
         "color": "#be123c",
         "people": [
-            ("marta-bianchi", "Marta", "Bianchi", "marta.bianchi@bianchifacade.it", "Responsabile serramenti e finiture", WorkspaceRole.OWNER),
-            ("davide-pini", "Davide", "Pini", "davide.pini@bianchifacade.it", "Caposquadra serramenti", WorkspaceRole.MANAGER),
-            ("cosmin-petrescu", "Cosmin", "Petrescu", "cosmin.petrescu@bianchifacade.it", "Cartongessista", WorkspaceRole.WORKER),
-            ("ivan-russo", "Ivan", "Russo", "ivan.russo@bianchifacade.it", "Pittore finiture", WorkspaceRole.DELEGATE),
-            ("antonio-esposito", "Antonio", "Esposito", "antonio.esposito@bianchifacade.it", "Pavimentista", WorkspaceRole.WORKER),
+            ("marta-bianchi", "Marta", "Bianchi", "marta.bianchi@internibianchi.it", "Responsabile finiture", WorkspaceRole.OWNER, ["datore_lavoro"]),
+            ("antonio-esposito", "Antonio", "Esposito", "antonio.esposito@internibianchi.it", "Caposquadra pavimenti e bagni", WorkspaceRole.MANAGER, ["preposto"]),
+            ("sofia-mancini", "Sofia", "Mancini", "sofia.mancini@internibianchi.it", "Tecnica finiture", WorkspaceRole.DELEGATE, ["lavoratore"]),
+            ("lorenzo-gallo", "Lorenzo", "Gallo", "lorenzo.gallo@internibianchi.it", "Cartongessista", WorkspaceRole.WORKER, ["lavoratore"]),
+            ("alina-popescu", "Alina", "Popescu", "alina.popescu@internibianchi.it", "Pittura e rasature", WorkspaceRole.WORKER, ["lavoratore"]),
+        ],
+    },
+    {
+        "code": "committente",
+        "name": "Immobiliare Naviglio Srl",
+        "email": "sviluppo@immobiliarenaviglio.it",
+        "vat": "12177430964",
+        "color": "#64748b",
+        "people": [
+            ("valentina-neri", "Valentina", "Neri", "valentina.neri@immobiliarenaviglio.it", "Development manager", WorkspaceRole.OWNER, ["committente"]),
+            ("riccardo-greco", "Riccardo", "Greco", "riccardo.greco@immobiliarenaviglio.it", "Property operations", WorkspaceRole.MANAGER, ["committente"]),
+            ("elena-motta", "Elena", "Motta", "elena.motta@immobiliarenaviglio.it", "Customer handover", WorkspaceRole.DELEGATE, ["committente"]),
         ],
     },
 ]
@@ -149,7 +205,7 @@ DOCUMENTS: list[dict[str, Any]] = [
         "filename": "verbale-coordinamento-impianti-settimana-14.pdf",
         "created_at": "2026-04-02",
         "lines": [
-            "Presenti: DL, GC, elettrico, meccanico e finiture.",
+            "Presenti: DL, GC, elettrico, meccanico, serramenti e finiture.",
             "Tema 1: valvole di bilanciamento non ancora consegnate.",
             "Tema 2: quote massetti 1A e 3C da riallineare.",
             "Tema 3: rilascio controsoffitti corridoio nord subordinato a chiusura VMC.",
@@ -191,23 +247,253 @@ DOCUMENTS: list[dict[str, Any]] = [
             "Aggiornamento quotidiano richiesto ai referenti di disciplina.",
         ],
     },
+    {
+        "folder": ["Sicurezza"],
+        "title": "PSC aggiornato rev02",
+        "filename": "psc-aggiornato-rev02.pdf",
+        "created_at": "2026-01-17",
+        "lines": [
+            "Aggiornamento accessi facciata lato sud e segregazione area gru.",
+            "Fasce orarie consegne materiali confermate con impresa generale.",
+            "Percorsi pedonali separati dal varco mezzi.",
+            "Coordinamento interferenze tra facciata, copertura e impianti in quota.",
+        ],
+    },
+    {
+        "folder": ["Sicurezza", "Verbali"],
+        "title": "Verbale briefing avvio e POS imprese",
+        "filename": "verbale-briefing-avvio-pos-imprese.pdf",
+        "created_at": "2025-08-15",
+        "lines": [
+            "Briefing iniziale con DL, CSE, impresa affidataria e imprese esecutrici.",
+            "POS ricevuti e verificati per le imprese presenti al primo ingresso.",
+            "Obbligo aggiornamento POS a cambio lavorazione o ingresso nuovo subappaltatore.",
+            "Riunione chiusa con presa visione delle procedure di emergenza.",
+        ],
+    },
+    {
+        "folder": ["Facciata", "Rilievi"],
+        "title": "Rilievo foro cucina 2B",
+        "filename": "rilievo-foro-cucina-2b.pdf",
+        "created_at": "2026-04-04",
+        "lines": [
+            "Rilievo effettuato il 4 aprile alle 08:10.",
+            "Scostamento traverso superiore: 18 mm verso basso.",
+            "Davanzale prefabbricato da riallineare prima del lotto B.",
+            "Richiesta validazione DL entro il giorno successivo.",
+        ],
+    },
+    {
+        "folder": ["Impianti", "Check e prove"],
+        "title": "Checklist valvole bilanciamento centrale termica",
+        "filename": "checklist-valvole-bilanciamento.pdf",
+        "created_at": "2026-04-04",
+        "lines": [
+            "Valvole DN32 e DN40 mancanti in centrale termica.",
+            "Impatto diretto sul pre-collaudo idronico del 9 aprile.",
+            "Fornitore atteso in cantiere entro 48 ore.",
+            "Installazione da concentrare su locale tecnico e piano primo.",
+        ],
+    },
+    {
+        "folder": ["Finiture", "Quote"],
+        "title": "Verifica quote massetti 1A-3C",
+        "filename": "verifica-quote-massetti-1a-3c.pdf",
+        "created_at": "2026-04-04",
+        "lines": [
+            "Scostamento misurato tra 7 e 11 mm nei due alloggi campione.",
+            "Verificare subito i riferimenti lasciati da impianti elettrici e idraulici.",
+            "Conferma quote richiesta prima del prossimo lotto massetti.",
+            "Aggiornare tavola quote interne dopo il sopralluogo con DL.",
+        ],
+    },
+    {
+        "folder": ["Consegna", "Punch list"],
+        "title": "Punch list parti comuni",
+        "filename": "punch-list-parti-comuni.pdf",
+        "created_at": "2026-03-24",
+        "lines": [
+            "Hall ingresso: confermare posizione monitor citofonico.",
+            "Vano scala B: chiudere stuccatura giunto verticale.",
+            "Autorimessa: tarare chiudiporta locali tecnici.",
+            "Corte interna: verificare pendenza ultimo tratto pavimentazione.",
+        ],
+    },
+    {
+        "folder": ["Consegna", "As built"],
+        "title": "Pacchetto as-built preliminare",
+        "filename": "pacchetto-as-built-preliminare.pdf",
+        "created_at": "2026-03-27",
+        "lines": [
+            "Indice preliminare tavole architettoniche, strutturali e impiantistiche.",
+            "Schede tecniche apparecchiature in raccolta da elettrico e meccanico.",
+            "Manuali manutenzione da completare prima del walkthrough finale.",
+            "Versione non valida per consegna definitiva fino a chiusura punch list.",
+        ],
+    },
+    {
+        "folder": ["Consegna", "Manutenzione"],
+        "title": "Fascicolo manutenzione preliminare",
+        "filename": "fascicolo-manutenzione-preliminare.pdf",
+        "created_at": "2026-04-05",
+        "lines": [
+            "Elenco apparecchiature principali centrale termica e sistemi speciali.",
+            "Manutenzioni programmate da confermare con gestore entro consegna aree comuni.",
+            "Inserire seriali mancanti pompe, inverter e centrali controllo accessi.",
+            "Documento in bozza per revisione DL e committente.",
+        ],
+    },
+    {
+        "folder": ["Copertura", "Prove"],
+        "title": "Verbale prova tenuta copertura ovest",
+        "filename": "verbale-prova-tenuta-copertura-ovest.pdf",
+        "created_at": "2026-01-24",
+        "lines": [
+            "Verifica del nodo sfiato lucernario in presenza DL e impresa.",
+            "Fascia aggiuntiva posata sul risvolto ovest.",
+            "Lattoneria speciale installata sul bordo parapetto.",
+            "Nessuna infiltrazione rilevata al test finale.",
+        ],
+    },
+    {
+        "folder": ["Impianti", "Elettrico"],
+        "title": "Schema aggiornato quadro Q3",
+        "filename": "schema-aggiornato-quadro-q3.pdf",
+        "created_at": "2026-02-28",
+        "lines": [
+            "Riposizionamento morsettiere linee speciali.",
+            "Separazione tra forza motrice, dati e sicurezza.",
+            "Test continuita eseguito e firmato dal capo commessa.",
+            "Q3 disponibile per collegamento finale.",
+        ],
+    },
 ]
 
 PHOTOS: list[dict[str, str]] = [
+    {"filename": "ar-101-pianta-piano-terra.svg", "title": "AR-101 Pianta piano terra e corte interna", "subtitle": "Hall, locale comune, corte interna e autorimessa rampata.", "accent": "#475569", "created_at": "2026-02-10"},
+    {"filename": "ar-205-piante-tipo-alloggi.svg", "title": "AR-205 Piante tipo alloggi 1A-2B-3C", "subtitle": "Alloggi campione, quote interne e aree massetti da verificare.", "accent": "#64748b", "created_at": "2026-02-14"},
+    {"filename": "st-204-platea-setti.svg", "title": "ST-204 Platea e setti interrati", "subtitle": "Platea, setti scala, vani tecnici e passaggi impiantistici.", "accent": "#1d4ed8", "created_at": "2025-08-18"},
+    {"filename": "fa-301-facciata-sud-ovest.svg", "title": "FA-301 Facciata sud-ovest", "subtitle": "Mockup, campitura pannelli, davanzali e nodo copertura.", "accent": "#7c3aed", "created_at": "2026-01-22"},
+    {"filename": "fa-312-nodo-serramento-davanzale.svg", "title": "FA-312 Nodo serramento e davanzale", "subtitle": "Dettaglio controtelaio, nastri e foro cucina 2B.", "accent": "#7c3aed", "created_at": "2026-02-03"},
+    {"filename": "im-220-centrale-termica.svg", "title": "IM-220 Centrale termica e dorsali", "subtitle": "Centrale termica, collettori, valvole e dorsali principali.", "accent": "#ea580c", "created_at": "2026-02-04"},
+    {"filename": "im-245-vmc-corridoi-bagni.svg", "title": "IM-245 VMC corridoi e bagni", "subtitle": "Canali VMC, corridoio nord e locali bagno.", "accent": "#f97316", "created_at": "2026-02-22"},
+    {"filename": "el-240-quadri-dorsali.svg", "title": "EL-240 Quadri di piano e dorsali FM", "subtitle": "Quadri Q1-Q3, dorsali forza motrice e linee speciali.", "accent": "#0ea5e9", "created_at": "2026-02-12"},
+    {"filename": "el-260-sistemi-speciali-citofonia.svg", "title": "EL-260 Sistemi speciali e citofonia", "subtitle": "Videosorveglianza, controllo accessi e monitor hall.", "accent": "#0284c7", "created_at": "2026-03-01"},
+    {"filename": "fn-110-bagno-campione-2b.svg", "title": "FN-110 Bagno campione 2B", "subtitle": "Rivestimenti, sanitari, fughe e tagli di riferimento.", "accent": "#be123c", "created_at": "2026-03-18"},
     {"filename": "fronte-sud-ovest.svg", "title": "Fronte sud-ovest", "subtitle": "Stato facciata, ponteggi e mockup serramenti.", "accent": "#0f766e", "created_at": "2026-04-03"},
     {"filename": "centrale-termica.svg", "title": "Centrale termica", "subtitle": "Dorsali principali e collettori in preparazione pre-collaudo.", "accent": "#ea580c", "created_at": "2026-04-03"},
     {"filename": "bagno-campione-2b-overview.svg", "title": "Bagno campione 2B", "subtitle": "Rivestimenti e sanitari di riferimento per il lotto abitativo.", "accent": "#1d4ed8", "created_at": "2026-04-04"},
     {"filename": "vano-scala-b.svg", "title": "Vano scala B", "subtitle": "Parete campione per rasature e finitura finale.", "accent": "#be123c", "created_at": "2026-04-04"},
+    {"filename": "copertura-risvolto-ovest.svg", "title": "Copertura risvolto ovest", "subtitle": "Nodo sfiato lucernario, fascia aggiuntiva e lattoneria speciale.", "accent": "#0891b2", "created_at": "2026-01-24"},
+    {"filename": "foro-cucina-2b-rilievo.svg", "title": "Rilievo foro cucina 2B", "subtitle": "Scostamento traverso superiore e controtelaio correttivo.", "accent": "#7c3aed", "created_at": "2026-04-04"},
+    {"filename": "massetti-alloggi-1a-3c.svg", "title": "Quote massetti alloggi 1A e 3C", "subtitle": "Picchetti, riferimenti impianti e quote finite da riallineare.", "accent": "#be123c", "created_at": "2026-04-04"},
+    {"filename": "quadro-q3-linee-speciali.svg", "title": "Quadro Q3 linee speciali", "subtitle": "Morsettiere riposizionate e separazione reti speciali.", "accent": "#0ea5e9", "created_at": "2026-02-28"},
+    {"filename": "vmc-corridoio-nord.svg", "title": "VMC corridoio nord", "subtitle": "Staffaggi coordinati con passerelle elettriche.", "accent": "#f97316", "created_at": "2026-03-10"},
+    {"filename": "hall-monitor-citofonico.svg", "title": "Hall monitor citofonico", "subtitle": "Posizione da confermare con committente e sistemi speciali.", "accent": "#0284c7", "created_at": "2026-03-14"},
 ]
 
 FAMILY_LABELS = {
+    "logistics": "accessi, sicurezza, aree operative e avvio documentale",
     "foundation": "quote, ferri, riprese e passaggi impiantistici",
+    "structures": "casseri, solai, vani scala, tolleranze e rilievi strutturali",
     "envelope": "tenuta all'acqua, risvolti, lattonerie e nodi di bordo",
     "facade": "quote foro, nastri, allineamenti e nodi di attacco",
     "mechanical": "tenute, staffaggi, valvole e interfacce impiantistiche",
     "electrical": "layout quadri, linee speciali, dorsali e sistemi di sicurezza",
     "interiors": "quote finite, chiusure cavedi e superfici campione",
+    "finishes": "bagni campione, pavimenti, tinteggiature, montaggi e punch list",
     "handover": "prerequisiti, verbali, as-built e responsabilita di chiusura",
+}
+
+DEMO_TARGET_PROGRESS = 66
+
+ACTIVITY_STATUS_PROGRESS = {
+    TaskActivityStatus.COMPLETED: 100,
+    TaskActivityStatus.PROGRESS: 55,
+    TaskActivityStatus.TODO: 0,
+}
+
+THREAD_COMMUNICATIONS: dict[str, dict[str, str]] = {
+    "logistics": {
+        "watcher": "serena-costantini",
+        "stakeholder": "marco-rinaldi",
+        "field": "luca-gatti",
+        "checkpoint": "PSC e accessi restano il riferimento: teniamo separati varco mezzi e ingresso pedonale, con verifica fotografica a fine turno.",
+        "decision": "Ok per procedere. Chiedo solo che ogni variazione su accessi o stoccaggi venga riportata qui prima di modificare la planimetria logistica.",
+        "next_action": "Aggiungo controllo giornaliero del varco nord e registro eventuali anomalie nel briefing delle 17:00.",
+    },
+    "foundation": {
+        "watcher": "davide-sala",
+        "stakeholder": "elisa-brambilla",
+        "field": "giorgio-bellini",
+        "checkpoint": "Prima di chiudere il fronte voglio un passaggio su quote, passaggi impiantistici e interferenze con le gabbie.",
+        "decision": "Condivido. Le modifiche minori restano in campo solo se tracciate con foto e conferma DL nello stesso thread.",
+        "next_action": "Tengo la squadra sui capisaldi segnati e allego rilievo se troviamo scostamenti oltre tolleranza.",
+    },
+    "structures": {
+        "watcher": "davide-sala",
+        "stakeholder": "laura-ferretti",
+        "field": "elisa-brambilla",
+        "checkpoint": "Allineo modello e campo: vani scala, cavedi e quote ascensore devono tornare prima di autorizzare il prossimo getto.",
+        "decision": "Procediamo solo con verifica dimensionale firmata dalla squadra strutture e foto delle predisposizioni.",
+        "next_action": "Passo con il capo squadra prima del getto e chiudo qui eventuali rettifiche.",
+    },
+    "envelope": {
+        "watcher": "serena-costantini",
+        "stakeholder": "marco-rinaldi",
+        "field": "omar-elidrissi",
+        "checkpoint": "Nodo acqua e sicurezza lavori in quota sono i due punti sensibili: serve evidenza chiara prima di liberare il fronte.",
+        "decision": "Il fronte resta aperto solo se la prova di tenuta e caricata e se i parapetti temporanei sono confermati.",
+        "next_action": "Aggiorno il registro copertura a fine turno e fotografo i risvolti prima della lattoneria.",
+    },
+    "facade": {
+        "watcher": "davide-sala",
+        "stakeholder": "martina-cattaneo",
+        "field": "davide-pini",
+        "checkpoint": "Il controllo quota foro deve diventare visibile a tutti: pin sulla tavola, foto campo e decisione DL nello stesso punto.",
+        "decision": "Confermo. Senza validazione quote non facciamo partire il lotto successivo di serramenti.",
+        "next_action": "Preparo controtelaio correttivo e aggiorno il thread con misura finale e foto del traverso.",
+    },
+    "mechanical": {
+        "watcher": "giulia-roversi",
+        "stakeholder": "laura-ferretti",
+        "field": "stefano-riva",
+        "checkpoint": "Valvole, staffaggi e passaggi VMC vanno letti insieme: un ritardo qui impatta collaudi e chiusure interne.",
+        "decision": "Priorita alla centrale e ai corridoi tecnici. Ogni blocco fornitura deve avere una data certa e un piano B.",
+        "next_action": "Raccolgo conferma fornitore e aggiorno qui appena ho lotto, orario scarico e squadra installazione.",
+    },
+    "electrical": {
+        "watcher": "paolo-longhi",
+        "stakeholder": "davide-sala",
+        "field": "matteo-cerri",
+        "checkpoint": "Quadri, dati e sicurezza speciale devono restare separati anche nel racconto: foto prima/dopo e schema aggiornato.",
+        "decision": "Bene, teniamo schema e rilievo nello stesso thread cosi il tester puo verificare allegati e ricerca.",
+        "next_action": "Carico evidenza del Q3 e controllo che linee speciali e dorsali risultino leggibili anche in as-built.",
+    },
+    "interiors": {
+        "watcher": "sofia-mancini",
+        "stakeholder": "laura-ferretti",
+        "field": "antonio-esposito",
+        "checkpoint": "Quote finite, cavedi e superfici campione devono essere chiusi prima di coprire: niente decisioni fuori thread.",
+        "decision": "Confermo. Bagno campione e massetti diventano riferimenti per il resto del lotto abitativo.",
+        "next_action": "Faccio nuova battuta quote e aggiungo foto dei picchetti prima del getto finale.",
+    },
+    "finishes": {
+        "watcher": "valentina-neri",
+        "stakeholder": "marta-bianchi",
+        "field": "antonio-esposito",
+        "checkpoint": "Per la demo commerciale voglio vedere decisioni su finiture, punch list e responsabilita in modo immediato.",
+        "decision": "Allineato. Le scelte campione restano tracciate qui, con foto e impatto su tempi di consegna.",
+        "next_action": "Aggiorno la lista alloggi campione e segnalo subito eventuali materiali mancanti.",
+    },
+    "handover": {
+        "watcher": "valentina-neri",
+        "stakeholder": "riccardo-greco",
+        "field": "serena-costantini",
+        "checkpoint": "Consegna significa prove, manuali e responsabilita chiuse: serve una lettura unica per committente e gestore.",
+        "decision": "Ok, voglio che ogni prerequisito abbia owner, scadenza e documento collegato prima del walkthrough.",
+        "next_action": "Preparo matrice prerequisiti e aggiorno il fascicolo quando ogni test passa da aperto a chiuso.",
+    },
 }
 
 
@@ -217,6 +503,12 @@ def parse_day(value: str | date) -> date:
 
 def aware(day: date, hour: int, minute: int = 0) -> datetime:
     return timezone.make_aware(datetime.combine(day, time(hour=hour, minute=minute)))
+
+
+def seed_project_progress() -> int:
+    if not TASKS:
+        return 0
+    return round(sum(int(task["progress"]) for task in TASKS) / len(TASKS))
 
 
 def pdf_escape(value: str) -> str:
@@ -267,7 +559,14 @@ def build_logo(label: str, accent: str) -> bytes:
     return svg.encode("utf-8")
 
 
-def build_scene(title: str, subtitle: str, accent: str) -> bytes:
+def build_scene(title: str, subtitle: str, accent: str, *, asset_code: str = "", asset_kind: str = "") -> bytes:
+    badge = ""
+    if asset_code or asset_kind:
+        badge = (
+            '<rect x="1160" y="732" width="312" height="88" rx="18" fill="rgba(17,24,39,0.68)" stroke="rgba(255,255,255,0.28)"/>'
+            f'<text x="1192" y="776" font-size="22" font-family="Arial" font-weight="700" fill="#ffffff">{asset_code or "demo-asset"}</text>'
+            f'<text x="1192" y="806" font-size="16" font-family="Arial" fill="rgba(255,255,255,0.82)">{asset_kind or "placeholder"}</text>'
+        )
     svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">'
         '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">'
@@ -277,17 +576,123 @@ def build_scene(title: str, subtitle: str, accent: str) -> bytes:
         '<path d="M160 650 L420 420 L610 510 L810 310 L1060 460 L1260 250 L1440 390" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="20" stroke-linecap="round"/>'
         f'<text x="128" y="188" font-size="56" font-family="Arial" font-weight="700" fill="#ffffff">{title}</text>'
         f'<text x="128" y="252" font-size="28" font-family="Arial" fill="rgba(255,255,255,0.88)">{subtitle}</text>'
+        f"{badge}"
         "</svg>"
     )
     return svg.encode("utf-8")
 
 
+def resolve_logo_source(company_code: str, slug: str, label: str, accent: str) -> tuple[str, bytes]:
+    source = find_demo_source_file(
+        relative_dir=f"companies/{company_code}",
+        preferred_filename="logo.svg",
+        extensions=LOGO_SOURCE_EXTENSIONS,
+    )
+    if source is not None:
+        return source.name, source.read_bytes()
+    return f"{slug}-logo.svg", build_logo(label, accent)
+
+
+def resolve_avatar_source(person_code: str) -> tuple[str, bytes] | None:
+    source = find_demo_source_file(
+        relative_dir="avatars",
+        preferred_filename=f"{person_code}.jpg",
+        extensions=AVATAR_SOURCE_EXTENSIONS,
+    )
+    if source is None:
+        return None
+    return source.name, source.read_bytes()
+
+
+def resolve_document_source(filename: str, title: str, lines: list[str]) -> tuple[str, bytes]:
+    source = find_demo_source_file(
+        relative_dir="documents",
+        preferred_filename=filename,
+        extensions=DOCUMENT_SOURCE_EXTENSIONS,
+    )
+    if source is not None:
+        return source.name, source.read_bytes()
+    return filename, build_pdf(title, lines)
+
+
+def resolve_visual_source(
+    filename: str,
+    title: str,
+    subtitle: str,
+    accent: str,
+    *,
+    source_dir: str | None = None,
+    category: str | None = None,
+) -> tuple[str, bytes]:
+    chosen_source_dir = source_dir or visual_source_dir_for_filename(filename)
+    source = find_demo_source_file(
+        relative_dir=chosen_source_dir,
+        preferred_filename=filename,
+        extensions=IMAGE_SOURCE_EXTENSIONS,
+    )
+    if source is not None:
+        return source.name, source.read_bytes()
+    return (
+        filename,
+        build_scene(
+            title,
+            subtitle,
+            accent,
+            asset_code=asset_code_for_filename(filename, category=category),
+            asset_kind=asset_placeholder_kind(filename, category=category),
+        ),
+    )
+
+
 TASKS: list[dict[str, Any]] = [
     {
-        "family": "foundation",
-        "name": "Fondazioni, platea e interrato",
-        "company": "strutture",
+        "family": "logistics",
+        "name": "Avvio cantiere e logistica operativa",
+        "company": "gc",
         "start": "2025-08-01",
+        "end": "2025-08-15",
+        "progress": 100,
+        "note": "Allestimento area, accessi, servizi provvisori, briefing sicurezza e presa in consegna del lotto.",
+        "activities": [
+            {
+                "title": "Recinzioni, varco mezzi e segnaletica temporanea",
+                "status": TaskActivityStatus.COMPLETED,
+                "start": "2025-08-01",
+                "end": "2025-08-04",
+                "workers": ["luca-gatti", "omar-elidrissi", "samuele-rota"],
+                "note": "Separati accesso pedonale e percorso mezzi con cartellonistica di sicurezza aggiornata.",
+            },
+            {
+                "title": "Baraccamenti, quadri provvisori e linea acqua",
+                "status": TaskActivityStatus.COMPLETED,
+                "start": "2025-08-05",
+                "end": "2025-08-08",
+                "workers": ["luca-gatti", "andrea-fontana", "stefano-riva"],
+                "note": "Ufficio cantiere, spogliatoi e sottoservizi provvisori operativi sul lato nord.",
+            },
+            {
+                "title": "Rilievo iniziale e tracciamento capisaldi",
+                "status": TaskActivityStatus.COMPLETED,
+                "start": "2025-08-08",
+                "end": "2025-08-12",
+                "workers": ["davide-sala", "fabio-conti", "luca-gatti"],
+                "note": "Capisaldi condivisi su AR-101 e ST-204 prima dell'avvio scavi.",
+            },
+            {
+                "title": "PSC, POS e briefing di avvio commessa",
+                "status": TaskActivityStatus.COMPLETED,
+                "start": "2025-08-12",
+                "end": "2025-08-15",
+                "workers": ["laura-ferretti", "serena-costantini", "marco-rinaldi"],
+                "note": "Verbale di avvio condiviso con imprese e referenti sicurezza.",
+            },
+        ],
+    },
+    {
+        "family": "foundation",
+        "name": "Scavi, opere geotecniche e fondazioni",
+        "company": "strutture",
+        "start": "2025-08-18",
         "end": "2025-09-12",
         "progress": 100,
         "note": "Scavi, platea, setti interrati e passaggi impiantistici coordinati al millimetro.",
@@ -295,16 +700,16 @@ TASKS: list[dict[str, Any]] = [
             {
                 "title": "Scavo sbancamento e pulizia fronte nord",
                 "status": TaskActivityStatus.COMPLETED,
-                "start": "2025-08-01",
-                "end": "2025-08-12",
-                "workers": ["giorgio-bellini", "ionut-marin", "samuele-rota"],
+                "start": "2025-08-18",
+                "end": "2025-08-22",
+                "workers": ["giorgio-bellini", "ionut-marin", "enrico-vitali"],
                 "note": "Percorso camion tenuto libero senza impatti sulla viabilita del lotto.",
             },
             {
                 "title": "Magrone, ferri platea e passaggi impiantistici",
                 "status": TaskActivityStatus.COMPLETED,
-                "start": "2025-08-13",
-                "end": "2025-08-28",
+                "start": "2025-08-25",
+                "end": "2025-09-04",
                 "workers": ["giorgio-bellini", "cristian-pavan", "stefano-riva"],
                 "note": "Coordinati passaggi impiantistici dei box e ricontrollate quote prima del getto.",
                 "issue": {
@@ -327,10 +732,53 @@ TASKS: list[dict[str, Any]] = [
             {
                 "title": "Getto platea, setti interrati e maturazione",
                 "status": TaskActivityStatus.COMPLETED,
-                "start": "2025-08-29",
+                "start": "2025-09-05",
                 "end": "2025-09-12",
-                "workers": ["elisa-brambilla", "giorgio-bellini", "ionut-marin"],
+                "workers": ["elisa-brambilla", "giorgio-bellini", "bogdan-muresan"],
                 "note": "Getto unico avviato alle 05:30 con sequenza e maturazione registrate nel verbale di giornata.",
+            },
+        ],
+    },
+    {
+        "family": "structures",
+        "name": "Strutture verticali, solai e vani scala",
+        "company": "strutture",
+        "start": "2025-09-15",
+        "end": "2025-11-28",
+        "progress": 100,
+        "note": "Carpenteria, ferri e getti fino alla copertura con controllo quote, vani scala e tolleranze ascensore.",
+        "activities": [
+            {
+                "title": "Pilastri interrato e solaio piano terra",
+                "status": TaskActivityStatus.COMPLETED,
+                "start": "2025-09-15",
+                "end": "2025-10-03",
+                "workers": ["giorgio-bellini", "cristian-pavan", "bogdan-muresan"],
+                "note": "Predisposti giunti e cavedi prima del getto solaio piano terra.",
+            },
+            {
+                "title": "Scale, vani ascensore e pareti setto",
+                "status": TaskActivityStatus.COMPLETED,
+                "start": "2025-10-06",
+                "end": "2025-10-24",
+                "workers": ["elisa-brambilla", "giorgio-bellini", "bogdan-muresan"],
+                "note": "Controllo dimensionale eseguito prima del secondo getto del vano guida.",
+            },
+            {
+                "title": "Solai piano primo e secondo",
+                "status": TaskActivityStatus.COMPLETED,
+                "start": "2025-10-27",
+                "end": "2025-11-12",
+                "workers": ["giorgio-bellini", "cristian-pavan", "ionut-marin"],
+                "note": "Aperture tecniche verificate con impianti prima dei getti.",
+            },
+            {
+                "title": "Travi di copertura, cordoli e chiusura strutture",
+                "status": TaskActivityStatus.COMPLETED,
+                "start": "2025-11-13",
+                "end": "2025-11-28",
+                "workers": ["elisa-brambilla", "giorgio-bellini", "cristian-pavan"],
+                "note": "Rilievo finale aggiornato per passaggio a copertura e facciata.",
             },
         ],
     },
@@ -340,7 +788,7 @@ TASKS: list[dict[str, Any]] = [
         "company": "gc",
         "start": "2025-12-01",
         "end": "2026-01-31",
-        "progress": 88,
+        "progress": 86,
         "note": "Chiusura involucro con laterizi, copertura, risvolti e lattonerie di bordo.",
         "activities": [
             {
@@ -388,10 +836,10 @@ TASKS: list[dict[str, Any]] = [
     {
         "family": "facade",
         "name": "Facciata ventilata e serramenti esterni",
-        "company": "finiture",
+        "company": "serramenti",
         "start": "2026-01-20",
         "end": "2026-03-21",
-        "progress": 67,
+        "progress": 64,
         "note": "Rilievi, controtelai, serramenti e facciata ventilata con controllo dei nodi di attacco.",
         "activities": [
             {
@@ -399,7 +847,7 @@ TASKS: list[dict[str, Any]] = [
                 "status": TaskActivityStatus.COMPLETED,
                 "start": "2026-01-20",
                 "end": "2026-01-31",
-                "workers": ["davide-sala", "marta-bianchi", "davide-pini"],
+                "workers": ["davide-sala", "martina-cattaneo", "davide-pini"],
                 "note": "Mockup sud-ovest approvato con nodo serramento-facciata validato dalla DL.",
                 "attachment": {
                     "kind": "image",
@@ -407,6 +855,7 @@ TASKS: list[dict[str, Any]] = [
                     "title": "Mockup facciata sud-ovest",
                     "subtitle": "Pannello campione, nodo serramento e lattoneria.",
                     "accent": "#0f766e",
+                    "source_dir": "attachments",
                 },
             },
             {
@@ -438,7 +887,7 @@ TASKS: list[dict[str, Any]] = [
                 "status": TaskActivityStatus.PROGRESS,
                 "start": "2026-02-22",
                 "end": "2026-03-21",
-                "workers": ["marta-bianchi", "davide-pini", "cosmin-petrescu"],
+                "workers": ["martina-cattaneo", "davide-pini", "cosmin-petrescu"],
                 "note": "Cronoprogramma scaglionato per non fermare massetti e finiture dei livelli gia pronti.",
             },
         ],
@@ -449,7 +898,7 @@ TASKS: list[dict[str, Any]] = [
         "company": "meccanico",
         "start": "2026-01-07",
         "end": "2026-03-28",
-        "progress": 74,
+        "progress": 72,
         "note": "Reti scarico, adduzioni, centrale termica, VMC e antincendio box con pre-collaudi progressivi.",
         "activities": [
             {
@@ -473,6 +922,7 @@ TASKS: list[dict[str, Any]] = [
                     "title": "Centrale termica",
                     "subtitle": "Dorsali principali e area collettori in allestimento.",
                     "accent": "#ea580c",
+                    "source_dir": "attachments",
                 },
                 "issue": {
                     "status": "open",
@@ -507,7 +957,7 @@ TASKS: list[dict[str, Any]] = [
         "company": "elettrico",
         "start": "2026-01-10",
         "end": "2026-03-31",
-        "progress": 71,
+        "progress": 68,
         "note": "Passerelle, montanti, quadri di piano, reti dati e sistemi speciali con verifiche continue.",
         "activities": [
             {
@@ -558,7 +1008,7 @@ TASKS: list[dict[str, Any]] = [
         "company": "finiture",
         "start": "2026-02-01",
         "end": "2026-03-29",
-        "progress": 54,
+        "progress": 48,
         "note": "Partizioni, chiusure cavedi, massetti e controsoffitti coordinati con gli impianti.",
         "activities": [
             {
@@ -566,7 +1016,7 @@ TASKS: list[dict[str, Any]] = [
                 "status": TaskActivityStatus.PROGRESS,
                 "start": "2026-02-01",
                 "end": "2026-02-18",
-                "workers": ["cosmin-petrescu", "ivan-russo"],
+                "workers": ["lorenzo-gallo", "alina-popescu"],
                 "note": "Foto delle predisposizioni archiviate prima della chiusura di ogni cavedio.",
             },
             {
@@ -598,7 +1048,7 @@ TASKS: list[dict[str, Any]] = [
                 "status": TaskActivityStatus.PROGRESS,
                 "start": "2026-03-09",
                 "end": "2026-03-29",
-                "workers": ["antonio-esposito", "ivan-russo", "cosmin-petrescu"],
+                "workers": ["antonio-esposito", "sofia-mancini", "alina-popescu"],
                 "note": "Bagno campione usato come riferimento per fughe, tagli, sanitari e chiusura delle finiture.",
                 "attachment": {
                     "kind": "image",
@@ -606,7 +1056,51 @@ TASKS: list[dict[str, Any]] = [
                     "title": "Bagno campione 2B",
                     "subtitle": "Rivestimenti e sanitari di riferimento per il lotto abitativo.",
                     "accent": "#1d4ed8",
+                    "source_dir": "attachments",
                 },
+            },
+        ],
+    },
+    {
+        "family": "finishes",
+        "name": "Finiture interne, arredi fissi e pre-collaudi",
+        "company": "finiture",
+        "start": "2026-03-16",
+        "end": "2026-04-24",
+        "progress": 18,
+        "note": "Pavimenti, rivestimenti, tinteggiature, montaggi finali e pulizie tecniche degli alloggi campione.",
+        "activities": [
+            {
+                "title": "Pavimenti gres e rivestimenti bagni",
+                "status": TaskActivityStatus.PROGRESS,
+                "start": "2026-03-16",
+                "end": "2026-03-31",
+                "workers": ["antonio-esposito", "alina-popescu"],
+                "note": "Bagno campione 2B usato come riferimento per fughe, tagli e posa rivestimenti.",
+            },
+            {
+                "title": "Tinteggiature, smalti ringhiere e parti comuni",
+                "status": TaskActivityStatus.TODO,
+                "start": "2026-03-28",
+                "end": "2026-04-08",
+                "workers": ["alina-popescu", "sofia-mancini"],
+                "note": "Confermare tonalita finali con committenza prima della seconda mano.",
+            },
+            {
+                "title": "Montaggio porte interne, sanitari e arredi fissi",
+                "status": TaskActivityStatus.TODO,
+                "start": "2026-04-01",
+                "end": "2026-04-15",
+                "workers": ["stefano-riva", "davide-pini", "antonio-esposito"],
+                "note": "Porte e sanitari in consegna in due lotti, con priorita agli alloggi campione.",
+            },
+            {
+                "title": "Pulizie tecniche e check appartamenti campione",
+                "status": TaskActivityStatus.TODO,
+                "start": "2026-04-14",
+                "end": "2026-04-24",
+                "workers": ["samuele-rota", "sofia-mancini", "valentina-neri"],
+                "note": "Lista punch per ogni alloggio campione prima del walkthrough con committenza.",
             },
         ],
     },
@@ -616,7 +1110,7 @@ TASKS: list[dict[str, Any]] = [
         "company": "studio",
         "start": "2026-04-01",
         "end": "2026-04-30",
-        "progress": 8,
+        "progress": 4,
         "note": "Collaudi progressivi, punch list finale, as-built e passaggio documentale verso committenza e gestore.",
         "alert": True,
         "activities": [
@@ -674,6 +1168,7 @@ class Seeder:
         self.viewer_password = viewer_password or DEFAULT_VIEWER_PASSWORD
         self.workspaces: dict[str, Workspace] = {}
         self.profiles: dict[str, Profile] = {}
+        self.project_role_codes: dict[str, list[str]] = {}
         self.viewer_profile: Profile | None = None
         self.project: Project | None = None
         self.folders: dict[str, ProjectFolder] = {}
@@ -718,7 +1213,12 @@ class Seeder:
             },
         )
         if not workspace.logo:
-            workspace.logo.save("edilcloud-demo-access-logo.svg", ContentFile(build_logo("Demo Access", "#475569")), save=True)
+            optimized_logo = optimize_media_content(
+                filename="edilcloud-demo-access-logo.svg",
+                content=build_logo("Demo Access", "#475569"),
+                content_type="image/svg+xml",
+            )
+            workspace.logo.save("edilcloud-demo-access-logo.svg", optimized_logo, save=True)
         profile, _ = Profile.objects.get_or_create(
             workspace=workspace,
             user=user,
@@ -746,10 +1246,20 @@ class Seeder:
             workspace.description = company["name"]
             workspace.is_active = True
             workspace.save()
-            if not workspace.logo:
-                workspace.logo.save(f"{slug}-logo.svg", ContentFile(build_logo(company["name"], company["color"])), save=True)
+            logo_name, logo_bytes = resolve_logo_source(company["code"], slug, company["name"], company["color"])
+            if not workspace.logo or find_demo_source_file(
+                relative_dir=f"companies/{company['code']}",
+                preferred_filename="logo.svg",
+                extensions=LOGO_SOURCE_EXTENSIONS,
+            ):
+                optimized_logo = optimize_media_content(filename=logo_name, content=logo_bytes)
+                workspace.logo.save(
+                    Path(getattr(optimized_logo, "name", "") or logo_name).name,
+                    optimized_logo,
+                    save=True,
+                )
             self.workspaces[company["code"]] = workspace
-            for code, first_name, last_name, email, position, role in company["people"]:
+            for code, first_name, last_name, email, position, role, project_role_codes in company["people"]:
                 user = self.user_model.objects.filter(email__iexact=email).first()
                 if user is None:
                     user = self.user_model.objects.create_user(
@@ -779,7 +1289,17 @@ class Seeder:
                 profile.position = position
                 profile.is_active = True
                 profile.save()
+                avatar_source = resolve_avatar_source(code)
+                if avatar_source is not None:
+                    avatar_name, avatar_bytes = avatar_source
+                    optimized_avatar = optimize_media_content(filename=avatar_name, content=avatar_bytes)
+                    profile.photo.save(
+                        Path(getattr(optimized_avatar, "name", "") or avatar_name).name,
+                        optimized_avatar,
+                        save=True,
+                    )
                 self.profiles[code] = profile
+                self.project_role_codes[code] = list(project_role_codes)
 
     def delete_existing_project(self) -> None:
         project = Project.objects.filter(name=PROJECT_BLUEPRINT["name"]).first()
@@ -814,12 +1334,14 @@ class Seeder:
             date_start=self.shift_day(PROJECT_BLUEPRINT["date_start"]),
             date_end=self.shift_day(PROJECT_BLUEPRINT["date_end"]),
             status=ProjectStatus.ACTIVE,
+            is_demo_master=True,
+            demo_snapshot_version="",
         )
 
     def attach_members(self) -> None:
         assert self.project is not None
         membership_date = aware(self.project.date_start - timedelta(days=10), 9, 0)
-        for profile in self.profiles.values():
+        for code, profile in self.profiles.items():
             member = ProjectMember.objects.create(
                 project=self.project,
                 profile=profile,
@@ -827,6 +1349,7 @@ class Seeder:
                 status=ProjectMemberStatus.ACTIVE,
                 disabled=False,
                 is_external=profile.workspace_id != self.project.workspace_id,
+                project_role_codes=self.project_role_codes.get(code, []),
             )
             ProjectMember.objects.filter(pk=member.pk).update(created_at=membership_date, updated_at=membership_date, project_invitation_date=membership_date)
         viewer = self.ensure_viewer_profile()
@@ -840,6 +1363,63 @@ class Seeder:
                 is_external=viewer.workspace_id != self.project.workspace_id,
             )
             ProjectMember.objects.filter(pk=member.pk).update(created_at=membership_date, updated_at=membership_date, project_invitation_date=membership_date)
+
+    def attach_workspace_superusers(self) -> None:
+        assert self.project is not None
+        membership_date = aware(self.project.date_start - timedelta(days=10), 9, 5)
+        superuser_profiles = (
+            Profile.objects.select_related("user", "workspace")
+            .filter(
+                workspace=self.project.workspace,
+                is_active=True,
+                user__is_superuser=True,
+                user__is_active=True,
+            )
+            .exclude(id__in=[profile.id for profile in self.profiles.values()])
+        )
+        if self.viewer_profile is not None:
+            superuser_profiles = superuser_profiles.exclude(id=self.viewer_profile.id)
+
+        for profile in superuser_profiles:
+            member, _ = ProjectMember.objects.get_or_create(
+                project=self.project,
+                profile=profile,
+                defaults={
+                    "role": profile.role,
+                    "status": ProjectMemberStatus.ACTIVE,
+                    "disabled": False,
+                    "is_external": profile.workspace_id != self.project.workspace_id,
+                    "project_role_codes": [],
+                },
+            )
+            ProjectMember.objects.filter(pk=member.pk).update(
+                role=profile.role,
+                status=ProjectMemberStatus.ACTIVE,
+                disabled=False,
+                is_external=profile.workspace_id != self.project.workspace_id,
+                updated_at=membership_date,
+                project_invitation_date=membership_date,
+            )
+
+    def apply_demo_project_company_colors(self) -> None:
+        assert self.project is not None
+        for company in COMPANIES:
+            workspace = self.workspaces.get(company["code"])
+            fixed_color = DEMO_PROJECT_COMPANY_COLORS.get(company["code"])
+            if workspace is None or not fixed_color:
+                continue
+            ProjectCompanyColor.objects.update_or_create(
+                project=self.project,
+                workspace=workspace,
+                defaults={"color_project": fixed_color},
+            )
+
+        if self.viewer_profile is not None:
+            ProjectCompanyColor.objects.update_or_create(
+                project=self.project,
+                workspace=self.viewer_profile.workspace,
+                defaults={"color_project": DEMO_VIEWER_PROJECT_COLOR},
+            )
 
     def create_folder(self, chunks: list[str]) -> ProjectFolder:
         assert self.project is not None
@@ -871,7 +1451,9 @@ class Seeder:
         for blueprint in DOCUMENTS:
             folder = self.create_folder(blueprint["folder"])
             document = ProjectDocument(project=self.project, folder=folder, title=blueprint["title"], description=blueprint["title"])
-            document.document.save(blueprint["filename"], ContentFile(build_pdf(blueprint["title"], blueprint["lines"])), save=False)
+            stored_name, stored_bytes = resolve_document_source(blueprint["filename"], blueprint["title"], blueprint["lines"])
+            optimized_file = optimize_media_content(filename=stored_name, content=stored_bytes)
+            document.document.save(Path(getattr(optimized_file, "name", "") or stored_name).name, optimized_file, save=False)
             document.save()
             created_at = aware(self.shift_day(blueprint["created_at"]), 10, 30)
             ProjectDocument.objects.filter(pk=document.pk).update(created_at=created_at, updated_at=created_at)
@@ -880,7 +1462,14 @@ class Seeder:
         assert self.project is not None
         for blueprint in PHOTOS:
             photo = ProjectPhoto(project=self.project, title=blueprint["title"])
-            photo.photo.save(blueprint["filename"], ContentFile(build_scene(blueprint["title"], blueprint["subtitle"], blueprint["accent"])), save=False)
+            stored_name, stored_bytes = resolve_visual_source(
+                blueprint["filename"],
+                blueprint["title"],
+                blueprint["subtitle"],
+                blueprint["accent"],
+            )
+            optimized_file = optimize_media_content(filename=stored_name, content=stored_bytes)
+            photo.photo.save(Path(getattr(optimized_file, "name", "") or stored_name).name, optimized_file, save=False)
             photo.save()
             created_at = aware(self.shift_day(blueprint["created_at"]), 15, 20)
             ProjectPhoto.objects.filter(pk=photo.pk).update(created_at=created_at, updated_at=created_at)
@@ -954,9 +1543,18 @@ class Seeder:
         if attachment:
             upload = PostAttachment(post=post)
             if attachment["kind"] == "image":
-                upload.file.save(attachment["name"], ContentFile(build_scene(attachment["title"], attachment["subtitle"], attachment["accent"])), save=False)
+                stored_name, stored_bytes = resolve_visual_source(
+                    attachment["name"],
+                    attachment["title"],
+                    attachment["subtitle"],
+                    attachment["accent"],
+                    source_dir=attachment.get("source_dir"),
+                    category=attachment.get("asset_category", "attachment"),
+                )
             else:
-                upload.file.save(attachment["name"], ContentFile(build_pdf(attachment["title"], attachment["lines"])), save=False)
+                stored_name, stored_bytes = resolve_document_source(attachment["name"], attachment["title"], attachment["lines"])
+            optimized_file = optimize_media_content(filename=stored_name, content=stored_bytes)
+            upload.file.save(Path(getattr(optimized_file, "name", "") or stored_name).name, optimized_file, save=False)
             upload.save()
         post.refresh_from_db()
         return post
@@ -984,7 +1582,19 @@ class Seeder:
         ProjectPost.objects.filter(pk=post.pk).update(updated_at=when)
         if attachment:
             upload = CommentAttachment(comment=comment)
-            upload.file.save(attachment["name"], ContentFile(build_pdf(attachment["title"], attachment["lines"])), save=False)
+            if attachment.get("kind") == "image":
+                stored_name, stored_bytes = resolve_visual_source(
+                    attachment["name"],
+                    attachment["title"],
+                    attachment["subtitle"],
+                    attachment["accent"],
+                    source_dir=attachment.get("source_dir"),
+                    category=attachment.get("asset_category", "attachment"),
+                )
+            else:
+                stored_name, stored_bytes = resolve_document_source(attachment["name"], attachment["title"], attachment["lines"])
+            optimized_file = optimize_media_content(filename=stored_name, content=stored_bytes)
+            upload.file.save(Path(getattr(optimized_file, "name", "") or stored_name).name, optimized_file, save=False)
             upload.save()
         comment.refresh_from_db()
         return comment
@@ -994,21 +1604,22 @@ class Seeder:
         title = activity_blueprint["title"]
         if activity_blueprint["status"] == TaskActivityStatus.COMPLETED:
             return (
-                f'Attivita "{title}" chiusa nella fase "{task_blueprint["name"]}". Squadra in campo: {worker_names}. '
-                f'Confermate {label}. {activity_blueprint["note"]}'
+                f"Chiusura confermata. Squadra in campo: {worker_names}. "
+                f"Confermate {label}. {activity_blueprint['note']}"
             )
         if activity_blueprint["status"] == TaskActivityStatus.PROGRESS:
             return (
-                f'Produzione attiva su "{title}" nella fase "{task_blueprint["name"]}". Squadra in campo: {worker_names}. '
-                f'Oggi il presidio e su {label}. {activity_blueprint["note"]}'
+                f"Avanzamento in corso. Squadra in campo: {worker_names}. "
+                f"Oggi il presidio e su {label}. {activity_blueprint['note']}"
             )
         return (
-            f'Attivita pianificata "{title}" nella fase "{task_blueprint["name"]}". Prima della partenza vanno confermati '
-            f'{label}. {activity_blueprint["note"]}'
+            "Attivita pianificata. Prima della partenza vanno confermati "
+            f"{label}. {activity_blueprint['note']}"
         )
 
     def create_standard_thread(self, post: ProjectPost, *, lead_code: str, family: str, note: str) -> None:
         label = FAMILY_LABELS[family]
+        context = THREAD_COMMUNICATIONS[family]
         day = post.published_date.date()
         first = self.create_comment(
             post=post,
@@ -1029,41 +1640,171 @@ class Seeder:
             when=aware(day, 11, 20),
             text=f"Traccio il passaggio nel coordinamento di commessa. Questo thread resta il riferimento su {label}.",
         )
+        checkpoint_attachment = None
+        if post.activity_id is None:
+            checkpoint_attachment = {
+                "name": f"memo-coordinamento-{family}.pdf",
+                "title": f"Memo coordinamento {label}",
+                "lines": [
+                    f"Thread collegato alla fase: {post.task.name if post.task else self.project.name}.",
+                    context["checkpoint"],
+                    context["decision"],
+                    context["next_action"],
+                ],
+            }
+        checkpoint = self.create_comment(
+            post=post,
+            author_code=context["watcher"],
+            when=aware(day, 12, 15),
+            text=f'@{self.profiles[context["field"]].member_name} {context["checkpoint"]}',
+            attachment=checkpoint_attachment,
+        )
+        self.create_comment(
+            post=post,
+            author_code=context["stakeholder"],
+            when=aware(day, 14, 5),
+            text=f'@{self.profiles[lead_code].member_name} {context["decision"]}',
+            parent=checkpoint,
+        )
+        field_follow_up = self.create_comment(
+            post=post,
+            author_code=context["field"],
+            when=aware(day, 16, 30),
+            text=f'@{self.profiles[context["watcher"]].member_name} {context["next_action"]}',
+        )
+        if post.activity_id:
+            if post.activity.status == TaskActivityStatus.COMPLETED:
+                state_text = "La lavorazione e chiusa: tengo questo thread come evidenza finale e non apro ulteriori azioni."
+            elif post.activity.status == TaskActivityStatus.PROGRESS:
+                state_text = "La lavorazione resta aperta: entro fine giornata servono avanzamento reale, blocchi e prossima squadra."
+            else:
+                state_text = "La lavorazione non e partita: prima dell'avvio voglio conferma prerequisiti, materiali e interferenze."
+        elif post.task and post.task.progress >= 100:
+            state_text = "La fase e chiusa: questo thread serve come storico per verifiche, allegati e responsabilita."
+        else:
+            state_text = f"La fase e aperta al {post.task.progress if post.task else 0}%: aggiorniamo qui ogni scostamento fino alla chiusura."
+        daily_note = self.create_comment(
+            post=post,
+            author_code=lead_code,
+            when=aware(day, 17, 10),
+            text=f"Stato operativo: {state_text} Mantengo un solo punto di verita per squadra, DL e committenza.",
+            parent=field_follow_up,
+        )
+        self.create_comment(
+            post=post,
+            author_code="laura-ferretti",
+            when=aware(day, 17, 42),
+            text="Letto. Nel briefing operativo di domani riparto da questo thread: decisioni prese, evidenze allegate e prossime azioni.",
+            parent=daily_note,
+        )
 
     def create_issue_thread(self, post: ProjectPost, *, lead_code: str, family: str, issue: dict[str, Any]) -> None:
         label = FAMILY_LABELS[family]
+        context = THREAD_COMMUNICATIONS[family]
         day = post.published_date.date()
-        first = self.create_comment(
+        kickoff = self.create_comment(
             post=post,
             author_code="laura-ferretti",
             when=aware(day, 17, 35),
-            text=f'Ricevuto il punto aperto su {issue["title"].lower()}. Voglio impatto aggiornato sul cronoprogramma e una chiusura leggibile per {label}.',
+            text=(
+                f'Ricevuto. Voglio un quadro chiaro su {issue["title"].lower()} '
+                f'con impatto sul cronoprogramma e percorso di chiusura per {label}.'
+            ),
         )
         self.create_comment(
             post=post,
             author_code=lead_code,
             when=aware(day, 17, 58),
-            text="Confermato. Tengo la squadra sul fronte e torno qui con tempi, contromisure ed evidenze appena il punto e verificato in campo.",
-            parent=first,
+            text="Confermato. Faccio verifica in campo e torno qui con tempi, contromisure ed evidenze entro fine turno.",
+            parent=kickoff,
+        )
+        field_reply = self.create_comment(
+            post=post,
+            author_code=context["field"],
+            when=aware(day, 18, 8),
+            text=f'In campo ho questo quadro: {issue["impact"]} {context["next_action"]}',
+            parent=kickoff,
+        )
+        self.create_comment(
+            post=post,
+            author_code=context["watcher"],
+            when=aware(day, 18, 16),
+            text=f'Da sicurezza: {context["checkpoint"]} Finche non e chiarito, il fronte resta in presidio.',
+            parent=field_reply,
+        )
+        stakeholder_text = (
+            "Serve data certa di rientro e responsabilita chiare prima del report settimanale."
+            if issue["status"] == "open"
+            else "Ok per la chiusura: archiviamo e teniamo evidenza per il prossimo SAL."
+        )
+        self.create_comment(
+            post=post,
+            author_code=context["stakeholder"],
+            when=aware(day, 18, 24),
+            text=f'@{self.profiles[lead_code].member_name} {stakeholder_text}',
+            parent=field_reply,
         )
         review = self.create_comment(
             post=post,
             author_code="davide-sala",
-            when=aware(day, 18, 18),
-            text=f"Allego il documento di supporto e aggiorno il quadro tecnico. Il presidio resta su {label} fino a chiusura del punto.",
+            when=aware(day, 18, 38),
+            text=(
+                "Allego documento e quadro tecnico aggiornato. "
+                f"Il presidio resta su {label} fino a chiusura del punto."
+            ),
             attachment=issue["document"],
         )
+        self.create_comment(
+            post=post,
+            author_code=context["stakeholder"],
+            when=aware(day, 18, 44),
+            text="Documento ricevuto. Mi serve data di rientro e conferma impatto su SAL appena definito.",
+            parent=review,
+        )
         final_text = (
-            "Punto chiuso e confermato. Manteniamo il thread come storico della soluzione adottata."
+            "Chiusura confermata. Tengo questo thread come storico operativo per SAL e report."
             if issue["status"] != "open"
-            else "Perfetto, teniamo questo thread come riferimento unico fino alla chiusura operativa."
+            else "Ok, resto in ascolto. Prima di riaprire fronti o test serve conferma qui."
         )
         self.create_comment(
             post=post,
             author_code="serena-costantini",
-            when=aware(day, 18, 42),
+            when=aware(day, 18, 55),
             text=final_text,
             parent=review,
+        )
+        next_step = self.create_comment(
+            post=post,
+            author_code=lead_code,
+            when=aware(day, 19, 8),
+            text=f'Piano operativo: {issue["action"]} Scrivo qui con evidenze e conferme prima del prossimo coordinamento.',
+            parent=review,
+        )
+        self.create_comment(
+            post=post,
+            author_code="davide-sala",
+            when=aware(day, 19, 12),
+            text="Aggiorno tavole e pin se serve; appena chiudiamo il nodo allineo il Gantt di fase.",
+            parent=next_step,
+        )
+        self.create_comment(
+            post=post,
+            author_code=context["field"],
+            when=aware(day, 19, 18),
+            text="Confermo presidio in campo e coordinamento con impianti. Appena chiuso il nodo aggiorno con foto e misure.",
+            parent=next_step,
+        )
+        issue_summary = (
+            "Ok. Resta aperto e lo tengo in evidenza su homepage, feed e report DL finche non chiudiamo."
+            if issue["status"] == "open"
+            else "Ok. Lo considero chiuso e lo tengo come storico consultabile per SAL, ricerca e assistant."
+        )
+        self.create_comment(
+            post=post,
+            author_code="laura-ferretti",
+            when=aware(day, 19, 24),
+            text=issue_summary,
+            parent=next_step,
         )
 
     def seed_tasks(self) -> None:
@@ -1075,6 +1816,7 @@ class Seeder:
                 assigned_company=self.workspaces[task_blueprint["company"]],
                 date_start=self.shift_day(task_blueprint["start"]),
                 date_end=self.shift_day(task_blueprint["end"]),
+                date_completed=self.shift_day(task_blueprint["end"]) if int(task_blueprint["progress"]) >= 100 else None,
                 progress=task_blueprint["progress"],
                 status=1,
                 share_status=True,
@@ -1104,6 +1846,7 @@ class Seeder:
                     title=activity_blueprint["title"],
                     description=activity_blueprint["note"],
                     status=activity_blueprint["status"],
+                    progress=int(activity_blueprint.get("progress", ACTIVITY_STATUS_PROGRESS.get(activity_blueprint["status"], 0))),
                     datetime_start=aware(start_day, 7, 30),
                     datetime_end=aware(end_day, 17, 30),
                     alert=bool(activity_blueprint.get("issue") and activity_blueprint["issue"]["status"] == "open"),
@@ -1133,9 +1876,8 @@ class Seeder:
                         author_code=lead_code,
                         when=aware(report_day, 16, 10 + index),
                         text=(
-                            f'{"Segnalazione aperta" if issue["status"] == "open" else "Segnalazione risolta"} su "{activity_blueprint["title"]}" '
-                            f'nella fase "{task_blueprint["name"]}": {issue["title"]}. Impatto: {issue["impact"]} '
-                            f'{"Azione richiesta" if issue["status"] == "open" else "Chiusura"}: {issue["action"]}'
+                            f'{issue["title"]}. {issue["impact"]} '
+                            f'{"Prossimo passo" if issue["status"] == "open" else "Chiusura operativa"}: {issue["action"]}'
                         ),
                         task=task,
                         activity=activity,
@@ -1151,6 +1893,8 @@ class Seeder:
         self.ensure_companies()
         self.create_project()
         self.attach_members()
+        self.attach_workspace_superusers()
+        self.apply_demo_project_company_colors()
         self.create_documents()
         self.create_photos()
         self.seed_tasks()
@@ -1163,6 +1907,11 @@ class Seeder:
             "members": ProjectMember.objects.filter(project=self.project, status=ProjectMemberStatus.ACTIVE).count(),
             "tasks": ProjectTask.objects.filter(project=self.project).count(),
             "activities": ProjectActivity.objects.filter(task__project=self.project).count(),
+            "progress_percentage": seed_project_progress(),
+            "progress_formula": f"media aritmetica delle fasi: {sum(int(task['progress']) for task in TASKS)} / {len(TASKS)} = {seed_project_progress()}%",
+            "target_progress": DEMO_TARGET_PROGRESS,
+            "asset_source_root": str(DEMO_ASSET_SOURCE_ROOT),
+            "asset_source_version": DEMO_ASSET_VERSION,
             "documents": ProjectDocument.objects.filter(project=self.project).count(),
             "photos": ProjectPhoto.objects.filter(project=self.project).count(),
             "posts": ProjectPost.objects.filter(project=self.project).count(),
@@ -1191,6 +1940,8 @@ class Command(BaseCommand):
             f'Progetto #{summary["project_id"]}: {summary["project_name"]}\n'
             f'Profilo accesso locale: #{summary["viewer_profile_id"]} ({summary["viewer_email"]})\n'
             f'Membri: {summary["members"]} | Task: {summary["tasks"]} | Attivita: {summary["activities"]}\n'
+            f'Avanzamento demo: {summary["progress_percentage"]}% ({summary["progress_formula"]})\n'
+            f'Asset source: {summary["asset_source_version"]} -> {summary["asset_source_root"]}\n'
             f'Documenti: {summary["documents"]} | Foto: {summary["photos"]}\n'
             f'Post: {summary["posts"]} | Commenti: {summary["comments"]}\n'
             f'Issue aperte: {summary["open_issues"]} | Issue risolte: {summary["resolved_issues"]}'

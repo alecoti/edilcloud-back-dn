@@ -25,6 +25,7 @@ dependencies = [
   "python-dotenv>=1.0,<2",
   "openpyxl>=3.1,<4",
   "xlrd>=2.0,<3",
+  "Pillow>=11.2,<12",
   "jpype1>=1.6,<2",
   "mpxj>=16.1,<17",
   "gunicorn>=23,<24",

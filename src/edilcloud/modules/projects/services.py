@@ -21,6 +21,7 @@ from django.db.models import Avg, Case, Count, DateTimeField, F, Max, Prefetch, 
 from django.http import FileResponse
 from django.utils import timezone
 
+from edilcloud.modules.files.media_optimizer import optimize_media_for_storage
 from edilcloud.modules.projects.archive import mark_project_archived_if_due, sync_project_archive_schedule
 from edilcloud.modules.projects.emails import send_project_invite_code_email
 from edilcloud.modules.projects.gantt_import import (
@@ -4061,18 +4062,20 @@ def update_task_activity(
 def save_post_attachments(post: ProjectPost, files: list[object]) -> None:
     from edilcloud.modules.billing.services import assert_storage_quota_available
 
-    incoming_bytes = sum(int(getattr(uploaded_file, "size", 0) or 0) for uploaded_file in files)
+    prepared_files = [optimize_media_for_storage(uploaded_file) for uploaded_file in files]
+    incoming_bytes = sum(int(getattr(uploaded_file, "size", 0) or 0) for uploaded_file in prepared_files)
     assert_storage_quota_available(post.project.workspace, incoming_bytes=incoming_bytes)
-    for uploaded_file in files:
+    for uploaded_file in prepared_files:
         PostAttachment.objects.create(post=post, file=uploaded_file)
 
 
 def save_comment_attachments(comment: PostComment, files: list[object]) -> None:
     from edilcloud.modules.billing.services import assert_storage_quota_available
 
-    incoming_bytes = sum(int(getattr(uploaded_file, "size", 0) or 0) for uploaded_file in files)
+    prepared_files = [optimize_media_for_storage(uploaded_file) for uploaded_file in files]
+    incoming_bytes = sum(int(getattr(uploaded_file, "size", 0) or 0) for uploaded_file in prepared_files)
     assert_storage_quota_available(comment.post.project.workspace, incoming_bytes=incoming_bytes)
-    for uploaded_file in files:
+    for uploaded_file in prepared_files:
         CommentAttachment.objects.create(comment=comment, file=uploaded_file)
 
 
@@ -5304,9 +5307,10 @@ def upload_project_document(
         raise ValueError("Non hai permessi per caricare documenti in questo progetto.")
     from edilcloud.modules.billing.services import assert_storage_quota_available
 
+    prepared_file = optimize_media_for_storage(uploaded_file)
     assert_storage_quota_available(
         project.workspace,
-        incoming_bytes=int(getattr(uploaded_file, "size", 0) or 0),
+        incoming_bytes=int(getattr(prepared_file, "size", 0) or 0),
     )
 
     folder = None
@@ -5331,9 +5335,9 @@ def upload_project_document(
     document = ProjectDocument.objects.create(
         project=project,
         folder=folder,
-        title=normalize_text(title) or Path(getattr(uploaded_file, "name", "") or "Documento").stem,
+        title=normalize_text(title) or Path(getattr(prepared_file, "name", "") or "Documento").stem,
         description=normalize_text(description),
-        document=uploaded_file,
+        document=prepared_file,
         is_public=bool(is_public),
     )
     emit_project_realtime_event(
@@ -5413,7 +5417,7 @@ def update_project_document(
                 raise ValueError("Cartella documento non valida.")
             document.folder = folder
     if uploaded_file is not None:
-        document.document = uploaded_file
+        document.document = optimize_media_for_storage(uploaded_file)
     document.save()
     emit_project_realtime_event(
         event_type="document.updated",

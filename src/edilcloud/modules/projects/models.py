@@ -67,6 +67,12 @@ class PostKind(models.TextChoices):
     DOCUMENTATION = "documentation", "Documentation"
 
 
+class DemoProjectSnapshotValidationStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    VALIDATED = "validated", "Validated"
+    INVALID = "invalid", "Invalid"
+
+
 class Project(TimestampedModel):
     workspace = models.ForeignKey(
         Workspace,
@@ -99,12 +105,65 @@ class Project(TimestampedModel):
     last_export_at = models.DateTimeField(null=True, blank=True)
     owner_export_sent_at = models.DateTimeField(null=True, blank=True)
     logo = models.FileField(upload_to=project_logo_upload_to, blank=True)
+    is_demo_master = models.BooleanField(default=False)
+    demo_snapshot_version = models.CharField(max_length=64, blank=True)
 
     class Meta:
         ordering = ("-created_at", "-id")
 
     def __str__(self) -> str:
         return self.name
+
+
+class DemoProjectSnapshot(TimestampedModel):
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.SET_NULL,
+        related_name="demo_snapshots",
+        null=True,
+        blank=True,
+    )
+    created_by = models.ForeignKey(
+        Profile,
+        on_delete=models.SET_NULL,
+        related_name="created_demo_project_snapshots",
+        null=True,
+        blank=True,
+    )
+    version = models.CharField(max_length=64)
+    name = models.CharField(max_length=255)
+    business_date = models.DateField()
+    schema_version = models.PositiveSmallIntegerField(default=1)
+    seed_hash = models.CharField(max_length=64, blank=True)
+    asset_manifest_hash = models.CharField(max_length=64, blank=True)
+    payload_hash = models.CharField(max_length=64, blank=True)
+    validation_status = models.CharField(
+        max_length=16,
+        choices=DemoProjectSnapshotValidationStatus.choices,
+        default=DemoProjectSnapshotValidationStatus.DRAFT,
+    )
+    validated_at = models.DateTimeField(null=True, blank=True)
+    active_in_production = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+    export_relative_path = models.CharField(max_length=512, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("name", "version"),
+                name="unique_demo_project_snapshot_name_version",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("project", "active_in_production")),
+            models.Index(fields=("project", "validation_status")),
+            models.Index(fields=("version",)),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} [{self.version}]"
 
 
 class ProjectCompanyColor(TimestampedModel):

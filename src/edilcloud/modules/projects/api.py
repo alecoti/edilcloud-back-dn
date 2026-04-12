@@ -11,7 +11,16 @@ from ninja.responses import Status
 
 from edilcloud.modules.identity.auth import JWTAuth
 from edilcloud.modules.projects.archive import export_project_archive
+from edilcloud.modules.projects.demo_master_admin import (
+    create_demo_master_snapshot,
+    get_demo_master_admin_status,
+    get_demo_master_scenarios_report,
+    reset_demo_master_project,
+    run_demo_master_admin_scenario,
+    restore_demo_master_snapshot,
+)
 from edilcloud.modules.projects.schemas import (
+    CreateDemoMasterSnapshotRequestSchema,
     CreateProjectGanttLinkRequestSchema,
     CreateProjectFolderRequestSchema,
     CreateProjectRequestSchema,
@@ -28,6 +37,9 @@ from edilcloud.modules.projects.schemas import (
     ProjectRealtimeSessionSchema,
     ProjectSummarySchema,
     ProjectTeamMemberSchema,
+    ResetDemoMasterProjectRequestSchema,
+    RestoreDemoMasterSnapshotRequestSchema,
+    RunDemoMasterScenarioRequestSchema,
     UpdateCommentRequestSchema,
     UpdateProjectGanttLinkRequestSchema,
     UpdateProjectTeamMemberRequestSchema,
@@ -124,6 +136,18 @@ def current_profile(request):
         return get_current_profile(user=request.auth.user, claims=request.auth.claims)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
+
+
+def current_profile_or_none(request):
+    try:
+        return get_current_profile(user=request.auth.user, claims=request.auth.claims)
+    except ValueError:
+        return None
+
+
+def require_superuser(request) -> None:
+    if not getattr(request.auth.user, "is_superuser", False):
+        raise HttpError(403, "Area riservata ai superuser.")
 
 
 def request_locale(request) -> str:
@@ -303,6 +327,78 @@ def mark_feed_posts_seen_endpoint(request, payload: ProjectFeedBulkSeenRequestSc
         return mark_feed_posts_seen(
             profile=current_profile(request),
             post_ids=payload.post_ids,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.get("/demo-master/admin/status", response=dict[str, Any], auth=auth)
+def get_demo_master_admin_status_endpoint(request):
+    require_superuser(request)
+    try:
+        return get_demo_master_admin_status(user=request.auth.user)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.get("/demo-master/admin/scenarios", response=dict[str, Any], auth=auth)
+def get_demo_master_scenarios_report_endpoint(request):
+    require_superuser(request)
+    try:
+        return get_demo_master_scenarios_report(user=request.auth.user)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/demo-master/admin/scenarios/run", response=dict[str, Any], auth=auth)
+def run_demo_master_scenario_endpoint(request, payload: RunDemoMasterScenarioRequestSchema):
+    require_superuser(request)
+    try:
+        return run_demo_master_admin_scenario(
+            user=request.auth.user,
+            scenario_id=payload.scenario_id,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/demo-master/admin/snapshots", response=dict[str, Any], auth=auth)
+def create_demo_master_snapshot_endpoint(request, payload: CreateDemoMasterSnapshotRequestSchema):
+    require_superuser(request)
+    try:
+        return create_demo_master_snapshot(
+            user=request.auth.user,
+            created_by_profile=current_profile_or_none(request),
+            snapshot_version=payload.version,
+            business_date=payload.business_date,
+            notes=payload.notes,
+            validate=payload.validate,
+            activate=payload.activate,
+            write_json=payload.write_json,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/demo-master/admin/reset", response=dict[str, Any], auth=auth)
+def reset_demo_master_project_endpoint(request, payload: ResetDemoMasterProjectRequestSchema):
+    require_superuser(request)
+    try:
+        return reset_demo_master_project(
+            user=request.auth.user,
+            skip_active_snapshot_link=payload.skip_active_snapshot_link,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/demo-master/admin/restore", response=dict[str, Any], auth=auth)
+def restore_demo_master_snapshot_endpoint(request, payload: RestoreDemoMasterSnapshotRequestSchema):
+    require_superuser(request)
+    try:
+        return restore_demo_master_snapshot(
+            user=request.auth.user,
+            snapshot_version=payload.snapshot_version,
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc

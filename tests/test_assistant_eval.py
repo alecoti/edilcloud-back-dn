@@ -333,9 +333,9 @@ def test_local_retrieval_prioritizes_open_alert_register_for_alert_queries():
         author=profile,
         post_kind=PostKind.ISSUE,
         text=(
-            'Segnalazione aperta su "Montaggio campata A" nella fase "Ponteggi": '
-            "Accesso cestello interferito lato nord. Impatto: la manovra resta bloccata per parte del turno. "
-            "Azione richiesta: ripianificare il corridoio operativo e confermare il nuovo varco."
+            "Accesso cestello interferito lato nord. "
+            "la manovra resta bloccata per parte del turno. "
+            "Prossimo passo: ripianificare il corridoio operativo e confermare il nuovo varco."
         ),
         original_text="issue open 2",
         source_language="it",

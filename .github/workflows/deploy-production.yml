@@ -211,6 +211,12 @@ jobs:
             run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
           }
 
+          sync_demo_master() {
+            local slot="$1"
+            echo "Syncing Demo Master on slot ${slot}..."
+            compose_cmd exec -T "$(slot_web_service "${slot}")" python manage.py reset_demo_master_project
+          }
+
           slot_port() {
             case "$1" in
               blue) printf '%s\n' "${BACKEND_BLUE_PORT}" ;;
@@ -439,6 +445,15 @@ jobs:
           fi
 
           if ! healthcheck "$(slot_port "$(read_active_slot)")"; then
+            rollback "${ACTIVE_SLOT}" "${NEXT_SLOT}"
+            healthcheck "$(slot_port "${ACTIVE_SLOT}")" || true
+            cleanup
+            exit 1
+          fi
+
+          ACTIVE_RUNTIME_SLOT="$(read_active_slot)"
+          sync_demo_master "${ACTIVE_RUNTIME_SLOT}"
+          if ! healthcheck "$(slot_port "${ACTIVE_RUNTIME_SLOT}")"; then
             rollback "${ACTIVE_SLOT}" "${NEXT_SLOT}"
             healthcheck "$(slot_port "${ACTIVE_SLOT}")" || true
             cleanup

@@ -16,7 +16,6 @@ from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.files import File
-from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
@@ -24,6 +23,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone as django_timezone
 from django.utils.text import slugify
 
+from edilcloud.modules.files.media_optimizer import optimize_media_content, optimize_media_for_storage
 from edilcloud.modules.identity.models import (
     AccessSession,
     AuthProvider,
@@ -161,7 +161,7 @@ def store_onboarding_profile_photo(*, email: str, uploaded_file) -> tuple[str, s
     local_part = normalize_email(email).split("@", 1)[0] or "profile"
     path = f"onboarding/profile-photos/{local_part}-{uuid.uuid4().hex}{extension}"
     ensure_storage_parent_directory(path)
-    stored_path = default_storage.save(path, uploaded_file)
+    stored_path = default_storage.save(path, optimize_media_for_storage(uploaded_file))
     return stored_path, storage_public_url(stored_path)
 
 
@@ -187,7 +187,12 @@ def cache_remote_onboarding_picture(*, email: str, remote_url: str) -> tuple[str
     local_part = normalize_email(email).split("@", 1)[0] or "profile"
     path = f"onboarding/profile-photos/{local_part}-{uuid.uuid4().hex}{extension}"
     ensure_storage_parent_directory(path)
-    stored_path = default_storage.save(path, ContentFile(content))
+    optimized_file = optimize_media_content(
+        filename=f"{local_part}{extension}",
+        content=content,
+        content_type=content_type,
+    )
+    stored_path = default_storage.save(path, optimized_file)
     return stored_path, storage_public_url(stored_path)
 
 
