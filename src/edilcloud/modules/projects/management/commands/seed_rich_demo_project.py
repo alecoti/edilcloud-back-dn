@@ -1364,6 +1364,58 @@ class Seeder:
             )
             ProjectMember.objects.filter(pk=member.pk).update(created_at=membership_date, updated_at=membership_date, project_invitation_date=membership_date)
 
+    def ensure_project_workspace_superuser_profiles(self) -> None:
+        assert self.project is not None
+
+        superusers = (
+            self.user_model.objects.filter(is_superuser=True, is_active=True)
+            .exclude(email__iexact=self.viewer_email)
+            .order_by("id")
+        )
+        for user in superusers:
+            email = (user.email or "").strip().lower()
+            if not email:
+                continue
+
+            profile, _ = Profile.objects.get_or_create(
+                workspace=self.project.workspace,
+                user=user,
+                defaults={
+                    "email": user.email,
+                    "role": WorkspaceRole.OWNER,
+                    "first_name": user.first_name or "Super",
+                    "last_name": user.last_name or "Admin",
+                    "language": getattr(user, "language", "it") or "it",
+                    "position": "Superadmin piattaforma",
+                    "is_active": True,
+                },
+            )
+
+            updated = False
+            if profile.email != user.email:
+                profile.email = user.email
+                updated = True
+            if profile.role != WorkspaceRole.OWNER:
+                profile.role = WorkspaceRole.OWNER
+                updated = True
+            if not profile.first_name and user.first_name:
+                profile.first_name = user.first_name
+                updated = True
+            if not profile.last_name and user.last_name:
+                profile.last_name = user.last_name
+                updated = True
+            if not profile.position:
+                profile.position = "Superadmin piattaforma"
+                updated = True
+            if not profile.language:
+                profile.language = getattr(user, "language", "it") or "it"
+                updated = True
+            if not profile.is_active:
+                profile.is_active = True
+                updated = True
+            if updated:
+                profile.save()
+
     def attach_workspace_superusers(self) -> None:
         assert self.project is not None
         membership_date = aware(self.project.date_start - timedelta(days=10), 9, 5)
@@ -1893,6 +1945,7 @@ class Seeder:
         self.ensure_companies()
         self.create_project()
         self.attach_members()
+        self.ensure_project_workspace_superuser_profiles()
         self.attach_workspace_superusers()
         self.apply_demo_project_company_colors()
         self.create_documents()

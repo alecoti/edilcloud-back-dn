@@ -89,3 +89,44 @@ def test_demo_snapshot_payload_is_json_serializable(tmp_path, settings):
     serialized = json.dumps(payload)
 
     assert '"business_date": "2026-04-12"' in serialized
+
+
+@pytest.mark.django_db
+def test_seed_rich_demo_project_provisions_superuser_into_demo_workspace(tmp_path, settings):
+    settings.MEDIA_ROOT = Path(tmp_path) / "media"
+
+    user = get_user_model().objects.create_superuser(
+        email="a.coti1987@gmail.com",
+        password="demo1234!",
+        first_name="Ale",
+        last_name="Coti",
+        language="it",
+    )
+    personal_workspace = Workspace.objects.create(
+        name="Workspace Personale",
+        email="a.coti1987@gmail.com",
+        color="#0f172a",
+    )
+    Profile.objects.create(
+        workspace=personal_workspace,
+        user=user,
+        email=user.email,
+        role=WorkspaceRole.OWNER,
+        first_name="Ale",
+        last_name="Coti",
+        language="it",
+        position="Founder",
+    )
+
+    call_command("seed_rich_demo_project")
+
+    project = Project.objects.get(name="Residenza Parco Naviglio - Lotto A")
+    demo_profile = Profile.objects.get(workspace=project.workspace, user=user)
+
+    assert demo_profile.email == "a.coti1987@gmail.com"
+    assert demo_profile.role == WorkspaceRole.OWNER
+    assert ProjectMember.objects.filter(
+        project=project,
+        profile=demo_profile,
+        role=WorkspaceRole.OWNER,
+    ).exists()

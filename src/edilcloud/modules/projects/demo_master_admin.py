@@ -1440,6 +1440,9 @@ def restore_demo_master_snapshot(
     if project_created_at is not None:
         Project.objects.filter(pk=project.pk).update(created_at=project_created_at, updated_at=timezone.now())
 
+    seeder.project = project
+    seeder.ensure_project_workspace_superuser_profiles()
+
     profile_lookup = build_profile_lookup(
         profiles=list(
             Profile.objects.select_related("workspace", "user").filter(
@@ -1485,8 +1488,9 @@ def restore_demo_master_snapshot(
                 project_invitation_date=membership_default_date,
             )
     else:
-        seeder.project = project
         seeder.attach_members()
+
+    seeder.attach_workspace_superusers()
 
     folders: dict[str, ProjectFolder] = {}
     task_map: dict[int, ProjectTask] = {}

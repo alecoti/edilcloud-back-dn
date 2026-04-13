@@ -823,3 +823,22 @@ Verifiche:
 - `docker compose exec -T web python manage.py create_demo_master_snapshot --snapshot-version v2026.04-freeze01 --business-date 2026-04-12 --created-by-email laura.ferretti@ferretti-associati.it --notes "Freeze point production deploy 2026-04-12" --validate --activate --write-json`
 - `..\venv\Scripts\python.exe -m pytest -q tests/test_projects_demo_seed.py tests/test_media_optimizer.py`
 - `docker compose exec -T web python manage.py check`
+
+### 2026-04-13 - Superuser auto-access al workspace demo
+
+Aggiornati:
+
+- `edilcloud-back-dn/src/edilcloud/modules/projects/management/commands/seed_rich_demo_project.py`
+- `edilcloud-back-dn/src/edilcloud/modules/projects/demo_master_admin.py`
+- `edilcloud-back-dn/tests/test_projects_demo_seed.py`
+- `edilcloud-back-dn/docs/DEMO_TESTER_ROADMAP.md`
+
+Completato:
+
+- i superuser attivi vengono ora materializzati automaticamente anche nel workspace canonico del Demo Master;
+- durante seed e restore snapshot il superuser riceve un profilo attivo nel workspace del demo con ruolo `owner`;
+- il superuser viene poi aggiunto anche come `ProjectMember`, cosi' vede davvero il doppio workspace e non dipende dal viewer fittizio `demo.viewer@edilcloud.local`.
+
+Verifiche:
+
+- `..\venv\Scripts\python.exe -m pytest -q tests/test_projects_demo_seed.py`
