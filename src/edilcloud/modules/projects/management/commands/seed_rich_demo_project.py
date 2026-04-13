@@ -1927,7 +1927,7 @@ class Seeder:
         return items
 
     def optimized_attachment_file(self, attachment: dict[str, Any]):
-        if attachment["kind"] == "image":
+        if attachment.get("kind") == "image":
             stored_name, stored_bytes = resolve_visual_source(
                 attachment["name"],
                 attachment["title"],
