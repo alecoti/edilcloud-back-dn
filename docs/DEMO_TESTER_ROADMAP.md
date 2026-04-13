@@ -1,6 +1,6 @@
 # EdilCloud Demo Master e Admin Tester Roadmap
 
-Ultimo aggiornamento: 2026-04-12
+Ultimo aggiornamento: 2026-04-13
 
 Questo documento e' il punto vivo di lavoro per costruire:
 
@@ -30,6 +30,8 @@ Demo commerciale e tester tecnico devono usare la stessa verita' di prodotto, ma
 
 ## Log operativo
 
+- 2026-04-13: avviata la ricostruzione dei dialoghi Demo Master con blueprint conversazionali espliciti; rimossi i testi generati che ripetevano fase/attivita/squadra, aggiunte evidenze immagine per quasi ogni lavorazione e immagini di supporto per le segnalazioni.
+- 2026-04-13: aggiunti loghi e avatar reali al catalogo demo asset e abilitato supporto `.avif` per asset demo, upload immagine e classificazione allegati.
 - 2026-04-12: rivista la comunicazione delle segnalazioni critiche nel Demo Master per renderla piu naturale e dialogata; aumentati i commenti nei thread issue e aggiornati i testi smoke/test di supporto.
 - 2026-04-12: sbloccato nel frontend l'editing di post/commenti quando il backend espone `can_edit`, cosi owner/superadmin del demo possono modificare contenuti creati da altri autori senza cambiare la firma originale; aggiunto anche il supporto seed per avatar persone da `demo-assets/demo-master/v2026.04/avatars/`.
 

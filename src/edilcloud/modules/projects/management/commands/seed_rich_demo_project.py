@@ -644,6 +644,357 @@ def resolve_visual_source(
     )
 
 
+ROLE_AUTHOR_CODES = {
+    "dl": "laura-ferretti",
+    "bim": "davide-sala",
+    "safety": "serena-costantini",
+}
+
+
+STANDARD_DIALOGUES: dict[str, list[dict[str, Any]]] = {
+    "phase": [
+        {
+            "author": "dl",
+            "hour": 9,
+            "minute": 20,
+            "text": "Ricevuto. Per me qui contano tre cose: prossima scadenza, blocchi reali e decisioni da portare in riunione.",
+        },
+        {
+            "author": "lead",
+            "hour": 9,
+            "minute": 42,
+            "text": "Da parte nostra il quadro e chiaro. Tengo fuori dal rumore solo le criticita vere e aggiorno qui se cambia qualcosa.",
+            "parent": "previous",
+        },
+        {
+            "author": "watcher",
+            "hour": 10,
+            "minute": 15,
+            "text": "{checkpoint}",
+            "checkpoint_attachment": True,
+        },
+        {
+            "author": "stakeholder",
+            "hour": 11,
+            "minute": 5,
+            "text": "{decision}",
+            "parent": "previous",
+        },
+        {
+            "author": "field",
+            "hour": 15,
+            "minute": 35,
+            "text": "@{watcher_name} {next_action}",
+        },
+        {
+            "author": "bim",
+            "hour": 16,
+            "minute": 10,
+            "text": "Segno il punto anche su Gantt e tavole. Se arriva una foto utile la collego, cosi poi la ritroviamo in ricerca e assistant.",
+            "parent": "previous",
+        },
+        {
+            "author": "dl",
+            "hour": 17,
+            "minute": 25,
+            "text": "Perfetto. Domani in briefing guardiamo solo variazioni, allegati nuovi e decisioni ancora senza owner.",
+        },
+    ],
+    "completed": [
+        {
+            "author": "dl",
+            "hour": 9,
+            "minute": 30,
+            "text": "Bene, chiudiamola senza lasciare pezzi in sospeso. Mi basta evidenza chiara e nessun impatto sul passaggio successivo.",
+        },
+        {
+            "author": "field",
+            "hour": 9,
+            "minute": 48,
+            "text": "Sul posto e tutto rientrato. Le foto sono coerenti con quanto visto in campo; non ho rilievi da aggiungere.",
+            "parent": "previous",
+        },
+        {
+            "author": "lead",
+            "hour": 10,
+            "minute": 12,
+            "text": "Confermo chiusura operativa. Materiali e area lasciati in ordine, nessuna squadra ferma per questo punto.",
+        },
+        {
+            "author": "watcher",
+            "hour": 11,
+            "minute": 5,
+            "text": "{checkpoint}",
+            "parent": "previous",
+        },
+        {
+            "author": "stakeholder",
+            "hour": 14,
+            "minute": 20,
+            "text": "{decision}",
+        },
+        {
+            "author": "bim",
+            "hour": 16,
+            "minute": 5,
+            "text": "Ho allineato il fascicolo di commessa: evidenza fotografica, nota campo e stato lavorazione sono coerenti.",
+        },
+        {
+            "author": "dl",
+            "hour": 17,
+            "minute": 15,
+            "text": "Ok per archiviazione. Non apriamo altri commenti salvo varianti o contestazioni successive.",
+            "parent": "previous",
+        },
+    ],
+    "progress": [
+        {
+            "author": "dl",
+            "hour": 9,
+            "minute": 25,
+            "text": "Ho visto l'avanzamento. Mi serve una lettura semplice: cosa resta aperto oggi e cosa puo bloccare domani.",
+        },
+        {
+            "author": "lead",
+            "hour": 9,
+            "minute": 50,
+            "text": "Il fronte procede. Lascio in evidenza solo il punto operativo scritto nella nota, il resto non sta creando interferenze.",
+            "parent": "previous",
+        },
+        {
+            "author": "field",
+            "hour": 10,
+            "minute": 28,
+            "text": "@{watcher_name} dal campo confermo: {next_action}",
+        },
+        {
+            "author": "watcher",
+            "hour": 11,
+            "minute": 2,
+            "text": "{checkpoint}",
+            "parent": "previous",
+        },
+        {
+            "author": "stakeholder",
+            "hour": 14,
+            "minute": 18,
+            "text": "{decision}",
+        },
+        {
+            "author": "bim",
+            "hour": 15,
+            "minute": 45,
+            "text": "Tengo agganciati tavole, foto e avanzamento. Se cambia sequenza aggiorno anche il Gantt, non solo il thread.",
+        },
+        {
+            "author": "lead",
+            "hour": 17,
+            "minute": 18,
+            "text": "A fine turno rientro qui con stato reale, materiali usati e prossimo accesso necessario.",
+            "parent": "previous",
+        },
+        {
+            "author": "dl",
+            "hour": 17,
+            "minute": 44,
+            "text": "Va bene. Tengo il punto in osservazione finche non vedo evidenza di chiusura o nuovo blocco.",
+            "parent": "previous",
+        },
+    ],
+    "todo": [
+        {
+            "author": "dl",
+            "hour": 9,
+            "minute": 10,
+            "text": "Prima di partire non voglio sorprese: prerequisiti, materiali e interferenze devono essere scritti qui.",
+        },
+        {
+            "author": "lead",
+            "hour": 9,
+            "minute": 34,
+            "text": "Ricevuto. Entro oggi verifico disponibilita materiali e squadra, poi confermo se la data tiene.",
+            "parent": "previous",
+        },
+        {
+            "author": "watcher",
+            "hour": 10,
+            "minute": 22,
+            "text": "{checkpoint}",
+        },
+        {
+            "author": "stakeholder",
+            "hour": 11,
+            "minute": 0,
+            "text": "{decision}",
+            "parent": "previous",
+        },
+        {
+            "author": "field",
+            "hour": 15,
+            "minute": 20,
+            "text": "Mi prendo il giro in campo prima di confermare. Se manca qualcosa lo scrivo qui, senza passaggi a voce.",
+        },
+        {
+            "author": "bim",
+            "hour": 16,
+            "minute": 0,
+            "text": "Tengo la data provvisoria sul Gantt. La fisso solo dopo conferma materiali e nulla osta operativo.",
+            "parent": "previous",
+        },
+        {
+            "author": "dl",
+            "hour": 17,
+            "minute": 5,
+            "text": "Ok. Nessuna partenza senza evidenze minime: foto, documento o conferma del referente.",
+        },
+    ],
+}
+
+
+ISSUE_DIALOGUE: list[dict[str, Any]] = [
+    {
+        "author": "dl",
+        "hour": 17,
+        "minute": 25,
+        "text": "Questo punto va trattato come blocco operativo. Mi serve sapere cosa manca, chi lo chiude e quando posso liberare il fronte.",
+    },
+    {
+        "author": "lead",
+        "hour": 17,
+        "minute": 42,
+        "text": "Vado in verifica adesso. Rientro qui con misura, foto e proposta, cosi non resta una decisione a voce.",
+        "parent": "previous",
+    },
+    {
+        "author": "field",
+        "hour": 18,
+        "minute": 4,
+        "text": "Confermo dal campo: {issue_impact}",
+        "parent": "previous",
+    },
+    {
+        "author": "watcher",
+        "hour": 18,
+        "minute": 14,
+        "text": "{checkpoint}",
+        "parent": "previous",
+    },
+    {
+        "author": "stakeholder",
+        "hour": 18,
+        "minute": 26,
+        "text": "Per me va bene procedere solo se restano tracciati responsabilita, data di rientro e impatto su SAL.",
+    },
+    {
+        "author": "bim",
+        "hour": 18,
+        "minute": 40,
+        "text": "Ho caricato il documento tecnico e tengo pronto l'aggiornamento tavole/pin se la soluzione cambia geometria o sequenza.",
+        "attachment": "issue_document",
+    },
+    {
+        "author": "lead",
+        "hour": 19,
+        "minute": 6,
+        "text": "Piano operativo: {issue_action}",
+        "parent": "previous",
+    },
+    {
+        "author": "field",
+        "hour": 19,
+        "minute": 14,
+        "text": "Mi coordino con la squadra e mando evidenza appena il punto e fisicamente chiuso.",
+        "parent": "previous",
+    },
+    {
+        "author": "dl",
+        "hour": 19,
+        "minute": 24,
+        "text": "{issue_closeout}",
+        "parent": "previous",
+    },
+]
+
+
+def demo_image_attachment(name: str, title: str, subtitle: str, accent: str) -> dict[str, str]:
+    return {
+        "kind": "image",
+        "name": name,
+        "title": title,
+        "subtitle": subtitle,
+        "accent": accent,
+        "source_dir": "attachments",
+    }
+
+
+ACTIVITY_EVIDENCE_ASSETS: dict[str, list[dict[str, str]]] = {
+    "logistics": [
+        demo_image_attachment("accesso-pedonale-varco-nord.svg", "Varco nord separato", "Percorso mezzi e ingresso pedonale con segnaletica.", "#0f766e"),
+        demo_image_attachment("baraccamenti-linea-acqua.svg", "Baraccamenti lato nord", "Ufficio cantiere, spogliatoi e linea acqua provvisoria.", "#0f766e"),
+        demo_image_attachment("capisaldi-tracciamento-iniziale.svg", "Capisaldi iniziali", "Rilievo e tracciamento condivisi prima degli scavi.", "#0f766e"),
+        demo_image_attachment("briefing-pos-ingressi.svg", "Briefing POS imprese", "Ingresso imprese e presa visione procedure sicurezza.", "#0f766e"),
+    ],
+    "foundation": [
+        demo_image_attachment("scavo-fronte-nord.svg", "Scavo fronte nord", "Pulizia fronte e percorso camion libero.", "#1d4ed8"),
+        demo_image_attachment("platea-passaggi-box-03-04.svg", "Passaggi box 03-04", "Manicotti, ferri integrativi e verifica prima del getto.", "#1d4ed8"),
+        demo_image_attachment("getto-platea-maturazione.svg", "Getto platea", "Sequenza di getto e maturazione controllata.", "#1d4ed8"),
+    ],
+    "structures": [
+        demo_image_attachment("pilastri-solaio-terra.svg", "Pilastri e solaio terra", "Giunti e cavedi predisposti prima del getto.", "#1d4ed8"),
+        demo_image_attachment("vano-scala-ascensore-controllo.svg", "Vano scala e ascensore", "Controllo dimensionale prima del secondo getto.", "#1d4ed8"),
+        demo_image_attachment("solaio-piano-secondo-passaggi.svg", "Passaggi solaio secondo", "Aperture tecniche verificate con impianti.", "#1d4ed8"),
+        demo_image_attachment("cordoli-copertura-rilievo.svg", "Cordoli copertura", "Rilievo finale per passaggio a copertura e facciata.", "#1d4ed8"),
+    ],
+    "envelope": [
+        demo_image_attachment("tamponamenti-fronte-scala.svg", "Tamponamenti fronte scala", "Allineamento falsi telai e ritocchi lato scala.", "#0891b2"),
+        demo_image_attachment("risvolto-ovest-lucernario.svg", "Risvolto ovest lucernario", "Nodo guaina, sfiato e parapetto.", "#0891b2"),
+        demo_image_attachment("pluviali-corpo-scala-corte.svg", "Pluviali lato corte", "Raccordo finale sul corpo scala.", "#0891b2"),
+    ],
+    "facade": [
+        demo_image_attachment("mockup-facciata-sud-ovest.svg", "Mockup facciata sud-ovest", "Pannello campione, nodo serramento e lattoneria.", "#7c3aed"),
+        demo_image_attachment("foro-cucina-2b-misura.svg", "Misura foro cucina 2B", "Traverso superiore e controtelaio correttivo.", "#7c3aed"),
+        demo_image_attachment("posa-serramenti-lotto-a.svg", "Posa serramenti lotto A", "Sequenza posa per non fermare massetti e finiture.", "#7c3aed"),
+    ],
+    "mechanical": [
+        demo_image_attachment("colonne-scarico-prova-tenuta.svg", "Prova tenuta colonne", "Verifica prima della chiusura cavedi.", "#ea580c"),
+        demo_image_attachment("centrale-termica-precollaudo.svg", "Centrale termica", "Dorsali principali e area collettori in allestimento.", "#ea580c"),
+        demo_image_attachment("vmc-corridoio-nord-staffaggi.svg", "Staffaggi VMC corridoio nord", "Coordinamento con passerelle elettriche.", "#ea580c"),
+    ],
+    "electrical": [
+        demo_image_attachment("passerelle-interrato-antincendio.svg", "Passerelle interrato", "Coordinamento con rete antincendio.", "#0ea5e9"),
+        demo_image_attachment("quadro-q3-linee-speciali.svg", "Quadro Q3", "Linee speciali e dorsali forza motrice separate.", "#0ea5e9"),
+        demo_image_attachment("monitor-citofonico-hall.svg", "Monitor citofonico hall", "Posizione da confermare con committenza.", "#0ea5e9"),
+    ],
+    "interiors": [
+        demo_image_attachment("cavedi-foto-prima-chiusura.svg", "Cavedi prima chiusura", "Predisposizioni fotografate prima del cartongesso.", "#be123c"),
+        demo_image_attachment("picchetti-quote-massetti.svg", "Picchetti quote massetti", "Riferimenti impianti e quote finite da riallineare.", "#be123c"),
+        demo_image_attachment("bagno-campione-2b.svg", "Bagno campione 2B", "Rivestimenti e sanitari di riferimento.", "#be123c"),
+    ],
+    "finishes": [
+        demo_image_attachment("rivestimento-bagno-campione-tagli.svg", "Tagli bagno campione", "Fughe e tagli di riferimento per il lotto.", "#be123c"),
+        demo_image_attachment("campioni-tinte-parti-comuni.svg", "Campioni tinte parti comuni", "Tonalita finali da validare prima della seconda mano.", "#be123c"),
+        demo_image_attachment("porte-sanitari-lotto-campione.svg", "Porte e sanitari lotto campione", "Consegna materiali in due lotti.", "#be123c"),
+        demo_image_attachment("pulizie-check-alloggi.svg", "Check alloggi campione", "Punch list prima del walkthrough.", "#be123c"),
+    ],
+    "handover": [
+        demo_image_attachment("precollaudo-vmc-antincendio-prerequisiti.svg", "Prerequisiti pre-collaudo", "VMC, valvole e rete antincendio da chiudere.", "#64748b"),
+        demo_image_attachment("punch-list-parti-comuni-foto.svg", "Punch list parti comuni", "Responsabilita e tempi di chiusura.", "#64748b"),
+        demo_image_attachment("asbuilt-seriali-centrali.svg", "As-built e seriali", "Indice manuali e apparecchiature.", "#64748b"),
+    ],
+}
+
+
+ISSUE_EVIDENCE_ASSETS: dict[str, dict[str, str]] = {
+    "foundation": demo_image_attachment("interferenza-passaggi-box-03-04.svg", "Interferenza box 03-04", "Manicotto scarico e gabbia armatura prima della correzione.", "#1d4ed8"),
+    "envelope": demo_image_attachment("dettaglio-risvolto-ovest-sfiato.svg", "Dettaglio risvolto ovest", "Nodo sfiato lucernario prima della fascia aggiuntiva.", "#0891b2"),
+    "facade": demo_image_attachment("fuori-quota-foro-cucina-2b.svg", "Fuori quota foro cucina 2B", "Scostamento traverso superiore rilevato in campo.", "#7c3aed"),
+    "mechanical": demo_image_attachment("valvole-mancanti-centrale-termica.svg", "Valvole mancanti centrale", "Lotto valvole non disponibile per il pre-collaudo.", "#ea580c"),
+    "electrical": demo_image_attachment("q3-linee-speciali-prima-dopo.svg", "Quadro Q3 prima/dopo", "Riallineamento morsettiere e linee speciali.", "#0ea5e9"),
+    "interiors": demo_image_attachment("quote-massetti-1a-3c-rilievo.svg", "Rilievo quote massetti", "Scostamenti misurati negli alloggi 1A e 3C.", "#be123c"),
+    "handover": demo_image_attachment("prerequisiti-vmc-antincendio.svg", "Prerequisiti VMC e antincendio", "Punti aperti prima del calendario collaudi.", "#64748b"),
+}
+
+
 TASKS: list[dict[str, Any]] = [
     {
         "family": "logistics",
@@ -1562,6 +1913,112 @@ class Seeder:
             return ", ".join(names)
         return f"{names[0]}, {names[1]} e altre {len(names) - 2} persone"
 
+    def attachment_items(
+        self,
+        *,
+        attachment: dict[str, Any] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        if attachment:
+            items.append(attachment)
+        if attachments:
+            items.extend(attachments)
+        return items
+
+    def optimized_attachment_file(self, attachment: dict[str, Any]):
+        if attachment["kind"] == "image":
+            stored_name, stored_bytes = resolve_visual_source(
+                attachment["name"],
+                attachment["title"],
+                attachment["subtitle"],
+                attachment["accent"],
+                source_dir=attachment.get("source_dir"),
+                category=attachment.get("asset_category", "attachment"),
+            )
+        else:
+            stored_name, stored_bytes = resolve_document_source(attachment["name"], attachment["title"], attachment["lines"])
+        optimized_file = optimize_media_content(filename=stored_name, content=stored_bytes)
+        return Path(getattr(optimized_file, "name", "") or stored_name).name, optimized_file
+
+    def save_post_attachment(self, post: ProjectPost, attachment: dict[str, Any]) -> None:
+        upload = PostAttachment(post=post)
+        stored_name, optimized_file = self.optimized_attachment_file(attachment)
+        upload.file.save(stored_name, optimized_file, save=False)
+        upload.save()
+
+    def save_comment_attachment(self, comment: PostComment, attachment: dict[str, Any]) -> None:
+        upload = CommentAttachment(comment=comment)
+        stored_name, optimized_file = self.optimized_attachment_file(attachment)
+        upload.file.save(stored_name, optimized_file, save=False)
+        upload.save()
+
+    def activity_attachments(self, family: str, index: int, activity_blueprint: dict[str, Any]) -> list[dict[str, Any]]:
+        explicit_items = self.attachment_items(
+            attachment=activity_blueprint.get("attachment"),
+            attachments=activity_blueprint.get("attachments"),
+        )
+        if explicit_items:
+            return explicit_items
+        assets = ACTIVITY_EVIDENCE_ASSETS.get(family, [])
+        if index < len(assets):
+            return [assets[index]]
+        return []
+
+    def issue_attachments(self, family: str) -> list[dict[str, Any]]:
+        asset = ISSUE_EVIDENCE_ASSETS.get(family)
+        return [asset] if asset else []
+
+    def author_code_for_dialogue(self, role: str, *, lead_code: str, family: str) -> str:
+        context = THREAD_COMMUNICATIONS[family]
+        if role == "lead":
+            return lead_code
+        if role in {"watcher", "stakeholder", "field"}:
+            return context[role]
+        return ROLE_AUTHOR_CODES.get(role, lead_code)
+
+    def dialogue_values(self, *, lead_code: str, family: str, note: str = "", issue: dict[str, Any] | None = None) -> dict[str, str]:
+        context = THREAD_COMMUNICATIONS[family]
+        issue_status = (issue or {}).get("status", "")
+        issue_closeout = (
+            "Resta aperto. Lo tengo visibile in homepage, feed e report finche non arriva evidenza di chiusura."
+            if issue_status == "open"
+            else "Ok, chiudo la segnalazione e la tengo come storico per SAL, ricerca e assistant."
+        )
+        return {
+            "lead_name": self.profiles[lead_code].member_name,
+            "watcher_name": self.profiles[context["watcher"]].member_name,
+            "stakeholder_name": self.profiles[context["stakeholder"]].member_name,
+            "field_name": self.profiles[context["field"]].member_name,
+            "checkpoint": context["checkpoint"],
+            "decision": context["decision"],
+            "next_action": context["next_action"],
+            "note": note,
+            "issue_impact": (issue or {}).get("impact", ""),
+            "issue_action": (issue or {}).get("action", ""),
+            "issue_closeout": issue_closeout,
+        }
+
+    def render_dialogue_text(
+        self,
+        text: str,
+        *,
+        lead_code: str,
+        family: str,
+        note: str = "",
+        issue: dict[str, Any] | None = None,
+    ) -> str:
+        return text.format(**self.dialogue_values(lead_code=lead_code, family=family, note=note, issue=issue))
+
+    def standard_dialogue_key(self, post: ProjectPost) -> str:
+        if post.activity_id is None:
+            return "phase"
+        if post.activity.status == TaskActivityStatus.COMPLETED:
+            return "completed"
+        if post.activity.status == TaskActivityStatus.PROGRESS:
+            return "progress"
+        return "todo"
+
     def create_post(
         self,
         *,
@@ -1575,6 +2032,7 @@ class Seeder:
         is_public: bool = True,
         add_weather: bool = False,
         attachment: dict[str, Any] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> ProjectPost:
         assert self.project is not None
         post = ProjectPost.objects.create(
@@ -1592,22 +2050,8 @@ class Seeder:
             weather_snapshot=self.weather(when.date()) if add_weather else {},
         )
         ProjectPost.objects.filter(pk=post.pk).update(created_at=when, updated_at=when, published_date=when)
-        if attachment:
-            upload = PostAttachment(post=post)
-            if attachment["kind"] == "image":
-                stored_name, stored_bytes = resolve_visual_source(
-                    attachment["name"],
-                    attachment["title"],
-                    attachment["subtitle"],
-                    attachment["accent"],
-                    source_dir=attachment.get("source_dir"),
-                    category=attachment.get("asset_category", "attachment"),
-                )
-            else:
-                stored_name, stored_bytes = resolve_document_source(attachment["name"], attachment["title"], attachment["lines"])
-            optimized_file = optimize_media_content(filename=stored_name, content=stored_bytes)
-            upload.file.save(Path(getattr(optimized_file, "name", "") or stored_name).name, optimized_file, save=False)
-            upload.save()
+        for item in self.attachment_items(attachment=attachment, attachments=attachments):
+            self.save_post_attachment(post, item)
         post.refresh_from_db()
         return post
 
@@ -1620,6 +2064,7 @@ class Seeder:
         text: str,
         parent: PostComment | None = None,
         attachment: dict[str, Any] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> PostComment:
         comment = PostComment.objects.create(
             post=post,
@@ -1632,232 +2077,71 @@ class Seeder:
         )
         PostComment.objects.filter(pk=comment.pk).update(created_at=when, updated_at=when)
         ProjectPost.objects.filter(pk=post.pk).update(updated_at=when)
-        if attachment:
-            upload = CommentAttachment(comment=comment)
-            if attachment.get("kind") == "image":
-                stored_name, stored_bytes = resolve_visual_source(
-                    attachment["name"],
-                    attachment["title"],
-                    attachment["subtitle"],
-                    attachment["accent"],
-                    source_dir=attachment.get("source_dir"),
-                    category=attachment.get("asset_category", "attachment"),
-                )
-            else:
-                stored_name, stored_bytes = resolve_document_source(attachment["name"], attachment["title"], attachment["lines"])
-            optimized_file = optimize_media_content(filename=stored_name, content=stored_bytes)
-            upload.file.save(Path(getattr(optimized_file, "name", "") or stored_name).name, optimized_file, save=False)
-            upload.save()
+        for item in self.attachment_items(attachment=attachment, attachments=attachments):
+            self.save_comment_attachment(comment, item)
         comment.refresh_from_db()
         return comment
 
     def activity_text(self, task_blueprint: dict[str, Any], activity_blueprint: dict[str, Any], worker_names: str) -> str:
-        label = FAMILY_LABELS[task_blueprint["family"]]
-        title = activity_blueprint["title"]
+        del task_blueprint, worker_names
+        if activity_blueprint.get("post_text"):
+            return activity_blueprint["post_text"]
         if activity_blueprint["status"] == TaskActivityStatus.COMPLETED:
             return (
-                f"Chiusura confermata. Squadra in campo: {worker_names}. "
-                f"Confermate {label}. {activity_blueprint['note']}"
+                "Chiusura confermata dal campo. Evidenze caricate, area lasciata in ordine "
+                f"e nessun blocco residuo per il passaggio successivo. {activity_blueprint['note']}"
             )
         if activity_blueprint["status"] == TaskActivityStatus.PROGRESS:
             return (
-                f"Avanzamento in corso. Squadra in campo: {worker_names}. "
-                f"Oggi il presidio e su {label}. {activity_blueprint['note']}"
+                "Aggiornamento operativo: il fronte procede, ma tengo visibile il punto da presidiare "
+                f"prima di liberare la prossima lavorazione. {activity_blueprint['note']}"
             )
         return (
-            "Attivita pianificata. Prima della partenza vanno confermati "
-            f"{label}. {activity_blueprint['note']}"
+            "Partenza da confermare. Prima di dare via libera servono materiali disponibili, "
+            f"referente presente e interferenze risolte. {activity_blueprint['note']}"
         )
 
     def create_standard_thread(self, post: ProjectPost, *, lead_code: str, family: str, note: str) -> None:
-        label = FAMILY_LABELS[family]
         context = THREAD_COMMUNICATIONS[family]
         day = post.published_date.date()
-        first = self.create_comment(
-            post=post,
-            author_code="laura-ferretti",
-            when=aware(day, 9, 35),
-            text=f"Ricevuto aggiornamento. Voglio tenere presidio su {label} e chiudere bene il punto: {note}",
-        )
-        self.create_comment(
-            post=post,
-            author_code=lead_code,
-            when=aware(day, 10, 5),
-            text="Confermato. Allineo la squadra sul punto aperto e aggiorno il thread appena il fronte e stabilizzato.",
-            parent=first,
-        )
-        self.create_comment(
-            post=post,
-            author_code="davide-sala",
-            when=aware(day, 11, 20),
-            text=f"Traccio il passaggio nel coordinamento di commessa. Questo thread resta il riferimento su {label}.",
-        )
-        checkpoint_attachment = None
-        if post.activity_id is None:
-            checkpoint_attachment = {
-                "name": f"memo-coordinamento-{family}.pdf",
-                "title": f"Memo coordinamento {label}",
-                "lines": [
-                    f"Thread collegato alla fase: {post.task.name if post.task else self.project.name}.",
-                    context["checkpoint"],
-                    context["decision"],
-                    context["next_action"],
-                ],
-            }
-        checkpoint = self.create_comment(
-            post=post,
-            author_code=context["watcher"],
-            when=aware(day, 12, 15),
-            text=f'@{self.profiles[context["field"]].member_name} {context["checkpoint"]}',
-            attachment=checkpoint_attachment,
-        )
-        self.create_comment(
-            post=post,
-            author_code=context["stakeholder"],
-            when=aware(day, 14, 5),
-            text=f'@{self.profiles[lead_code].member_name} {context["decision"]}',
-            parent=checkpoint,
-        )
-        field_follow_up = self.create_comment(
-            post=post,
-            author_code=context["field"],
-            when=aware(day, 16, 30),
-            text=f'@{self.profiles[context["watcher"]].member_name} {context["next_action"]}',
-        )
-        if post.activity_id:
-            if post.activity.status == TaskActivityStatus.COMPLETED:
-                state_text = "La lavorazione e chiusa: tengo questo thread come evidenza finale e non apro ulteriori azioni."
-            elif post.activity.status == TaskActivityStatus.PROGRESS:
-                state_text = "La lavorazione resta aperta: entro fine giornata servono avanzamento reale, blocchi e prossima squadra."
-            else:
-                state_text = "La lavorazione non e partita: prima dell'avvio voglio conferma prerequisiti, materiali e interferenze."
-        elif post.task and post.task.progress >= 100:
-            state_text = "La fase e chiusa: questo thread serve come storico per verifiche, allegati e responsabilita."
-        else:
-            state_text = f"La fase e aperta al {post.task.progress if post.task else 0}%: aggiorniamo qui ogni scostamento fino alla chiusura."
-        daily_note = self.create_comment(
-            post=post,
-            author_code=lead_code,
-            when=aware(day, 17, 10),
-            text=f"Stato operativo: {state_text} Mantengo un solo punto di verita per squadra, DL e committenza.",
-            parent=field_follow_up,
-        )
-        self.create_comment(
-            post=post,
-            author_code="laura-ferretti",
-            when=aware(day, 17, 42),
-            text="Letto. Nel briefing operativo di domani riparto da questo thread: decisioni prese, evidenze allegate e prossime azioni.",
-            parent=daily_note,
-        )
+        previous: PostComment | None = None
+        for line in STANDARD_DIALOGUES[self.standard_dialogue_key(post)]:
+            attachment = None
+            if line.get("checkpoint_attachment") and post.activity_id is None:
+                attachment = {
+                    "name": f"memo-coordinamento-{family}.pdf",
+                    "title": "Memo coordinamento operativo",
+                    "lines": [
+                        "Decisioni da tenere in evidenza:",
+                        context["checkpoint"],
+                        context["decision"],
+                        context["next_action"],
+                    ],
+                }
+            comment = self.create_comment(
+                post=post,
+                author_code=self.author_code_for_dialogue(str(line["author"]), lead_code=lead_code, family=family),
+                when=aware(day, int(line["hour"]), int(line["minute"])),
+                text=self.render_dialogue_text(str(line["text"]), lead_code=lead_code, family=family, note=note),
+                parent=previous if line.get("parent") == "previous" else None,
+                attachment=attachment,
+            )
+            previous = comment
 
     def create_issue_thread(self, post: ProjectPost, *, lead_code: str, family: str, issue: dict[str, Any]) -> None:
-        label = FAMILY_LABELS[family]
-        context = THREAD_COMMUNICATIONS[family]
         day = post.published_date.date()
-        kickoff = self.create_comment(
-            post=post,
-            author_code="laura-ferretti",
-            when=aware(day, 17, 35),
-            text=(
-                f'Ricevuto. Voglio un quadro chiaro su {issue["title"].lower()} '
-                f'con impatto sul cronoprogramma e percorso di chiusura per {label}.'
-            ),
-        )
-        self.create_comment(
-            post=post,
-            author_code=lead_code,
-            when=aware(day, 17, 58),
-            text="Confermato. Faccio verifica in campo e torno qui con tempi, contromisure ed evidenze entro fine turno.",
-            parent=kickoff,
-        )
-        field_reply = self.create_comment(
-            post=post,
-            author_code=context["field"],
-            when=aware(day, 18, 8),
-            text=f'In campo ho questo quadro: {issue["impact"]} {context["next_action"]}',
-            parent=kickoff,
-        )
-        self.create_comment(
-            post=post,
-            author_code=context["watcher"],
-            when=aware(day, 18, 16),
-            text=f'Da sicurezza: {context["checkpoint"]} Finche non e chiarito, il fronte resta in presidio.',
-            parent=field_reply,
-        )
-        stakeholder_text = (
-            "Serve data certa di rientro e responsabilita chiare prima del report settimanale."
-            if issue["status"] == "open"
-            else "Ok per la chiusura: archiviamo e teniamo evidenza per il prossimo SAL."
-        )
-        self.create_comment(
-            post=post,
-            author_code=context["stakeholder"],
-            when=aware(day, 18, 24),
-            text=f'@{self.profiles[lead_code].member_name} {stakeholder_text}',
-            parent=field_reply,
-        )
-        review = self.create_comment(
-            post=post,
-            author_code="davide-sala",
-            when=aware(day, 18, 38),
-            text=(
-                "Allego documento e quadro tecnico aggiornato. "
-                f"Il presidio resta su {label} fino a chiusura del punto."
-            ),
-            attachment=issue["document"],
-        )
-        self.create_comment(
-            post=post,
-            author_code=context["stakeholder"],
-            when=aware(day, 18, 44),
-            text="Documento ricevuto. Mi serve data di rientro e conferma impatto su SAL appena definito.",
-            parent=review,
-        )
-        final_text = (
-            "Chiusura confermata. Tengo questo thread come storico operativo per SAL e report."
-            if issue["status"] != "open"
-            else "Ok, resto in ascolto. Prima di riaprire fronti o test serve conferma qui."
-        )
-        self.create_comment(
-            post=post,
-            author_code="serena-costantini",
-            when=aware(day, 18, 55),
-            text=final_text,
-            parent=review,
-        )
-        next_step = self.create_comment(
-            post=post,
-            author_code=lead_code,
-            when=aware(day, 19, 8),
-            text=f'Piano operativo: {issue["action"]} Scrivo qui con evidenze e conferme prima del prossimo coordinamento.',
-            parent=review,
-        )
-        self.create_comment(
-            post=post,
-            author_code="davide-sala",
-            when=aware(day, 19, 12),
-            text="Aggiorno tavole e pin se serve; appena chiudiamo il nodo allineo il Gantt di fase.",
-            parent=next_step,
-        )
-        self.create_comment(
-            post=post,
-            author_code=context["field"],
-            when=aware(day, 19, 18),
-            text="Confermo presidio in campo e coordinamento con impianti. Appena chiuso il nodo aggiorno con foto e misure.",
-            parent=next_step,
-        )
-        issue_summary = (
-            "Ok. Resta aperto e lo tengo in evidenza su homepage, feed e report DL finche non chiudiamo."
-            if issue["status"] == "open"
-            else "Ok. Lo considero chiuso e lo tengo come storico consultabile per SAL, ricerca e assistant."
-        )
-        self.create_comment(
-            post=post,
-            author_code="laura-ferretti",
-            when=aware(day, 19, 24),
-            text=issue_summary,
-            parent=next_step,
-        )
+        previous: PostComment | None = None
+        for line in ISSUE_DIALOGUE:
+            attachment = issue["document"] if line.get("attachment") == "issue_document" else None
+            comment = self.create_comment(
+                post=post,
+                author_code=self.author_code_for_dialogue(str(line["author"]), lead_code=lead_code, family=family),
+                when=aware(day, int(line["hour"]), int(line["minute"])),
+                text=self.render_dialogue_text(str(line["text"]), lead_code=lead_code, family=family, issue=issue),
+                parent=previous if line.get("parent") == "previous" else None,
+                attachment=attachment,
+            )
+            previous = comment
 
     def seed_tasks(self) -> None:
         assert self.project is not None
@@ -1882,7 +2166,7 @@ class Seeder:
             kickoff = self.create_post(
                 author_code=lead_code,
                 when=aware(task.date_start, 8, 30),
-                text=f'Coordinamento fase "{task_blueprint["name"]}": {task_blueprint["note"]}',
+                text=f"Apro il coordinamento operativo. Obiettivo: {task_blueprint['note']}",
                 task=task,
                 post_kind=PostKind.DOCUMENTATION,
                 alert=bool(task_blueprint.get("alert")),
@@ -1918,7 +2202,7 @@ class Seeder:
                     activity=activity,
                     post_kind=PostKind.DOCUMENTATION if activity_blueprint["status"] == TaskActivityStatus.COMPLETED else PostKind.WORK_PROGRESS,
                     add_weather=activity_blueprint["status"] != TaskActivityStatus.TODO,
-                    attachment=activity_blueprint.get("attachment"),
+                    attachments=self.activity_attachments(task_blueprint["family"], index, activity_blueprint),
                 )
                 self.create_standard_thread(post, lead_code=lead_code, family=task_blueprint["family"], note=activity_blueprint["note"])
 
@@ -1928,8 +2212,9 @@ class Seeder:
                         author_code=lead_code,
                         when=aware(report_day, 16, 10 + index),
                         text=(
-                            f'{issue["title"]}. {issue["impact"]} '
-                            f'{"Prossimo passo" if issue["status"] == "open" else "Chiusura operativa"}: {issue["action"]}'
+                            f'{"Blocco aperto" if issue["status"] == "open" else "Nodo chiuso"}. '
+                            f'{issue["impact"]} '
+                            f'{"Serve" if issue["status"] == "open" else "Chiusura"}: {issue["action"]}'
                         ),
                         task=task,
                         activity=activity,
@@ -1937,6 +2222,7 @@ class Seeder:
                         alert=issue["status"] == "open",
                         is_public=False,
                         add_weather=issue["status"] == "open",
+                        attachments=self.issue_attachments(task_blueprint["family"]),
                     )
                     self.create_issue_thread(issue_post, lead_code=lead_code, family=task_blueprint["family"], issue=issue)
 
