@@ -13,7 +13,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".bmp", ".tif", ".tiff"}
 VECTOR_IMAGE_EXTENSIONS = {".svg", ".svgz"}
 ANIMATED_IMAGE_EXTENSIONS = {".gif"}
 AUDIO_EXTENSIONS = {

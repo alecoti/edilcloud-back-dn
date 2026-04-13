@@ -22,7 +22,7 @@ from edilcloud.modules.workspaces.models import Profile, Workspace
 from edilcloud.modules.workspaces.services import file_url
 
 
-IMAGE_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp"}
+IMAGE_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp", ".avif"}
 
 
 def company_code_by_name() -> dict[str, str]:

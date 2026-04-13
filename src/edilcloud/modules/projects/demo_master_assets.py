@@ -8,10 +8,10 @@ BACKEND_ROOT = Path(__file__).resolve().parents[4]
 DEMO_ASSET_SOURCE_ROOT = BACKEND_ROOT / "demo-assets" / "demo-master" / DEMO_ASSET_VERSION
 
 DRAWING_FILENAME_PREFIXES = ("ar-", "st-", "fa-", "im-", "el-", "fn-")
-IMAGE_SOURCE_EXTENSIONS = (".svg", ".png", ".jpg", ".jpeg", ".webp")
+IMAGE_SOURCE_EXTENSIONS = (".svg", ".png", ".jpg", ".jpeg", ".webp", ".avif")
 DOCUMENT_SOURCE_EXTENSIONS = (".pdf", ".docx", ".xlsx", ".zip")
-LOGO_SOURCE_EXTENSIONS = (".svg", ".png", ".jpg", ".jpeg", ".webp")
-AVATAR_SOURCE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+LOGO_SOURCE_EXTENSIONS = (".svg", ".png", ".jpg", ".jpeg", ".webp", ".avif")
+AVATAR_SOURCE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".avif")
 
 
 def file_stem(value: str) -> str:
@@ -72,4 +72,3 @@ def find_demo_source_file(
         if candidate.exists():
             return candidate
     return None
-

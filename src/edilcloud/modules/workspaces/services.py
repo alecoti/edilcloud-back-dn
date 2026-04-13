@@ -443,7 +443,7 @@ def get_company_contacts(*, company_id: int) -> dict:
 
 def guess_extension_from_name(name: str | None, fallback: str = ".jpg") -> str:
     suffix = Path(name or "").suffix.lower()
-    if suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}:
+    if suffix in {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".svg"}:
         return ".jpg" if suffix == ".jpeg" else suffix
     return fallback
 

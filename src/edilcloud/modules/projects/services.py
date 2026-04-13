@@ -1202,7 +1202,7 @@ def attachment_size(file_field) -> int | None:
 
 def attachment_kind_from_extension(extension: str | None) -> str:
     normalized = (extension or "").lower()
-    if normalized in {"jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "tif", "tiff", "heic"}:
+    if normalized in {"jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "tif", "tiff", "heic"}:
         return "image"
     if normalized in {"mp4", "mov", "avi", "mkv", "webm", "m4v"}:
         return "video"

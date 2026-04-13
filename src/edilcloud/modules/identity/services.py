@@ -134,7 +134,7 @@ def guess_image_extension(*, filename: str = "", content_type: str = "") -> str:
     extension = guessed_from_type or Path(filename or "").suffix.lower() or ".jpg"
     if extension == ".jpe":
         extension = ".jpg"
-    if extension not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}:
+    if extension not in {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".svg"}:
         extension = ".jpg"
     return ".jpg" if extension == ".jpeg" else extension
 
