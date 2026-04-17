@@ -1,6 +1,7 @@
 import json
 from io import StringIO
 
+import httpx
 import pytest
 from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -22,6 +23,7 @@ from edilcloud.modules.assistant.services import (
     build_project_source_snapshot,
     get_or_create_project_assistant_state,
     sync_project_assistant_sources,
+    transcribe_project_audio,
 )
 from edilcloud.modules.projects.models import PostAttachment, ProjectMember, ProjectMemberStatus
 from edilcloud.modules.workspaces.models import WorkspaceRole
@@ -631,6 +633,89 @@ def test_project_assistant_stream_route_emits_native_sse_events(monkeypatch):
     assert "event: delta" in payload
     assert "event: done" in payload
     assert "ancoraggi nord verificati" in payload
+
+
+class _FakeOpenAIAudioTranscriptionResponse:
+    def __init__(self, *, status_code: int = 200, payload: dict | None = None):
+        self.status_code = status_code
+        self._payload = payload if payload is not None else {}
+
+    @property
+    def is_success(self):
+        return 200 <= self.status_code < 300
+
+    def json(self):
+        return self._payload
+
+
+@pytest.mark.django_db
+def test_project_audio_transcription_allows_empty_openai_text(monkeypatch, settings):
+    settings.OPENAI_API_KEY = "test-openai-key"
+    settings.OPENAI_AUDIO_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.audio.empty@example.com",
+        password="devpass123",
+        workspace_name="Assistant Audio Empty Workspace",
+    )
+    project, _task, _activity, _alert_post = create_project_fixture(profile)
+    captured: dict[str, object] = {}
+
+    def fake_post(_url, **kwargs):
+        captured.update(kwargs)
+        return _FakeOpenAIAudioTranscriptionResponse(
+            payload={"text": "", "language": "it"}
+        )
+
+    monkeypatch.setattr("edilcloud.modules.assistant.services.httpx.post", fake_post)
+
+    result = transcribe_project_audio(
+        profile=profile,
+        project_id=project.id,
+        uploaded_file=SimpleUploadedFile(
+            "nota-vocale.m4a",
+            b"fake-audio",
+            content_type="audio/mp4",
+        ),
+        language="it",
+        prompt="nota cantiere",
+    )
+
+    assert result == {
+        "text": "",
+        "language": "it",
+        "model": "gpt-4o-mini-transcribe",
+    }
+    assert captured["data"]["model"] == "gpt-4o-mini-transcribe"
+    assert captured["data"]["language"] == "it"
+    assert captured["data"]["prompt"] == "nota cantiere"
+
+
+@pytest.mark.django_db
+def test_project_audio_transcription_wraps_openai_http_errors(monkeypatch, settings):
+    settings.OPENAI_API_KEY = "test-openai-key"
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.audio.timeout@example.com",
+        password="devpass123",
+        workspace_name="Assistant Audio Timeout Workspace",
+    )
+    project, _task, _activity, _alert_post = create_project_fixture(profile)
+
+    def fake_post(_url, **_kwargs):
+        raise httpx.ReadTimeout("timeout test")
+
+    monkeypatch.setattr("edilcloud.modules.assistant.services.httpx.post", fake_post)
+
+    with pytest.raises(RuntimeError, match="OpenAI non raggiungibile"):
+        transcribe_project_audio(
+            profile=profile,
+            project_id=project.id,
+            uploaded_file=SimpleUploadedFile(
+                "nota-vocale.m4a",
+                b"fake-audio",
+                content_type="audio/mp4",
+            ),
+            language="it",
+        )
 
 
 @pytest.mark.django_db

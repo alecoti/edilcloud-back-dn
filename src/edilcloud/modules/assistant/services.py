@@ -16,7 +16,7 @@ from uuid import NAMESPACE_URL, uuid5
 import httpx
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Sum
 from django.db import connection, transaction
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
@@ -3859,7 +3859,7 @@ def transcribe_project_audio(
     language: str | None = None,
     prompt: str | None = None,
 ) -> dict[str, Any]:
-    get_project_with_team_context(profile, project_id)
+    get_project_with_team_context(profile=profile, project_id=project_id)
 
     api_key = getattr(settings, "OPENAI_API_KEY", "")
     if not api_key:
@@ -3883,47 +3883,63 @@ def transcribe_project_audio(
     if not audio_bytes:
         raise ValueError("File audio non valido.")
 
-    response = httpx.post(
-        f"{settings.OPENAI_API_BASE_URL}/audio/transcriptions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-        },
-        data={
-            "model": getattr(settings, "OPENAI_AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
-            "language": normalized_language,
-            **({"prompt": normalized_prompt} if normalized_prompt else {}),
-        },
-        files={
-            "file": (
-                file_name,
-                audio_bytes,
-                content_type,
-            )
-        },
-        timeout=120.0,
-    )
+    try:
+        response = httpx.post(
+            f"{settings.OPENAI_API_BASE_URL}/audio/transcriptions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+            },
+            data={
+                "model": getattr(
+                    settings,
+                    "OPENAI_AUDIO_TRANSCRIPTION_MODEL",
+                    "gpt-4o-mini-transcribe",
+                ),
+                "language": normalized_language,
+                **({"prompt": normalized_prompt} if normalized_prompt else {}),
+            },
+            files={
+                "file": (
+                    file_name,
+                    audio_bytes,
+                    content_type,
+                )
+            },
+            timeout=120.0,
+        )
+    except httpx.HTTPError as exc:
+        raise RuntimeError(
+            f"OpenAI non raggiungibile per la trascrizione audio: {exc}"
+        ) from exc
 
     payload: dict[str, Any] = {}
     try:
-        payload = response.json()
+        raw_payload = response.json()
     except Exception:
-        payload = {}
+        raw_payload = {}
+    if isinstance(raw_payload, dict):
+        payload = raw_payload
 
     if not response.is_success:
-        detail = payload.get("error", {}).get("message") if isinstance(payload.get("error"), dict) else None
+        detail = (
+            payload.get("error", {}).get("message")
+            if isinstance(payload.get("error"), dict)
+            else None
+        )
         raise RuntimeError(detail or f"OpenAI HTTP {response.status_code}")
 
     text = ""
     if isinstance(payload.get("text"), str):
         text = payload.get("text", "").strip()
 
-    if not text:
-        raise RuntimeError("OpenAI ha restituito una trascrizione vuota.")
-
     return {
         "text": text,
         "language": payload.get("language") or normalized_language,
-        "model": getattr(settings, "OPENAI_AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
+        "model": getattr(
+            settings,
+            "OPENAI_AUDIO_TRANSCRIPTION_MODEL",
+            "gpt-4o-mini-transcribe",
+        ),
     }
 
 
