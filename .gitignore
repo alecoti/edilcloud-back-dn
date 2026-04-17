@@ -32,6 +32,12 @@ edilcloud-back-dn-manual-*.tar.gz
 .env.production
 .deploy.production
 
+# Local Firebase/Admin credentials
+firebase-service-account*.json
+firebase-admin*.json
+*-firebase-adminsdk-*.json
+service-account*.json
+
 # IDE
 .idea/
 .vscode/

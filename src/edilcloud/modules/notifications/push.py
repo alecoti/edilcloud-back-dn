@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import datetime
 from datetime import timedelta
+from datetime import timezone as datetime_timezone
 from pathlib import Path
 
 import httpx
@@ -92,7 +93,7 @@ def _cached_access_token() -> str | None:
     except ValueError:
         return None
     if timezone.is_naive(expires_at):
-        expires_at = timezone.make_aware(expires_at, timezone.utc)
+        expires_at = timezone.make_aware(expires_at, datetime_timezone.utc)
     if expires_at <= timezone.now() + timedelta(seconds=30):
         return None
     return token
@@ -118,7 +119,7 @@ def _issue_access_token(service_account_info: dict) -> str:
         expires_at = timezone.now() + timedelta(seconds=timeout)
     else:
         if timezone.is_naive(expiry):
-            expiry = timezone.make_aware(expiry, timezone.utc)
+            expiry = timezone.make_aware(expiry, datetime_timezone.utc)
         timeout = max(60, int((expiry - timezone.now()).total_seconds()) - 60)
         expires_at = expiry
 
