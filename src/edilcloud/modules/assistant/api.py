@@ -19,6 +19,7 @@ from edilcloud.modules.assistant.services import (
     get_project_drafting_context,
     iter_project_assistant_events,
     prepare_project_assistant_run,
+    transcribe_project_audio,
     update_project_assistant_settings,
 )
 from edilcloud.modules.identity.auth import JWTAuth
@@ -231,6 +232,26 @@ def stream_project_assistant_endpoint(
     response["Connection"] = "keep-alive"
     response["X-Accel-Buffering"] = "no"
     return response
+
+
+@router.post("/{project_id}/assistant/audio-transcription", response=dict[str, Any], auth=auth)
+def transcribe_project_audio_endpoint(request, project_id: int):
+    uploaded_file = request.FILES.get("file")
+    if uploaded_file is None:
+        raise HttpError(400, "File audio mancante.")
+
+    try:
+        return transcribe_project_audio(
+            profile=current_profile(request),
+            project_id=project_id,
+            uploaded_file=uploaded_file,
+            language=request.POST.get("language"),
+            prompt=request.POST.get("prompt"),
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HttpError(503, str(exc)) from exc
 
 
 @router.post("/{project_id}/assistant/drafting-context", response=dict[str, Any], auth=auth)

@@ -22,6 +22,16 @@ from django.http import FileResponse
 from django.utils import timezone
 
 from edilcloud.modules.files.media_optimizer import optimize_media_for_storage
+from edilcloud.modules.notifications.catalog import (
+    NotificationBlueprint,
+    build_project_activity_notification,
+    build_project_document_notification,
+    build_project_folder_notification,
+    build_project_invite_notification,
+    build_project_member_added_notification,
+    build_project_task_notification,
+    build_project_thread_notification,
+)
 from edilcloud.modules.projects.archive import mark_project_archived_if_due, sync_project_archive_schedule
 from edilcloud.modules.projects.emails import send_project_invite_code_email
 from edilcloud.modules.projects.gantt_import import (
@@ -70,6 +80,7 @@ from edilcloud.modules.workspaces.services import (
     get_role_priority,
     get_user_profile,
     normalize_role,
+    resolve_existing_profile_for_email,
     select_default_profile,
 )
 from edilcloud.platform.geocoding import geocode_address
@@ -1608,27 +1619,6 @@ def notification_excerpt(value: str | None, *, limit: int = 140) -> str:
     return text if len(text) <= limit else f"{text[: limit - 1].rstrip()}…"
 
 
-def build_thread_location_label(post: ProjectPost) -> str:
-    if post.activity_id and post.activity:
-        return post.activity.title or post.task.name or post.project.name
-    if post.task_id and post.task:
-        return post.task.name or post.project.name
-    return post.project.name
-
-
-def build_document_location_label(document: ProjectDocument) -> str:
-    folder_path = document.folder.path if document.folder_id and document.folder else ""
-    if folder_path:
-        return f"Cartella {folder_path}"
-    return f"Progetto {document.project.name}"
-
-
-def build_folder_location_label(folder: ProjectFolder) -> str:
-    if folder.parent_id and folder.parent:
-        return f"In {folder.parent.path}"
-    return f"Progetto {folder.project.name}"
-
-
 def project_notification_recipients(
     project: Project,
     *,
@@ -1746,6 +1736,31 @@ def create_project_notification(
     )
 
 
+def create_project_notification_from_blueprint(
+    *,
+    recipient_profile: Profile,
+    actor_profile: Profile | None,
+    blueprint: NotificationBlueprint,
+) -> None:
+    create_project_notification(
+        recipient_profile=recipient_profile,
+        actor_profile=actor_profile,
+        kind=blueprint.kind,
+        subject=blueprint.subject,
+        body=blueprint.body,
+        content_type=blueprint.content_type,
+        object_id=blueprint.object_id,
+        project_id=blueprint.project_id,
+        task_id=blueprint.task_id,
+        activity_id=blueprint.activity_id,
+        post_id=blueprint.post_id,
+        comment_id=blueprint.comment_id,
+        folder_id=blueprint.folder_id,
+        document_id=blueprint.document_id,
+        data=blueprint.data,
+    )
+
+
 def notify_profiles(
     *,
     recipients: list[Profile],
@@ -1763,7 +1778,7 @@ def notify_profiles(
     folder_id: int | None = None,
     document_id: int | None = None,
     data: dict | None = None,
-) -> None:
+    ) -> None:
     seen_profile_ids: set[int] = set()
     for recipient in recipients:
         if recipient.id in seen_profile_ids:
@@ -1785,6 +1800,24 @@ def notify_profiles(
             folder_id=folder_id,
             document_id=document_id,
             data=data,
+        )
+
+
+def notify_profiles_with_blueprint(
+    *,
+    recipients: list[Profile],
+    actor_profile: Profile | None,
+    blueprint: NotificationBlueprint,
+) -> None:
+    seen_profile_ids: set[int] = set()
+    for recipient in recipients:
+        if recipient.id in seen_profile_ids:
+            continue
+        seen_profile_ids.add(recipient.id)
+        create_project_notification_from_blueprint(
+            recipient_profile=recipient,
+            actor_profile=actor_profile,
+            blueprint=blueprint,
         )
 
 
@@ -3329,22 +3362,16 @@ def add_project_team_member(
             "member_company_name": target_profile.workspace.name if target_profile.workspace_id else None,
         },
     )
-    create_project_notification(
+    create_project_notification_from_blueprint(
         recipient_profile=target_profile,
         actor_profile=profile,
-        kind="project.member.added",
-        subject=f"{profile_display_name(profile)} ti ha aggiunto al cantiere {project.name}",
-        body=f"Ruolo nel progetto: {project_role_label(project_member_effective_role(member))}.",
-        content_type="team",
-        object_id=member.id,
-        project_id=project.id,
-        data={
-            "category": "team",
-            "action": "added",
-            "target_tab": "team",
-            "project_name": project.name,
-            "member_role": project_member_effective_role(member),
-        },
+        blueprint=build_project_member_added_notification(
+            project=project,
+            member=member,
+            target_profile=target_profile,
+            actor_profile=profile,
+            role_label=project_role_label(project_member_effective_role(member)),
+        ),
     )
     return serialize_project_team_member(
         member,
@@ -3470,6 +3497,19 @@ def generate_project_invite(
             "expires_at": invite.expires_at.isoformat() if invite.expires_at else None,
         },
     )
+
+    recipient_profile = resolve_existing_profile_for_email(invite.email)
+    if recipient_profile is not None and recipient_profile.id != profile.id:
+        blueprint = build_project_invite_notification(
+            invite=invite,
+            inviter_profile=profile,
+        )
+        create_project_notification_from_blueprint(
+            recipient_profile=recipient_profile,
+            actor_profile=profile,
+            blueprint=blueprint,
+        )
+
     return {
         "id": invite.id,
         "email": invite.email,
@@ -3552,42 +3592,26 @@ def create_project_task(
         recipient for recipient in recipients if recipient.id not in {item.id for item in assigned_recipients}
     ]
     if assigned_recipients:
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=assigned_recipients,
             actor_profile=profile,
-            kind="project.task.assigned",
-            subject=f"Nuovo task per la tua azienda: {task.name}",
-            body=f"{project.name} · da {date_start.isoformat()} a {date_end.isoformat()}",
-            content_type="task",
-            object_id=task.id,
-            project_id=project.id,
-            task_id=task.id,
-            data={
-                "category": "task",
-                "action": "assigned",
-                "target_tab": "task",
-                "task_name": task.name,
-                "project_name": project.name,
-            },
+            blueprint=build_project_task_notification(
+                task=task,
+                actor_profile=profile,
+                action="created",
+                audience="assigned",
+            ),
         )
     if generic_recipients:
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=generic_recipients,
             actor_profile=profile,
-            kind="project.task.created",
-            subject=f"{profile_display_name(profile)} ha creato il task {task.name}",
-            body=f"{project.name} · avanzamento iniziale {task.progress}%",
-            content_type="task",
-            object_id=task.id,
-            project_id=project.id,
-            task_id=task.id,
-            data={
-                "category": "task",
-                "action": "created",
-                "target_tab": "task",
-                "task_name": task.name,
-                "project_name": project.name,
-            },
+            blueprint=build_project_task_notification(
+                task=task,
+                actor_profile=profile,
+                action="created",
+                audience="generic",
+            ),
         )
     return serialize_task(
         task,
@@ -3710,42 +3734,26 @@ def update_project_task(
         recipient for recipient in recipients if recipient.id not in {item.id for item in newly_assigned_recipients}
     ]
     if newly_assigned_recipients:
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=newly_assigned_recipients,
             actor_profile=profile,
-            kind="project.task.assigned",
-            subject=f"{profile_display_name(profile)} ha assegnato {task.name} alla tua azienda",
-            body=f"{project.name} · stato avanzamento {task.progress}%",
-            content_type="task",
-            object_id=task.id,
-            project_id=project.id,
-            task_id=task.id,
-            data={
-                "category": "task",
-                "action": "assigned",
-                "target_tab": "task",
-                "task_name": task.name,
-                "project_name": project.name,
-            },
+            blueprint=build_project_task_notification(
+                task=task,
+                actor_profile=profile,
+                action="updated",
+                audience="assigned",
+            ),
         )
     if generic_recipients:
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=generic_recipients,
             actor_profile=profile,
-            kind="project.task.updated",
-            subject=f"{profile_display_name(profile)} ha aggiornato il task {task.name}",
-            body=f"{project.name} · avanzamento {task.progress}%{' · in alert' if task.alert else ''}",
-            content_type="task",
-            object_id=task.id,
-            project_id=project.id,
-            task_id=task.id,
-            data={
-                "category": "task",
-                "action": "updated",
-                "target_tab": "task",
-                "task_name": task.name,
-                "project_name": project.name,
-            },
+            blueprint=build_project_task_notification(
+                task=task,
+                actor_profile=profile,
+                action="updated",
+                audience="generic",
+            ),
         )
     return serialize_task(
         task,
@@ -3841,46 +3849,26 @@ def create_task_activity(
         recipient for recipient in recipients if recipient.id not in {item.id for item in assigned_recipients}
     ]
     if assigned_recipients:
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=assigned_recipients,
             actor_profile=profile,
-            kind="project.activity.assigned",
-            subject=f"{profile_display_name(profile)} ti ha assegnato l'attivita {activity.title}",
-            body=f"{task.name} · {activity.status}",
-            content_type="activity",
-            object_id=activity.id,
-            project_id=task.project_id,
-            task_id=task.id,
-            activity_id=activity.id,
-            data={
-                "category": "activity",
-                "action": "assigned",
-                "target_tab": "task",
-                "task_name": task.name,
-                "activity_title": activity.title,
-                "project_name": task.project.name,
-            },
+            blueprint=build_project_activity_notification(
+                activity=activity,
+                actor_profile=profile,
+                action="created",
+                audience="assigned",
+            ),
         )
     if generic_recipients:
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=generic_recipients,
             actor_profile=profile,
-            kind="project.activity.created",
-            subject=f"{profile_display_name(profile)} ha creato l'attivita {activity.title}",
-            body=f"{task.name} · stato {activity.status}",
-            content_type="activity",
-            object_id=activity.id,
-            project_id=task.project_id,
-            task_id=task.id,
-            activity_id=activity.id,
-            data={
-                "category": "activity",
-                "action": "created",
-                "target_tab": "task",
-                "task_name": task.name,
-                "activity_title": activity.title,
-                "project_name": task.project.name,
-            },
+            blueprint=build_project_activity_notification(
+                activity=activity,
+                actor_profile=profile,
+                action="created",
+                audience="generic",
+            ),
         )
     company_colors_by_workspace_id = project_company_colors_for_context(
         project=task.project,
@@ -4005,46 +3993,26 @@ def update_task_activity(
         recipient for recipient in recipients if recipient.id not in {item.id for item in assigned_recipients}
     ]
     if assigned_recipients:
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=assigned_recipients,
             actor_profile=profile,
-            kind="project.activity.assigned",
-            subject=f"{profile_display_name(profile)} ti ha coinvolto nell'attivita {activity.title}",
-            body=f"{activity.task.name} · stato {activity.status}",
-            content_type="activity",
-            object_id=activity.id,
-            project_id=activity.task.project_id,
-            task_id=activity.task_id,
-            activity_id=activity.id,
-            data={
-                "category": "activity",
-                "action": "assigned",
-                "target_tab": "task",
-                "task_name": activity.task.name,
-                "activity_title": activity.title,
-                "project_name": activity.task.project.name,
-            },
+            blueprint=build_project_activity_notification(
+                activity=activity,
+                actor_profile=profile,
+                action="updated",
+                audience="assigned",
+            ),
         )
     if generic_recipients:
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=generic_recipients,
             actor_profile=profile,
-            kind="project.activity.updated",
-            subject=f"{profile_display_name(profile)} ha aggiornato l'attivita {activity.title}",
-            body=f"{activity.task.name} · stato {activity.status}{' · in alert' if activity.alert else ''}",
-            content_type="activity",
-            object_id=activity.id,
-            project_id=activity.task.project_id,
-            task_id=activity.task_id,
-            activity_id=activity.id,
-            data={
-                "category": "activity",
-                "action": "updated",
-                "target_tab": "task",
-                "task_name": activity.task.name,
-                "activity_title": activity.title,
-                "project_name": activity.task.project.name,
-            },
+            blueprint=build_project_activity_notification(
+                activity=activity,
+                actor_profile=profile,
+                action="updated",
+                audience="generic",
+            ),
         )
     company_colors_by_workspace_id = project_company_colors_for_context(
         project=activity.task.project,
@@ -4125,31 +4093,6 @@ def get_comment_attachment_file_response(*, profile: Profile, attachment_id: int
     return build_inline_file_response(attachment.file, filename=file_name)
 
 
-def build_thread_notification_data(
-    *,
-    category: str,
-    action: str,
-    post: ProjectPost,
-    comment_id: int | None = None,
-    extra: dict | None = None,
-) -> dict:
-    data = {
-        "category": category,
-        "action": action,
-        "target_tab": "task",
-        "project_name": post.project.name,
-        "task_name": post.task.name if post.task_id and post.task else None,
-        "activity_title": post.activity.title if post.activity_id and post.activity else None,
-        "location_label": build_thread_location_label(post),
-        "snippet": notification_excerpt(post.text),
-    }
-    if comment_id is not None:
-        data["comment_id"] = comment_id
-    if extra:
-        data.update(extra)
-    return data
-
-
 def notify_post_created(
     *,
     actor_profile: Profile,
@@ -4157,7 +4100,6 @@ def notify_post_created(
     mentioned_profiles: list[Profile],
 ) -> None:
     actor_name = profile_display_name(actor_profile)
-    location_label = build_thread_location_label(post)
     post_excerpt = notification_excerpt(post.text)
     mentioned_profile_ids = {profile.id for profile in mentioned_profiles}
 
@@ -4167,23 +4109,17 @@ def notify_post_created(
         if post.alert or post.post_kind == PostKind.ISSUE:
             mention_kind = "project.mention.issue"
             mention_subject = f"{actor_name} ti ha menzionato in una segnalazione"
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=mentioned_profiles,
             actor_profile=actor_profile,
-            kind=mention_kind,
-            subject=mention_subject,
-            body=f"{location_label} · “{post_excerpt}”" if post_excerpt else location_label,
-            content_type="post",
-            object_id=post.id,
-            project_id=post.project_id,
-            task_id=post.task_id,
-            activity_id=post.activity_id,
-            post_id=post.id,
-            data=build_thread_notification_data(
+            blueprint=build_project_thread_notification(
+                kind=mention_kind,
+                subject=mention_subject,
+                actor_profile=actor_profile,
+                post=post,
                 category="mention",
                 action="created",
-                post=post,
-                extra={"snippet": post_excerpt},
+                snippet=post_excerpt,
             ),
         )
 
@@ -4202,23 +4138,17 @@ def notify_post_created(
         subject = f"{actor_name} ha aperto una segnalazione"
         category = "issue"
 
-    notify_profiles(
+    notify_profiles_with_blueprint(
         recipients=generic_recipients,
         actor_profile=actor_profile,
-        kind=kind,
-        subject=subject,
-        body=f"{location_label} · “{post_excerpt}”" if post_excerpt else location_label,
-        content_type="post",
-        object_id=post.id,
-        project_id=post.project_id,
-        task_id=post.task_id,
-        activity_id=post.activity_id,
-        post_id=post.id,
-        data=build_thread_notification_data(
+        blueprint=build_project_thread_notification(
+            kind=kind,
+            subject=subject,
+            actor_profile=actor_profile,
+            post=post,
             category=category,
             action="created",
-            post=post,
-            extra={"snippet": post_excerpt},
+            snippet=post_excerpt,
         ),
     )
 
@@ -4231,31 +4161,24 @@ def notify_comment_created(
     mentioned_profiles: list[Profile],
 ) -> None:
     actor_name = profile_display_name(actor_profile)
-    location_label = build_thread_location_label(post)
     comment_excerpt = notification_excerpt(comment.text)
     mentioned_profile_ids = {profile.id for profile in mentioned_profiles}
     already_notified = {actor_profile.id, *mentioned_profile_ids}
 
     if mentioned_profiles:
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=mentioned_profiles,
             actor_profile=actor_profile,
-            kind="project.mention.comment",
-            subject=f"{actor_name} ti ha menzionato in una risposta",
-            body=f"{location_label} · “{comment_excerpt}”" if comment_excerpt else location_label,
-            content_type="comment",
-            object_id=comment.id,
-            project_id=post.project_id,
-            task_id=post.task_id,
-            activity_id=post.activity_id,
-            post_id=post.id,
-            comment_id=comment.id,
-            data=build_thread_notification_data(
+            blueprint=build_project_thread_notification(
+                kind="project.mention.comment",
+                subject=f"{actor_name} ti ha menzionato in una risposta",
+                actor_profile=actor_profile,
+                post=post,
+                comment=comment,
                 category="mention",
                 action="created",
-                post=post,
-                comment_id=comment.id,
-                extra={"snippet": comment_excerpt},
+                snippet=comment_excerpt,
+                extra={"parent_id": comment.parent_id},
             ),
         )
 
@@ -4280,25 +4203,19 @@ def notify_comment_created(
         already_notified.add(post.author_id)
 
     for recipient, kind, subject in personalized_recipients:
-        create_project_notification(
+        create_project_notification_from_blueprint(
             recipient_profile=recipient,
             actor_profile=actor_profile,
-            kind=kind,
-            subject=subject,
-            body=f"{location_label} · “{comment_excerpt}”" if comment_excerpt else location_label,
-            content_type="comment",
-            object_id=comment.id,
-            project_id=post.project_id,
-            task_id=post.task_id,
-            activity_id=post.activity_id,
-            post_id=post.id,
-            comment_id=comment.id,
-            data=build_thread_notification_data(
+            blueprint=build_project_thread_notification(
+                kind=kind,
+                subject=subject,
+                actor_profile=actor_profile,
+                post=post,
+                comment=comment,
                 category="comment",
                 action="created",
-                post=post,
-                comment_id=comment.id,
-                extra={"snippet": comment_excerpt},
+                snippet=comment_excerpt,
+                extra={"parent_id": comment.parent_id},
             ),
         )
 
@@ -4307,25 +4224,19 @@ def notify_comment_created(
         exclude_profile_ids=already_notified,
     )
     if participant_recipients:
-        notify_profiles(
+        notify_profiles_with_blueprint(
             recipients=participant_recipients,
             actor_profile=actor_profile,
-            kind="project.comment.created",
-            subject=f"{actor_name} ha scritto nel thread operativo",
-            body=f"{location_label} · “{comment_excerpt}”" if comment_excerpt else location_label,
-            content_type="comment",
-            object_id=comment.id,
-            project_id=post.project_id,
-            task_id=post.task_id,
-            activity_id=post.activity_id,
-            post_id=post.id,
-            comment_id=comment.id,
-            data=build_thread_notification_data(
+            blueprint=build_project_thread_notification(
+                kind="project.comment.created",
+                subject=f"{actor_name} ha scritto nel thread operativo",
+                actor_profile=actor_profile,
+                post=post,
+                comment=comment,
                 category="comment",
                 action="created",
-                post=post,
-                comment_id=comment.id,
-                extra={"snippet": comment_excerpt},
+                snippet=comment_excerpt,
+                extra={"parent_id": comment.parent_id},
             ),
         )
 
@@ -4345,23 +4256,17 @@ def notify_post_change(
     if not recipients:
         return
     post_excerpt = notification_excerpt(post.text)
-    notify_profiles(
+    notify_profiles_with_blueprint(
         recipients=recipients,
         actor_profile=actor_profile,
-        kind=kind,
-        subject=subject,
-        body=f"{build_thread_location_label(post)} · “{post_excerpt}”" if post_excerpt else build_thread_location_label(post),
-        content_type="post",
-        object_id=post.id,
-        project_id=post.project_id,
-        task_id=post.task_id,
-        activity_id=post.activity_id,
-        post_id=post.id,
-        data=build_thread_notification_data(
+        blueprint=build_project_thread_notification(
+            kind=kind,
+            subject=subject,
+            actor_profile=actor_profile,
+            post=post,
             category=category,
             action=action,
-            post=post,
-            extra={"snippet": post_excerpt},
+            snippet=post_excerpt,
         ),
     )
 
@@ -4379,25 +4284,19 @@ def notify_comment_change(
     if not recipients:
         return
     comment_excerpt = notification_excerpt(comment.text)
-    notify_profiles(
+    notify_profiles_with_blueprint(
         recipients=recipients,
         actor_profile=actor_profile,
-        kind=kind,
-        subject=subject,
-        body=f"{build_thread_location_label(post)} · “{comment_excerpt}”" if comment_excerpt else build_thread_location_label(post),
-        content_type="comment",
-        object_id=comment.id,
-        project_id=post.project_id,
-        task_id=post.task_id,
-        activity_id=post.activity_id,
-        post_id=post.id,
-        comment_id=comment.id,
-        data=build_thread_notification_data(
+        blueprint=build_project_thread_notification(
+            kind=kind,
+            subject=subject,
+            actor_profile=actor_profile,
+            post=post,
+            comment=comment,
             category="comment",
             action=action,
-            post=post,
-            comment_id=comment.id,
-            extra={"snippet": comment_excerpt, "parent_id": comment.parent_id},
+            snippet=comment_excerpt,
+            extra={"parent_id": comment.parent_id},
         ),
     )
 
@@ -5118,25 +5017,18 @@ def create_project_folder(
             "is_public": folder.is_public,
         },
     )
-    notify_profiles(
+    notify_profiles_with_blueprint(
         recipients=project_notification_recipients(project, exclude_profile_ids={profile.id}),
         actor_profile=profile,
-        kind="project.folder.created",
-        subject=f"{profile_display_name(profile)} ha creato la cartella {folder.name}",
-        body=build_folder_location_label(folder),
-        content_type="folder",
-        object_id=folder.id,
-        project_id=project.id,
-        folder_id=folder.id,
-        data={
-            "category": "document",
-            "action": "created",
-            "target_tab": "documenti",
-            "target_doc": f"folder:{folder.id}",
-            "folder_name": folder.name,
-            "path": folder.path,
-            "project_name": project.name,
-        },
+        blueprint=build_project_folder_notification(
+            kind="project.folder.created",
+            action="created",
+            actor_profile=profile,
+            project=project,
+            folder_id=folder.id,
+            folder_name=folder.name,
+            folder_path=folder.path,
+        ),
     )
     return serialize_folder(folder)
 
@@ -5218,25 +5110,18 @@ def update_project_folder(
             ],
         },
     )
-    notify_profiles(
+    notify_profiles_with_blueprint(
         recipients=project_notification_recipients(folder.project, exclude_profile_ids={profile.id}),
         actor_profile=profile,
-        kind="project.folder.updated",
-        subject=f"{profile_display_name(profile)} ha aggiornato la cartella {folder.name}",
-        body=build_folder_location_label(folder),
-        content_type="folder",
-        object_id=folder.id,
-        project_id=folder.project_id,
-        folder_id=folder.id,
-        data={
-            "category": "document",
-            "action": "updated",
-            "target_tab": "documenti",
-            "target_doc": f"folder:{folder.id}",
-            "folder_name": folder.name,
-            "path": folder.path,
-            "project_name": folder.project.name,
-        },
+        blueprint=build_project_folder_notification(
+            kind="project.folder.updated",
+            action="updated",
+            actor_profile=profile,
+            project=folder.project,
+            folder_id=folder.id,
+            folder_name=folder.name,
+            folder_path=folder.path,
+        ),
     )
     return serialize_folder(folder)
 
@@ -5269,24 +5154,18 @@ def delete_project_folder(*, profile: Profile, folder_id: int) -> None:
             "is_deleted": True,
         },
     )
-    notify_profiles(
+    notify_profiles_with_blueprint(
         recipients=project_notification_recipients(_project, exclude_profile_ids={profile.id}),
         actor_profile=profile,
-        kind="project.folder.deleted",
-        subject=f"{profile_display_name(profile)} ha rimosso la cartella {folder_name}",
-        body=f"Progetto {project_name}",
-        content_type="folder",
-        object_id=deleted_folder_id,
-        project_id=project_id,
-        folder_id=deleted_folder_id,
-        data={
-            "category": "document",
-            "action": "deleted",
-            "target_tab": "documenti",
-            "target_doc": f"folder:{deleted_folder_id}",
-            "folder_name": folder_name,
-            "project_name": project_name,
-        },
+        blueprint=build_project_folder_notification(
+            kind="project.folder.deleted",
+            action="deleted",
+            actor_profile=profile,
+            project=_project,
+            folder_id=deleted_folder_id,
+            folder_name=folder_name,
+            folder_path=folder_path,
+        ),
     )
 
 
@@ -5357,26 +5236,20 @@ def upload_project_document(
             "size_label": attachment_size(document.document),
         },
     )
-    notify_profiles(
+    notify_profiles_with_blueprint(
         recipients=project_notification_recipients(project, exclude_profile_ids={profile.id}),
         actor_profile=profile,
-        kind="project.document.created",
-        subject=f"{profile_display_name(profile)} ha caricato il documento {document.title}",
-        body=build_document_location_label(document),
-        content_type="document",
-        object_id=document.id,
-        project_id=project.id,
-        folder_id=document.folder_id,
-        document_id=document.id,
-        data={
-            "category": "document",
-            "action": "created",
-            "target_tab": "documenti",
-            "target_doc": f"document:{document.id}",
-            "document_title": document.title,
-            "folder_id": document.folder_id,
-            "project_name": project.name,
-        },
+        blueprint=build_project_document_notification(
+            kind="project.document.created",
+            action="created",
+            actor_profile=profile,
+            project=project,
+            document_id=document.id,
+            document_title=document.title,
+            folder_id=document.folder_id,
+            folder_path=document.folder.path if document.folder else None,
+            file_field=document.document,
+        ),
     )
     return serialize_document(document)
 
@@ -5446,26 +5319,20 @@ def update_project_document(
             ],
         },
     )
-    notify_profiles(
+    notify_profiles_with_blueprint(
         recipients=project_notification_recipients(document.project, exclude_profile_ids={profile.id}),
         actor_profile=profile,
-        kind="project.document.updated",
-        subject=f"{profile_display_name(profile)} ha aggiornato il documento {document.title}",
-        body=build_document_location_label(document),
-        content_type="document",
-        object_id=document.id,
-        project_id=document.project_id,
-        folder_id=document.folder_id,
-        document_id=document.id,
-        data={
-            "category": "document",
-            "action": "updated",
-            "target_tab": "documenti",
-            "target_doc": f"document:{document.id}",
-            "document_title": document.title,
-            "folder_id": document.folder_id,
-            "project_name": document.project.name,
-        },
+        blueprint=build_project_document_notification(
+            kind="project.document.updated",
+            action="updated",
+            actor_profile=profile,
+            project=document.project,
+            document_id=document.id,
+            document_title=document.title,
+            folder_id=document.folder_id,
+            folder_path=document.folder.path if document.folder else None,
+            file_field=document.document,
+        ),
     )
     return serialize_document(document)
 
@@ -5501,24 +5368,17 @@ def delete_project_document(*, profile: Profile, document_id: int) -> None:
             "is_deleted": True,
         },
     )
-    notify_profiles(
+    notify_profiles_with_blueprint(
         recipients=project_notification_recipients(_project, exclude_profile_ids={profile.id}),
         actor_profile=profile,
-        kind="project.document.deleted",
-        subject=f"{profile_display_name(profile)} ha rimosso il documento {document_title}",
-        body=f"Progetto {project_name}",
-        content_type="document",
-        object_id=deleted_document_id,
-        project_id=project_id,
-        folder_id=folder_id,
-        document_id=deleted_document_id,
-        data={
-            "category": "document",
-            "action": "deleted",
-            "target_tab": "documenti",
-            "target_doc": f"document:{deleted_document_id}",
-            "document_title": document_title,
-            "folder_id": folder_id,
-            "project_name": project_name,
-        },
+        blueprint=build_project_document_notification(
+            kind="project.document.deleted",
+            action="deleted",
+            actor_profile=profile,
+            project=_project,
+            document_id=deleted_document_id,
+            document_title=document_title,
+            folder_id=folder_id,
+            folder_path=folder_path,
+        ),
     )

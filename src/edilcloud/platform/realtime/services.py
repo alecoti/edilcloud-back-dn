@@ -150,17 +150,27 @@ def notification_group_name(profile_id: int) -> str:
     return f"notifications.profile.{profile_id}"
 
 
+def notification_user_group_name(user_id: int) -> str:
+    return f"notifications.user.{user_id}"
+
+
 def project_group_name(project_id: int) -> str:
     return f"projects.{project_id}"
 
 
 def publish_notification_event(*, profile_id: int, payload: dict) -> None:
-    """Broadcast a notification event to all sockets subscribed for the profile."""
+    """Broadcast a notification event to all sockets subscribed for the user/profile."""
     channel_layer = get_channel_layer()
     if channel_layer is None:
         return
+    user_id = payload.get("userId")
+    group_name = (
+        notification_user_group_name(user_id)
+        if isinstance(user_id, int) and user_id > 0
+        else notification_group_name(profile_id)
+    )
     async_to_sync(channel_layer.group_send)(
-        notification_group_name(profile_id),
+        group_name,
         {"type": "realtime.event", "payload": payload},
     )
 

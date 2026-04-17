@@ -9,6 +9,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from edilcloud.platform.realtime.services import (
     notification_group_name,
+    notification_user_group_name,
     project_group_name,
     validate_realtime_ticket,
 )
@@ -61,6 +62,9 @@ class NotificationRealtimeConsumer(BaseRealtimeConsumer):
         await self.accept_with_ticket(channel="notifications")
 
     def resolve_group_names(self, payload: dict) -> list[str]:
+        user_id = payload.get("user_id")
+        if isinstance(user_id, int) and user_id > 0:
+            return [notification_user_group_name(user_id)]
         return [notification_group_name(int(payload["profile_id"]))]
 
 

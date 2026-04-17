@@ -2967,136 +2967,148 @@ def sync_project_assistant_sources(
 ) -> None:
     if not assistant_rag_enabled():
         raise RuntimeError("OpenAI embeddings non configurati.")
-    if not force and state.last_indexed_version == current_version and not state.is_dirty:
-        return
-
+    original_state = state
     scope = AssistantSourceScope.PROJECT
-    existing_states = {
-        item.source_key: item
-        for item in state.chunk_sources.filter(scope=scope).order_by("id")
-    }
-    active_source_keys = {item.source_key for item in source_documents}
 
-    stale_states = [item for key, item in existing_states.items() if key not in active_source_keys]
-    for stale_state in stale_states:
-        delete_pgvector_source_chunks(project_id=project.id, source_key=stale_state.source_key, scope=scope)
-        stale_state.delete()
-
-    for source_document in source_documents:
-        content_hash = build_source_content_hash(source_document)
-        file_hash = build_file_hash(source_document.file_path)
-        source_state = existing_states.get(source_document.source_key)
-        if source_state is None:
-            source_state = ProjectAssistantChunkSource(
-                assistant_state=state,
-                project=project,
-                scope=scope,
-                source_key=source_document.source_key,
-            )
-
-        needs_reindex = (
-            force
-            or not source_state.is_indexed
-            or source_state.content_hash != content_hash
-            or source_state.file_hash != file_hash
-            or source_state.source_type != source_document.source_type
-            or source_state.label != source_document.label
-            or source_state.metadata_snapshot != source_document.metadata
-            or source_state.embedding_model != assistant_embedding_label()
-            or source_state.chunk_schema_version != assistant_chunk_schema_version()
-            or source_state.index_version != assistant_index_version(current_version=current_version)
-            or source_state.source_updated_at != source_document.updated_at
+    with transaction.atomic():
+        state = (
+            ProjectAssistantState.objects.select_for_update()
+            .select_related("project")
+            .get(pk=original_state.pk)
         )
-        if not needs_reindex:
-            continue
+        if not force and state.last_indexed_version == current_version and not state.is_dirty:
+            original_state.refresh_from_db()
+            return
 
-        source_state.assistant_state = state
-        source_state.project = project
-        source_state.scope = scope
-        source_state.source_type = source_document.source_type
-        source_state.label = source_document.label
-        source_state.content_hash = content_hash
-        source_state.file_hash = file_hash
-        source_state.metadata_snapshot = source_document.metadata
-        source_state.source_updated_at = source_document.updated_at
-        source_state.embedding_model = assistant_embedding_label()
-        source_state.chunk_schema_version = assistant_chunk_schema_version()
-        source_state.index_version = assistant_index_version(current_version=current_version)
-        source_state.save()
+        existing_states = {
+            item.source_key: item
+            for item in state.chunk_sources.select_for_update().filter(scope=scope).order_by("id")
+        }
+        active_source_keys = {item.source_key for item in source_documents}
 
-        try:
-            chunks = chunk_source_document(source_document, project_id=project.id, scope=scope)
-            delete_pgvector_source_chunks(project_id=project.id, source_key=source_document.source_key, scope=scope)
-            ProjectAssistantChunkMap.objects.filter(chunk_source=source_state).delete()
+        stale_states = [item for key, item in existing_states.items() if key not in active_source_keys]
+        for stale_state in stale_states:
+            delete_pgvector_source_chunks(project_id=project.id, source_key=stale_state.source_key, scope=scope)
+            stale_state.delete()
 
-            if chunks:
-                vectors = embed_texts([item.text for item in chunks])
-                ProjectAssistantChunkMap.objects.bulk_create(
-                    [
-                        build_pgvector_chunk_record(
-                            project=project,
-                            state=state,
-                            source_state=source_state,
-                            source_document=source_document,
-                            chunk=chunk,
-                            vector=vector,
-                            scope=scope,
-                            source_content_hash=content_hash,
-                            current_version=current_version,
-                        )
-                        for chunk, vector in zip(chunks, vectors)
+        for source_document in source_documents:
+            content_hash = build_source_content_hash(source_document)
+            file_hash = build_file_hash(source_document.file_path)
+            source_state = existing_states.get(source_document.source_key)
+            if source_state is None:
+                source_state = ProjectAssistantChunkSource(
+                    assistant_state=state,
+                    project=project,
+                    scope=scope,
+                    source_key=source_document.source_key,
+                )
+                existing_states[source_document.source_key] = source_state
+
+            needs_reindex = (
+                force
+                or not source_state.is_indexed
+                or source_state.content_hash != content_hash
+                or source_state.file_hash != file_hash
+                or source_state.source_type != source_document.source_type
+                or source_state.label != source_document.label
+                or source_state.metadata_snapshot != source_document.metadata
+                or source_state.embedding_model != assistant_embedding_label()
+                or source_state.chunk_schema_version != assistant_chunk_schema_version()
+                or source_state.index_version != assistant_index_version(current_version=current_version)
+                or source_state.source_updated_at != source_document.updated_at
+            )
+            if not needs_reindex:
+                continue
+
+            source_state.assistant_state = state
+            source_state.project = project
+            source_state.scope = scope
+            source_state.source_type = source_document.source_type
+            source_state.label = source_document.label
+            source_state.content_hash = content_hash
+            source_state.file_hash = file_hash
+            source_state.metadata_snapshot = source_document.metadata
+            source_state.source_updated_at = source_document.updated_at
+            source_state.embedding_model = assistant_embedding_label()
+            source_state.chunk_schema_version = assistant_chunk_schema_version()
+            source_state.index_version = assistant_index_version(current_version=current_version)
+            source_state.save()
+
+            try:
+                chunks = chunk_source_document(source_document, project_id=project.id, scope=scope)
+                delete_pgvector_source_chunks(project_id=project.id, source_key=source_document.source_key, scope=scope)
+                ProjectAssistantChunkMap.objects.filter(chunk_source=source_state).delete()
+
+                if chunks:
+                    vectors = embed_texts([item.text for item in chunks])
+                    ProjectAssistantChunkMap.objects.bulk_create(
+                        [
+                            build_pgvector_chunk_record(
+                                project=project,
+                                state=state,
+                                source_state=source_state,
+                                source_document=source_document,
+                                chunk=chunk,
+                                vector=vector,
+                                scope=scope,
+                                source_content_hash=content_hash,
+                                current_version=current_version,
+                            )
+                            for chunk, vector in zip(chunks, vectors)
+                        ]
+                    )
+
+                source_state.chunk_count = len(chunks)
+                source_state.is_indexed = True
+                source_state.last_indexed_at = timezone.now()
+                source_state.last_error = ""
+                source_state.save(
+                    update_fields=[
+                        "chunk_count",
+                        "is_indexed",
+                        "last_indexed_at",
+                        "last_error",
+                        "chunk_schema_version",
+                        "index_version",
                     ]
                 )
+            except Exception as exc:
+                source_state.chunk_count = 0
+                source_state.is_indexed = False
+                source_state.last_error = str(exc)
+                source_state.save(update_fields=["chunk_count", "is_indexed", "last_error"])
+                raise
 
-            source_state.chunk_count = len(chunks)
-            source_state.is_indexed = True
-            source_state.last_indexed_at = timezone.now()
-            source_state.last_error = ""
-            source_state.save(
-                update_fields=[
-                    "chunk_count",
-                    "is_indexed",
-                    "last_indexed_at",
-                    "last_error",
-                    "chunk_schema_version",
-                    "index_version",
-                ]
-            )
-        except Exception as exc:
-            source_state.chunk_count = 0
-            source_state.is_indexed = False
-            source_state.last_error = str(exc)
-            source_state.save(update_fields=["chunk_count", "is_indexed", "last_error"])
-            raise
+        state.current_version = current_version
+        state.last_indexed_version = current_version
+        state.source_count = len(source_documents)
+        state.chunk_count = count_project_assistant_chunks(state)
+        state.last_indexed_at = timezone.now()
+        state.is_dirty = False
+        state.background_sync_scheduled = False
+        state.last_sync_error = ""
+        state.embedding_model = assistant_embedding_label()
+        state.chunk_schema_version = assistant_chunk_schema_version()
+        state.index_version = assistant_index_version(current_version=current_version)
+        state.chat_model = assistant_chat_model()
+        state.save(
+            update_fields=[
+                "current_version",
+                "last_indexed_version",
+                "source_count",
+                "chunk_count",
+                "last_indexed_at",
+                "is_dirty",
+                "background_sync_scheduled",
+                "last_sync_error",
+                "embedding_model",
+                "chunk_schema_version",
+                "index_version",
+                "chat_model",
+            ]
+        )
 
-    state.current_version = current_version
-    state.last_indexed_version = current_version
-    state.source_count = len(source_documents)
-    state.chunk_count = count_project_assistant_chunks(state)
-    state.last_indexed_at = timezone.now()
-    state.is_dirty = False
-    state.background_sync_scheduled = False
-    state.last_sync_error = ""
-    state.embedding_model = assistant_embedding_label()
-    state.chunk_schema_version = assistant_chunk_schema_version()
-    state.index_version = assistant_index_version(current_version=current_version)
-    state.chat_model = assistant_chat_model()
-    state.save(
-        update_fields=[
-            "current_version",
-            "last_indexed_version",
-            "source_count",
-            "chunk_count",
-            "last_indexed_at",
-            "is_dirty",
-            "background_sync_scheduled",
-            "last_sync_error",
-            "embedding_model",
-            "chunk_schema_version",
-            "index_version",
-            "chat_model",
-        ]
-    )
+    original_state.refresh_from_db()
 
 
 def citation_rank_score(citation: dict[str, Any], query: str) -> float:
@@ -3839,6 +3851,82 @@ def generate_assistant_completion(
     return answer
 
 
+def transcribe_project_audio(
+    *,
+    profile: Profile,
+    project_id: int,
+    uploaded_file,
+    language: str | None = None,
+    prompt: str | None = None,
+) -> dict[str, Any]:
+    get_project_with_team_context(profile, project_id)
+
+    api_key = getattr(settings, "OPENAI_API_KEY", "")
+    if not api_key:
+        raise ValueError("Trascrizione audio non configurata.")
+
+    file_name = attachment_name(uploaded_file) or "nota-vocale.m4a"
+    content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+    normalized_language = (language or "").strip().lower() or "it"
+    normalized_prompt = (prompt or "").strip()
+
+    try:
+        uploaded_file.seek(0)
+    except Exception:
+        pass
+    audio_bytes = uploaded_file.read()
+    try:
+        uploaded_file.seek(0)
+    except Exception:
+        pass
+
+    if not audio_bytes:
+        raise ValueError("File audio non valido.")
+
+    response = httpx.post(
+        f"{settings.OPENAI_API_BASE_URL}/audio/transcriptions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+        },
+        data={
+            "model": getattr(settings, "OPENAI_AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
+            "language": normalized_language,
+            **({"prompt": normalized_prompt} if normalized_prompt else {}),
+        },
+        files={
+            "file": (
+                file_name,
+                audio_bytes,
+                content_type,
+            )
+        },
+        timeout=120.0,
+    )
+
+    payload: dict[str, Any] = {}
+    try:
+        payload = response.json()
+    except Exception:
+        payload = {}
+
+    if not response.is_success:
+        detail = payload.get("error", {}).get("message") if isinstance(payload.get("error"), dict) else None
+        raise RuntimeError(detail or f"OpenAI HTTP {response.status_code}")
+
+    text = ""
+    if isinstance(payload.get("text"), str):
+        text = payload.get("text", "").strip()
+
+    if not text:
+        raise RuntimeError("OpenAI ha restituito una trascrizione vuota.")
+
+    return {
+        "text": text,
+        "language": payload.get("language") or normalized_language,
+        "model": getattr(settings, "OPENAI_AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
+    }
+
+
 def iter_openai_assistant_text(
     *,
     system_prompt: str,
@@ -4576,6 +4664,28 @@ def iter_project_assistant_events(
     yield f"event: done\ndata: {json_dumps(payload)}\n\n"
 
 
+def refresh_project_assistant_state_for_read(
+    *,
+    state: ProjectAssistantState,
+) -> ProjectAssistantState:
+    state.chunk_count = count_project_assistant_chunks(state) or state.chunk_count
+    if not state.is_dirty and not state.background_sync_scheduled and state.current_version:
+        state.save(update_fields=["chunk_count"])
+        return state
+
+    source_documents, current_version = build_project_source_snapshot(state.project)
+    update_assistant_state_snapshot(
+        state=state,
+        current_version=current_version,
+        source_count=len(source_documents),
+    )
+    state.chunk_count = count_project_assistant_chunks(state) or state.chunk_count
+    if assistant_rag_enabled() and state.is_dirty:
+        schedule_project_assistant_sync(state)
+    state.save(update_fields=["chunk_count"])
+    return state
+
+
 def get_project_assistant_state(
     *,
     profile: Profile,
@@ -4588,12 +4698,7 @@ def get_project_assistant_state(
         project=project,
         profile=profile,
     )
-    source_documents, current_version = build_project_source_snapshot(project)
-    update_assistant_state_snapshot(state=state, current_version=current_version, source_count=len(source_documents))
-    state.chunk_count = count_project_assistant_chunks(state) or state.chunk_count
-    if assistant_rag_enabled() and state.is_dirty:
-        schedule_project_assistant_sync(state)
-    state.save(update_fields=["chunk_count"])
+    refresh_project_assistant_state_for_read(state=state)
     token_budget = serialize_assistant_token_budget(
         project=project,
         profile=profile,

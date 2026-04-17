@@ -59,3 +59,37 @@ class NotificationCenterSchema(Schema):
 class NotificationMarkAllSchema(Schema):
     ok: bool
     updated: int
+
+
+class NotificationDeviceRegisterInputSchema(Schema):
+    token: str
+    platform: str = "unknown"
+    installation_id: str = ""
+    device_name: str = ""
+    locale: str = ""
+    timezone: str = ""
+    app_version: str = ""
+    push_enabled: bool = True
+
+
+class NotificationDeviceUnregisterInputSchema(Schema):
+    token: str | None = None
+    installation_id: str | None = None
+
+
+class NotificationDeviceSchema(Schema):
+    id: int
+    token_suffix: str
+    platform: str
+    installation_id: str = ""
+    device_name: str = ""
+    locale: str = ""
+    timezone: str = ""
+    app_version: str = ""
+    push_enabled: bool
+    is_active: bool
+
+
+class NotificationDeviceUnregisterSchema(Schema):
+    ok: bool
+    updated: int

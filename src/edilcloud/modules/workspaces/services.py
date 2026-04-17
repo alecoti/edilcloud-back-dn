@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 from django.core.files import File
 from django.core.files.storage import default_storage
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from edilcloud.modules.files.media_optimizer import optimize_media_content, optimize_media_for_storage
@@ -81,6 +81,16 @@ def normalize_role(role: str | None, *, default: str = WorkspaceRole.WORKER) -> 
 
 def normalize_email(email: str | None) -> str:
     return (email or "").strip().lower()
+
+
+def resolve_existing_profile_for_email(email: str | None) -> Profile | None:
+    normalized_email = normalize_email(email)
+    if not normalized_email:
+        return None
+    user = get_user_model().objects.filter(email__iexact=normalized_email).first()
+    if user is None:
+        return None
+    return select_default_profile(user)
 
 
 def tokenize_workspace_query(query: str | None) -> list[str]:
@@ -215,6 +225,7 @@ def serialize_profile(profile: Profile) -> dict:
         "phone_verified_at": profile.phone_verified_at,
         "language": profile.language or None,
         "photo": profile_photo_url(profile),
+        "unread_notification_count": int(getattr(profile, "unread_notification_count", 0) or 0),
         "company": serialize_workspace(profile.workspace),
     }
 
@@ -265,6 +276,13 @@ def list_workspace_options(user) -> list[dict]:
 def list_active_profiles(user) -> list[dict]:
     profiles = (
         Profile.objects.select_related("workspace")
+        .annotate(
+            unread_notification_count=Count(
+                "notifications",
+                filter=Q(notifications__read_at__isnull=True),
+                distinct=True,
+            )
+        )
         .filter(user=user, is_active=True, workspace__is_active=True)
         .order_by("workspace__name", "id")
     )
@@ -1025,6 +1043,37 @@ def create_workspace_invite(
         )
 
     send_workspace_invite(manager_profile, invite)
+
+    recipient_profile = resolve_existing_profile_for_email(invite.email)
+    if recipient_profile is not None and recipient_profile.id != manager_profile.id:
+        from edilcloud.modules.notifications.catalog import build_workspace_invite_notification
+        from edilcloud.modules.notifications.services import create_notification
+
+        blueprint = build_workspace_invite_notification(
+            invite=invite,
+            inviter_profile=manager_profile,
+        )
+        create_notification(
+            recipient_profile=recipient_profile,
+            sender_user=user,
+            sender_profile=manager_profile,
+            subject=blueprint.subject,
+            body=blueprint.body,
+            kind=blueprint.kind,
+            sender_company_name=manager_profile.workspace.name,
+            sender_position=manager_profile.position,
+            content_type=blueprint.content_type,
+            object_id=blueprint.object_id,
+            project_id=blueprint.project_id,
+            task_id=blueprint.task_id,
+            activity_id=blueprint.activity_id,
+            post_id=blueprint.post_id,
+            comment_id=blueprint.comment_id,
+            folder_id=blueprint.folder_id,
+            document_id=blueprint.document_id,
+            data=blueprint.data,
+        )
+
     return serialize_workspace_invite(invite)
 
 

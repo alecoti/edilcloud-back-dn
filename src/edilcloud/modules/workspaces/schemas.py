@@ -30,6 +30,7 @@ class WorkspaceProfileSchema(Schema):
     phone_verified_at: datetime | None = None
     language: str | None = None
     photo: str | None = None
+    unread_notification_count: int = 0
     company: WorkspaceSummarySchema
 
 

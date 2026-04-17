@@ -57,6 +57,10 @@ AI_ASSISTANT_MODEL = get_env(
     get_env("OPENAI_CHAT_MODEL", get_env("OPENAI_MODEL", "gpt-4o-mini")),
 ).strip() or "gpt-4o-mini"
 AI_DRAFT_MODEL = get_env("AI_DRAFT_MODEL", AI_ASSISTANT_MODEL).strip() or AI_ASSISTANT_MODEL
+OPENAI_AUDIO_TRANSCRIPTION_MODEL = (
+    get_env("OPENAI_AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe").strip()
+    or "gpt-4o-mini-transcribe"
+)
 PROJECT_CONTENT_TRANSLATION_MODEL = (
     get_env("PROJECT_CONTENT_TRANSLATION_MODEL", get_env("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini")).strip()
     or "gpt-4o-mini"
@@ -249,6 +253,13 @@ AUTH_REFRESH_TOKEN_AUDIENCE = get_env("AUTH_REFRESH_TOKEN_AUDIENCE", "edilcloud-
 AUTH_INCLUDE_DEBUG_CODES = get_bool_env("AUTH_INCLUDE_DEBUG_CODES", False)
 ENABLE_DEV_BOOTSTRAP_AUTH = get_bool_env("ENABLE_DEV_BOOTSTRAP_AUTH", False)
 REALTIME_TICKET_TTL_SECONDS = int(get_env("REALTIME_TICKET_TTL_SECONDS", "90"))
+FCM_PUSH_ENABLED = get_bool_env("FCM_PUSH_ENABLED", False)
+FCM_PROJECT_ID = get_env("FCM_PROJECT_ID", "").strip()
+FCM_SERVICE_ACCOUNT_JSON = get_env("FCM_SERVICE_ACCOUNT_JSON", "")
+FCM_SERVICE_ACCOUNT_FILE = get_env("FCM_SERVICE_ACCOUNT_FILE", "").strip()
+FCM_ANDROID_CHANNEL_ID = get_env("FCM_ANDROID_CHANNEL_ID", "edilcloud_notifications").strip() or (
+    "edilcloud_notifications"
+)
 
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 SECURE_CONTENT_TYPE_NOSNIFF = True
