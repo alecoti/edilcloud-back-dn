@@ -21,6 +21,8 @@ def project_logo_upload_to(_instance, filename: str) -> str:
 
 
 def project_document_upload_to(instance, filename: str) -> str:
+    if getattr(instance, "document_kind", "") == "drawing":
+        return f"projects/{instance.project_id}/drawings/{filename}"
     return f"projects/{instance.project_id}/documents/{filename}"
 
 
@@ -46,6 +48,11 @@ class ProjectMemberStatus(models.IntegerChoices):
     PENDING = 0, "Pending"
     ACTIVE = 1, "Active"
     REFUSED = 2, "Refused"
+
+
+class ProjectDocumentKind(models.TextChoices):
+    DOCUMENT = "document", "Document"
+    DRAWING = "drawing", "Drawing"
 
 
 class TaskActivityStatus(models.TextChoices):
@@ -358,6 +365,11 @@ class ProjectDocument(TimestampedModel):
     description = models.TextField(blank=True)
     document = models.FileField(upload_to=project_document_upload_to)
     is_public = models.BooleanField(default=False)
+    document_kind = models.CharField(
+        max_length=24,
+        choices=ProjectDocumentKind.choices,
+        default=ProjectDocumentKind.DOCUMENT,
+    )
 
     class Meta:
         ordering = ("-updated_at", "-id")
@@ -411,8 +423,14 @@ class ProjectDrawingPin(TimestampedModel):
             ),
         ]
         indexes = [
-            models.Index(fields=("project", "drawing_document")),
-            models.Index(fields=("project", "post")),
+            models.Index(
+                fields=("project", "drawing_document"),
+                name="projects_pr_project_b2403f_idx",
+            ),
+            models.Index(
+                fields=("project", "post"),
+                name="projects_pr_project_9fc9f9_idx",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -802,7 +820,10 @@ class ProjectClientMutation(TimestampedModel):
             ),
         ]
         indexes = [
-            models.Index(fields=("profile", "operation")),
+            models.Index(
+                fields=("profile", "operation"),
+                name="projects_pr_profile_baa20d_idx",
+            ),
         ]
 
     def __str__(self) -> str:

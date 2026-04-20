@@ -64,6 +64,7 @@ from edilcloud.modules.projects.models import (
     ProjectClientMutation,
     ProjectCompanyColor,
     ProjectDocument,
+    ProjectDocumentKind,
     ProjectDrawingPin,
     ProjectFolder,
     ProjectInviteCode,
@@ -2486,6 +2487,7 @@ def serialize_document(document: ProjectDocument) -> dict:
         "relative_path": document.document.name if document.document else None,
         "folder_relative_path": document.folder.path if document.folder else None,
         "folder": document.folder_id,
+        "document_kind": document.document_kind,
     }
 
 
@@ -2997,8 +2999,22 @@ def list_project_gantt(*, profile: Profile, project_id: int) -> dict:
 
 def list_project_documents(*, profile: Profile, project_id: int) -> list[dict]:
     project = get_project_for_profile(profile=profile, project_id=project_id)
-    documents = list(project.documents.select_related("folder").order_by("-updated_at", "-id"))
+    documents = list(
+        project.documents.select_related("folder")
+        .filter(document_kind=ProjectDocumentKind.DOCUMENT)
+        .order_by("-updated_at", "-id")
+    )
     return [serialize_document(document) for document in documents]
+
+
+def list_project_drawings(*, profile: Profile, project_id: int) -> list[dict]:
+    project = get_project_for_profile(profile=profile, project_id=project_id)
+    drawings = list(
+        project.documents.select_related("folder")
+        .filter(document_kind=ProjectDocumentKind.DRAWING)
+        .order_by("-updated_at", "-id")
+    )
+    return [serialize_document(document) for document in drawings]
 
 
 def normalize_pin_coordinate(value: float | int | str, *, field_name: str) -> float:
@@ -3106,6 +3122,8 @@ def upsert_project_drawing_pin(
     document = project.documents.filter(id=drawing_document_id).first()
     if document is None:
         raise ValueError("Disegno non trovato nel progetto.")
+    if document.document_kind != ProjectDocumentKind.DRAWING:
+        raise ValueError("Il file selezionato non e un disegno del progetto.")
 
     post = project_posts_queryset().filter(project=project, id=post_id, is_deleted=False).first()
     if post is None:
@@ -3175,6 +3193,8 @@ def update_project_drawing_pin(
         document = project.documents.filter(id=drawing_document_id).first()
         if document is None:
             raise ValueError("Disegno non trovato nel progetto.")
+        if document.document_kind != ProjectDocumentKind.DRAWING:
+            raise ValueError("Il file selezionato non e un disegno del progetto.")
         pin.drawing_document = document
     if post_id is not None:
         post = project.posts.filter(id=post_id, is_deleted=False).first()
@@ -3504,7 +3524,11 @@ def get_project_overview(
         profile=profile, project_id=project_id
     )
     tasks = list(project_tasks_queryset(project))
-    documents = list(project.documents.select_related("folder").order_by("-updated_at", "-id"))
+    documents = list(
+        project.documents.select_related("folder")
+        .filter(document_kind=ProjectDocumentKind.DOCUMENT)
+        .order_by("-updated_at", "-id")
+    )
     photos = list(project.photos.order_by("-created_at", "-id"))
     company_colors_by_workspace_id = project_company_colors_for_context(
         project=project,
@@ -5891,6 +5915,7 @@ def upload_project_document(
     folder_id: int | None = None,
     additional_path: str = "",
     is_public: bool = False,
+    document_kind: str = ProjectDocumentKind.DOCUMENT,
 ) -> dict:
     project, membership, _members = get_project_with_team_context(
         profile=profile, project_id=project_id
@@ -5899,6 +5924,11 @@ def upload_project_document(
         raise ValueError("Non hai permessi per caricare documenti in questo progetto.")
     from edilcloud.modules.billing.services import assert_storage_quota_available
 
+    normalized_kind = (
+        document_kind
+        if document_kind in ProjectDocumentKind.values
+        else ProjectDocumentKind.DOCUMENT
+    )
     _assert_project_document_upload_size(uploaded_file)
     prepared_file = optimize_media_for_storage(uploaded_file)
     assert_storage_quota_available(
@@ -5934,18 +5964,21 @@ def upload_project_document(
         description=normalize_text(description),
         document=prepared_file,
         is_public=bool(is_public),
+        document_kind=normalized_kind,
     )
+    is_drawing = normalized_kind == ProjectDocumentKind.DRAWING
     emit_project_realtime_event(
-        event_type="document.created",
+        event_type="drawing.created" if is_drawing else "document.created",
         project_id=project.id,
         actor_profile=profile,
         folder_id=document.folder_id,
         document_id=document.id,
         data={
-            "category": "document",
+            "category": "drawing" if is_drawing else "document",
             "project_level": True,
             "project_name": project.name,
             "document_title": document.title,
+            "document_kind": document.document_kind,
             "folder_id": document.folder_id,
             "folder_path": document.folder.path if document.folder else None,
             "is_public": document.is_public,
@@ -5968,6 +6001,28 @@ def upload_project_document(
         ),
     )
     return serialize_document(document)
+
+
+def upload_project_drawing(
+    *,
+    profile: Profile,
+    project_id: int,
+    uploaded_file,
+    title: str = "",
+    description: str = "",
+    is_public: bool = False,
+) -> dict:
+    return upload_project_document(
+        profile=profile,
+        project_id=project_id,
+        uploaded_file=uploaded_file,
+        title=title,
+        description=description,
+        folder_id=None,
+        additional_path="",
+        is_public=is_public,
+        document_kind=ProjectDocumentKind.DRAWING,
+    )
 
 
 def _clone_uploaded_binary(

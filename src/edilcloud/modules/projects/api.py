@@ -83,6 +83,7 @@ from edilcloud.modules.projects.services import (
     list_posts_for_task,
     list_project_alert_posts,
     list_project_documents,
+    list_project_drawings,
     list_project_drawing_pins,
     list_project_feed,
     list_project_folders,
@@ -104,6 +105,7 @@ from edilcloud.modules.projects.services import (
     update_project_task,
     update_task_activity,
     upload_project_document,
+    upload_project_drawing,
     upsert_project_drawing_pin,
 )
 from edilcloud.platform.realtime.services import build_project_realtime_session
@@ -621,6 +623,31 @@ def upload_project_document_endpoint(request, project_id: int):
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     return Status(201, document)
+
+
+@router.get("/{project_id}/drawings", response=list[dict[str, Any]], auth=auth)
+def get_project_drawings_endpoint(request, project_id: int):
+    try:
+        return list_project_drawings(profile=current_profile(request), project_id=project_id)
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.post("/{project_id}/drawings", response={201: dict[str, Any]}, auth=auth)
+def upload_project_drawing_endpoint(request, project_id: int):
+    try:
+        payload = parse_project_document_upload_payload(request)
+        drawing = upload_project_drawing(
+            profile=current_profile(request),
+            project_id=project_id,
+            uploaded_file=payload["uploaded_file"],
+            title=payload["title"],
+            description=payload["description"],
+            is_public=payload["is_public"],
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return Status(201, drawing)
 
 
 @router.post("/{project_id}/inspection-reports", response={201: dict[str, Any]}, auth=auth)
