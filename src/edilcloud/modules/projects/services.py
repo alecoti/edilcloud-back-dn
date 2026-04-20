@@ -16,6 +16,7 @@ import uuid
 
 import httpx
 from django.conf import settings
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.db.models import Avg, Case, Count, DateTimeField, F, Max, Prefetch, Q, When
 from django.http import FileResponse
@@ -32,7 +33,10 @@ from edilcloud.modules.notifications.catalog import (
     build_project_task_notification,
     build_project_thread_notification,
 )
-from edilcloud.modules.projects.archive import mark_project_archived_if_due, sync_project_archive_schedule
+from edilcloud.modules.projects.archive import (
+    mark_project_archived_if_due,
+    sync_project_archive_schedule,
+)
 from edilcloud.modules.projects.emails import send_project_invite_code_email
 from edilcloud.modules.projects.gantt_import import (
     ImportWarning,
@@ -57,8 +61,10 @@ from edilcloud.modules.projects.models import (
     PostKind,
     Project,
     ProjectActivity,
+    ProjectClientMutation,
     ProjectCompanyColor,
     ProjectDocument,
+    ProjectDrawingPin,
     ProjectFolder,
     ProjectInviteCode,
     ProjectMember,
@@ -279,6 +285,7 @@ def build_google_project_company_color_palette() -> list[str]:
     remaining_entries.remove(seed_entry)
 
     while remaining_entries:
+
         def score(entry: tuple[str, str]) -> tuple[float, float, int]:
             family, color = entry
             min_distance = min(
@@ -576,8 +583,12 @@ def normalize_content_language(value: str | None) -> str:
     return primary if primary in PROJECT_CONTENT_TRANSLATION_LANGUAGES else ""
 
 
-def resolve_project_content_language(*, preferred_language: str | None, fallback_language: str | None = None) -> str:
-    return normalize_content_language(preferred_language) or normalize_content_language(fallback_language)
+def resolve_project_content_language(
+    *, preferred_language: str | None, fallback_language: str | None = None
+) -> str:
+    return normalize_content_language(preferred_language) or normalize_content_language(
+        fallback_language
+    )
 
 
 def project_content_translation_model() -> str:
@@ -618,8 +629,12 @@ def project_content_source_text(*, text: str | None, original_text: str | None) 
     return normalize_text(original_text) or normalize_text(text)
 
 
-def project_content_source_language(*, source_language: str | None, display_language: str | None = None) -> str:
-    return normalize_content_language(source_language) or normalize_content_language(display_language)
+def project_content_source_language(
+    *, source_language: str | None, display_language: str | None = None
+) -> str:
+    return normalize_content_language(source_language) or normalize_content_language(
+        display_language
+    )
 
 
 def should_translate_project_content(
@@ -702,7 +717,11 @@ def generate_project_content_translation(
         raise RuntimeError(f"OpenAI ha restituito una risposta non valida: {exc}") from exc
 
     if not response.is_success:
-        detail = payload.get("error", {}).get("message") if isinstance(payload.get("error"), dict) else None
+        detail = (
+            payload.get("error", {}).get("message")
+            if isinstance(payload.get("error"), dict)
+            else None
+        )
         raise RuntimeError(detail or f"OpenAI HTTP {response.status_code}")
 
     translated_text = extract_openai_output_text(payload)
@@ -741,7 +760,9 @@ def upsert_post_translation_memory(
             defaults=defaults,
         )
     except IntegrityError:
-        ProjectPostTranslation.objects.filter(post=post, target_language=target_language).update(**defaults)
+        ProjectPostTranslation.objects.filter(post=post, target_language=target_language).update(
+            **defaults
+        )
     return ProjectPostTranslation.objects.get(post=post, target_language=target_language)
 
 
@@ -767,7 +788,9 @@ def upsert_comment_translation_memory(
             defaults=defaults,
         )
     except IntegrityError:
-        PostCommentTranslation.objects.filter(comment=comment, target_language=target_language).update(**defaults)
+        PostCommentTranslation.objects.filter(
+            comment=comment, target_language=target_language
+        ).update(**defaults)
     return PostCommentTranslation.objects.get(comment=comment, target_language=target_language)
 
 
@@ -811,7 +834,10 @@ def resolve_post_translation_memory(
             source_language=source_language,
         )
         cached_translation = translations.get(post.id)
-        if cached_translation is not None and cached_translation.source_signature == source_signature:
+        if (
+            cached_translation is not None
+            and cached_translation.source_signature == source_signature
+        ):
             resolved[post.id] = cached_translation
             continue
 
@@ -858,7 +884,9 @@ def resolve_comment_translation_memory(
     resolved: dict[int, PostCommentTranslation] = {}
 
     for comment in comments:
-        source_text = project_content_source_text(text=comment.text, original_text=comment.original_text)
+        source_text = project_content_source_text(
+            text=comment.text, original_text=comment.original_text
+        )
         source_language = project_content_source_language(
             source_language=comment.source_language,
             display_language=comment.display_language,
@@ -875,7 +903,10 @@ def resolve_comment_translation_memory(
             source_language=source_language,
         )
         cached_translation = translations.get(comment.id)
-        if cached_translation is not None and cached_translation.source_signature == source_signature:
+        if (
+            cached_translation is not None
+            and cached_translation.source_signature == source_signature
+        ):
             resolved[comment.id] = cached_translation
             continue
 
@@ -914,7 +945,11 @@ def localized_post_content(
             "text": post.text or None,
             "original_text": source_text or None,
             "source_language": source_language or None,
-            "display_language": normalize_content_language(post.display_language or post.source_language) or source_language or None,
+            "display_language": normalize_content_language(
+                post.display_language or post.source_language
+            )
+            or source_language
+            or None,
             "is_translated": bool(post.is_translated),
         }
 
@@ -932,7 +967,9 @@ def localized_comment_content(
     *,
     translation: PostCommentTranslation | None = None,
 ) -> dict[str, Any]:
-    source_text = project_content_source_text(text=comment.text, original_text=comment.original_text)
+    source_text = project_content_source_text(
+        text=comment.text, original_text=comment.original_text
+    )
     source_language = project_content_source_language(
         source_language=comment.source_language,
         display_language=comment.display_language,
@@ -942,7 +979,11 @@ def localized_comment_content(
             "text": comment.text or None,
             "original_text": source_text or None,
             "source_language": source_language or None,
-            "display_language": normalize_content_language(comment.display_language or comment.source_language) or source_language or None,
+            "display_language": normalize_content_language(
+                comment.display_language or comment.source_language
+            )
+            or source_language
+            or None,
             "is_translated": bool(comment.is_translated),
         }
 
@@ -993,7 +1034,10 @@ def project_assignment_role_label(code: str | None) -> str:
 
 
 def project_assignment_role_labels(codes: list[str] | tuple[str, ...] | None) -> list[str]:
-    return [project_assignment_role_label(code) for code in normalize_project_assignment_role_codes(codes)]
+    return [
+        project_assignment_role_label(code)
+        for code in normalize_project_assignment_role_codes(codes)
+    ]
 
 
 def project_member_assignment_role_codes(member: ProjectMember) -> list[str]:
@@ -1213,7 +1257,19 @@ def attachment_size(file_field) -> int | None:
 
 def attachment_kind_from_extension(extension: str | None) -> str:
     normalized = (extension or "").lower()
-    if normalized in {"jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "bmp", "tif", "tiff", "heic"}:
+    if normalized in {
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "webp",
+        "avif",
+        "svg",
+        "bmp",
+        "tif",
+        "tiff",
+        "heic",
+    }:
         return "image"
     if normalized in {"mp4", "mov", "avi", "mkv", "webm", "m4v"}:
         return "video"
@@ -1394,7 +1450,9 @@ def project_access_queryset(profile: Profile):
 
 def get_project_membership(project: Project, profile: Profile) -> ProjectMember:
     membership = (
-        ProjectMember.objects.select_related("project", "profile", "profile__workspace", "profile__user")
+        ProjectMember.objects.select_related(
+            "project", "profile", "profile__workspace", "profile__user"
+        )
         .filter(
             project=project,
             profile=profile,
@@ -1435,7 +1493,9 @@ def get_project_for_profile(*, profile: Profile, project_id: int) -> Project:
     return project
 
 
-def get_project_with_team_context(*, profile: Profile, project_id: int) -> tuple[Project, ProjectMember, list[ProjectMember]]:
+def get_project_with_team_context(
+    *, profile: Profile, project_id: int
+) -> tuple[Project, ProjectMember, list[ProjectMember]]:
     project = get_project_for_profile(profile=profile, project_id=project_id)
     membership = get_project_membership(project, profile)
     members = list(
@@ -1488,7 +1548,9 @@ def list_projects(*, profile: Profile) -> list[dict]:
 
 
 def get_project_summary(*, profile: Profile, project_id: int) -> dict:
-    return serialize_project_summary(get_project_for_profile(profile=profile, project_id=project_id))
+    return serialize_project_summary(
+        get_project_for_profile(profile=profile, project_id=project_id)
+    )
 
 
 def serialize_task_context(task: ProjectTask | None) -> dict | None:
@@ -1716,7 +1778,9 @@ def create_project_notification(
 
     create_notification(
         recipient_profile=recipient_profile,
-        sender_user=actor_profile.user if actor_profile is not None and actor_profile.user_id else None,
+        sender_user=actor_profile.user
+        if actor_profile is not None and actor_profile.user_id
+        else None,
         sender_profile=actor_profile,
         sender_company_name=actor_profile.workspace.name if actor_profile is not None else "",
         sender_position=actor_profile.position if actor_profile is not None else "",
@@ -1778,7 +1842,7 @@ def notify_profiles(
     folder_id: int | None = None,
     document_id: int | None = None,
     data: dict | None = None,
-    ) -> None:
+) -> None:
     seen_profile_ids: set[int] = set()
     for recipient in recipients:
         if recipient.id in seen_profile_ids:
@@ -1840,7 +1904,9 @@ def prefetch_post_feed_seen_state(queryset, *, profile: Profile | None):
     return queryset.prefetch_related(
         Prefetch(
             "seen_states",
-            queryset=ProjectPostSeenState.objects.filter(profile=profile).order_by("-seen_at", "-id"),
+            queryset=ProjectPostSeenState.objects.filter(profile=profile).order_by(
+                "-seen_at", "-id"
+            ),
             to_attr="_viewer_seen_states",
         ),
     )
@@ -2032,7 +2098,9 @@ def serialize_post(
         "last_activity_at": last_activity_at,
         "feed_seen_at": viewer_seen_at,
         "feed_is_unread": (
-            bool(viewer_profile) and last_activity_at is not None and (viewer_seen_at is None or viewer_seen_at < last_activity_at)
+            bool(viewer_profile)
+            and last_activity_at is not None
+            and (viewer_seen_at is None or viewer_seen_at < last_activity_at)
         ),
         "post_kind": post.post_kind,
         **localized_content,
@@ -2094,7 +2162,9 @@ def serialize_post_summary(
         "last_activity_at": last_activity_at,
         "feed_seen_at": viewer_seen_at,
         "feed_is_unread": (
-            bool(viewer_profile) and last_activity_at is not None and (viewer_seen_at is None or viewer_seen_at < last_activity_at)
+            bool(viewer_profile)
+            and last_activity_at is not None
+            and (viewer_seen_at is None or viewer_seen_at < last_activity_at)
         ),
         "post_kind": post.post_kind,
         **localized_content,
@@ -2242,15 +2312,12 @@ def serialize_schedule_link(link: ProjectScheduleLink) -> dict:
 
 
 def project_schedule_links_queryset(project: Project):
-    return (
-        project.schedule_links.select_related(
-            "source_task",
-            "source_activity",
-            "target_task",
-            "target_activity",
-        )
-        .order_by("id")
-    )
+    return project.schedule_links.select_related(
+        "source_task",
+        "source_activity",
+        "target_task",
+        "target_activity",
+    ).order_by("id")
 
 
 @transaction.atomic
@@ -2263,7 +2330,9 @@ def create_project_gantt_link(
     link_type: str | None = None,
     lag_days: int | None = None,
 ) -> dict:
-    project, membership, _members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per modificare i vincoli del Gantt.")
 
@@ -2283,8 +2352,12 @@ def create_project_gantt_link(
         data={
             "category": "task",
             "project_name": project.name,
-            "source_ref": schedule_link_entity_ref(task=link.source_task, activity=link.source_activity),
-            "target_ref": schedule_link_entity_ref(task=link.target_task, activity=link.target_activity),
+            "source_ref": schedule_link_entity_ref(
+                task=link.source_task, activity=link.source_activity
+            ),
+            "target_ref": schedule_link_entity_ref(
+                task=link.target_task, activity=link.target_activity
+            ),
             "link_type": link.link_type,
             "lag_days": link.lag_days,
             "origin": link.origin or None,
@@ -2304,7 +2377,9 @@ def update_project_gantt_link(
     link_type: str | None = None,
     lag_days: int | None = None,
 ) -> dict:
-    project, membership, _members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per modificare i vincoli del Gantt.")
 
@@ -2328,15 +2403,35 @@ def update_project_gantt_link(
         data={
             "category": "task",
             "project_name": project.name,
-            "source_ref": schedule_link_entity_ref(task=link.source_task, activity=link.source_activity),
-            "target_ref": schedule_link_entity_ref(task=link.target_task, activity=link.target_activity),
+            "source_ref": schedule_link_entity_ref(
+                task=link.source_task, activity=link.source_activity
+            ),
+            "target_ref": schedule_link_entity_ref(
+                task=link.target_task, activity=link.target_activity
+            ),
             "link_type": link.link_type,
             "lag_days": link.lag_days,
             "changes": [
-                build_timeline_change(label="Sorgente", before=previous_payload.get("source"), after=schedule_link_entity_ref(task=link.source_task, activity=link.source_activity)),
-                build_timeline_change(label="Destinazione", before=previous_payload.get("target"), after=schedule_link_entity_ref(task=link.target_task, activity=link.target_activity)),
-                build_timeline_change(label="Tipo", before=previous_payload.get("type"), after=link.link_type),
-                build_timeline_change(label="Lag", before=previous_payload.get("lag_days"), after=link.lag_days),
+                build_timeline_change(
+                    label="Sorgente",
+                    before=previous_payload.get("source"),
+                    after=schedule_link_entity_ref(
+                        task=link.source_task, activity=link.source_activity
+                    ),
+                ),
+                build_timeline_change(
+                    label="Destinazione",
+                    before=previous_payload.get("target"),
+                    after=schedule_link_entity_ref(
+                        task=link.target_task, activity=link.target_activity
+                    ),
+                ),
+                build_timeline_change(
+                    label="Tipo", before=previous_payload.get("type"), after=link.link_type
+                ),
+                build_timeline_change(
+                    label="Lag", before=previous_payload.get("lag_days"), after=link.lag_days
+                ),
             ],
         },
     )
@@ -2350,7 +2445,9 @@ def delete_project_gantt_link(
     project_id: int,
     link_id: int,
 ) -> dict:
-    project, membership, _members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per modificare i vincoli del Gantt.")
 
@@ -2392,6 +2489,40 @@ def serialize_document(document: ProjectDocument) -> dict:
     }
 
 
+def serialize_drawing_pin(
+    pin: ProjectDrawingPin,
+    *,
+    membership: ProjectMember,
+    company_colors_by_workspace_id: dict[int, str] | None = None,
+    translation_by_post_id: dict[int, ProjectPostTranslation] | None = None,
+    translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
+) -> dict:
+    return {
+        "id": pin.id,
+        "project": pin.project_id,
+        "drawing_document": serialize_document(pin.drawing_document),
+        "post": serialize_post(
+            post=pin.post,
+            membership=membership,
+            company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_post_id=translation_by_post_id,
+            translation_by_comment_id=translation_by_comment_id,
+        ),
+        "x": pin.x,
+        "y": pin.y,
+        "page_number": pin.page_number,
+        "label": pin.label or "",
+        "created_by": serialize_project_profile(
+            pin.created_by,
+            company_colors_by_workspace_id=company_colors_by_workspace_id,
+        )
+        if pin.created_by_id
+        else None,
+        "created_at": pin.created_at,
+        "updated_at": pin.updated_at,
+    }
+
+
 def serialize_photo(photo: ProjectPhoto) -> dict:
     return {
         "id": photo.id,
@@ -2417,8 +2548,12 @@ def serialize_folder(folder: ProjectFolder) -> dict:
 
 
 def list_project_team(*, profile: Profile, project_id: int) -> list[dict]:
-    project, _membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
-    company_colors_by_workspace_id = project_company_colors_for_context(project=project, members=members)
+    project, _membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
+    company_colors_by_workspace_id = project_company_colors_for_context(
+        project=project, members=members
+    )
     return [
         serialize_project_team_member(
             member,
@@ -2429,7 +2564,9 @@ def list_project_team(*, profile: Profile, project_id: int) -> list[dict]:
 
 
 def get_project_team_compliance(*, profile: Profile, project_id: int) -> dict:
-    _project, _membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
+    _project, _membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
 
     assigned_role_codes = normalize_project_assignment_role_codes(
         [code for member in members for code in project_member_assignment_role_codes(member)],
@@ -2457,7 +2594,9 @@ def get_project_team_compliance(*, profile: Profile, project_id: int) -> dict:
             "id": "coordinators",
             "label": "Coordinatori (CSP/CSE)",
             "required": requires_csp_cse,
-            "met": all(code in assigned_role_set for code in PROJECT_ASSIGNMENT_COORDINATOR_ROLE_CODES),
+            "met": all(
+                code in assigned_role_set for code in PROJECT_ASSIGNMENT_COORDINATOR_ROLE_CODES
+            ),
             "reason": (
                 "Obbligatorio quando nel cantiere operano piu imprese esecutrici o affidatarie."
                 if requires_csp_cse
@@ -2465,7 +2604,9 @@ def get_project_team_compliance(*, profile: Profile, project_id: int) -> dict:
             ),
             "required_role_codes": PROJECT_ASSIGNMENT_COORDINATOR_ROLE_CODES,
             "missing_role_codes": [
-                code for code in PROJECT_ASSIGNMENT_COORDINATOR_ROLE_CODES if code not in assigned_role_set
+                code
+                for code in PROJECT_ASSIGNMENT_COORDINATOR_ROLE_CODES
+                if code not in assigned_role_set
             ],
             "missing_role_labels": [
                 project_assignment_role_label(code)
@@ -2486,10 +2627,14 @@ def get_project_team_compliance(*, profile: Profile, project_id: int) -> dict:
             "id": "addetti_emergenza",
             "label": "Addetti Emergenza e Primo Soccorso",
             "required": True,
-            "met": all(code in assigned_role_set for code in PROJECT_ASSIGNMENT_EMERGENCY_ROLE_CODES),
+            "met": all(
+                code in assigned_role_set for code in PROJECT_ASSIGNMENT_EMERGENCY_ROLE_CODES
+            ),
             "required_role_codes": PROJECT_ASSIGNMENT_EMERGENCY_ROLE_CODES,
             "missing_role_codes": [
-                code for code in PROJECT_ASSIGNMENT_EMERGENCY_ROLE_CODES if code not in assigned_role_set
+                code
+                for code in PROJECT_ASSIGNMENT_EMERGENCY_ROLE_CODES
+                if code not in assigned_role_set
             ],
             "missing_role_labels": [
                 project_assignment_role_label(code)
@@ -2518,7 +2663,9 @@ def project_tasks_queryset(project: Project):
         .prefetch_related(
             Prefetch(
                 "activities",
-                queryset=ProjectActivity.objects.order_by("datetime_start", "id").prefetch_related("workers"),
+                queryset=ProjectActivity.objects.order_by("datetime_start", "id").prefetch_related(
+                    "workers"
+                ),
             )
         )
         .order_by("date_start", "id")
@@ -2526,7 +2673,9 @@ def project_tasks_queryset(project: Project):
 
 
 def list_project_tasks(*, profile: Profile, project_id: int) -> list[dict]:
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     tasks = list(project_tasks_queryset(project))
     company_colors_by_workspace_id = project_company_colors_for_context(
         project=project,
@@ -2551,7 +2700,9 @@ def build_project_gantt_company_lookup(
     members: list[ProjectMember],
 ) -> dict[str, Workspace]:
     task_workspace_ids = list(
-        project.tasks.exclude(assigned_company_id__isnull=True).values_list("assigned_company_id", flat=True)
+        project.tasks.exclude(assigned_company_id__isnull=True).values_list(
+            "assigned_company_id", flat=True
+        )
     )
     company_workspace_ids = collect_project_company_workspace_ids(
         members=members,
@@ -2699,7 +2850,9 @@ def create_project_schedule_link(
 
 
 def preview_project_gantt_import(*, profile: Profile, project_id: int, uploaded_file) -> dict:
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per importare il Gantt di questo progetto.")
     imported_plan = parse_gantt_import_file(uploaded_file)
@@ -2718,7 +2871,9 @@ def apply_project_gantt_import(
     uploaded_file,
     replace_existing: bool = False,
 ) -> dict:
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per importare il Gantt di questo progetto.")
 
@@ -2815,7 +2970,9 @@ def apply_project_gantt_import(
 
 
 def list_project_gantt(*, profile: Profile, project_id: int) -> dict:
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     tasks = list(project_tasks_queryset(project))
     schedule_links = list(project_schedule_links_queryset(project))
     company_colors_by_workspace_id = project_company_colors_for_context(
@@ -2844,6 +3001,226 @@ def list_project_documents(*, profile: Profile, project_id: int) -> list[dict]:
     return [serialize_document(document) for document in documents]
 
 
+def normalize_pin_coordinate(value: float | int | str, *, field_name: str) -> float:
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Coordinata {field_name} non valida.") from exc
+    if normalized < 0 or normalized > 1:
+        raise ValueError(f"Coordinata {field_name} fuori dal disegno.")
+    return normalized
+
+
+def normalize_pin_page_number(value: int | str | None) -> int:
+    try:
+        normalized = int(value or 1)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Pagina disegno non valida.") from exc
+    if normalized < 1:
+        raise ValueError("Pagina disegno non valida.")
+    return normalized
+
+
+def drawing_pin_queryset():
+    return ProjectDrawingPin.objects.select_related(
+        "project",
+        "drawing_document",
+        "drawing_document__folder",
+        "post",
+        "post__author",
+        "post__author__workspace",
+        "post__author__user",
+        "post__task",
+        "post__activity",
+        "post__project",
+        "created_by",
+        "created_by__workspace",
+        "created_by__user",
+    ).prefetch_related(
+        "post__attachments",
+        Prefetch(
+            "post__comments",
+            queryset=PostComment.objects.select_related(
+                "author",
+                "author__workspace",
+                "author__user",
+            )
+            .prefetch_related("attachments")
+            .order_by("created_at", "id"),
+        ),
+    )
+
+
+def list_project_drawing_pins(
+    *,
+    profile: Profile,
+    project_id: int,
+    target_language: str | None = None,
+) -> list[dict]:
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
+    pins = list(drawing_pin_queryset().filter(project=project))
+    posts = [pin.post for pin in pins]
+    comments = [comment for post in posts for comment in post.comments.all()]
+    post_translation_map = resolve_post_translation_memory(
+        posts,
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    comment_translation_map = resolve_comment_translation_memory(
+        comments,
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    company_colors_by_workspace_id = project_company_colors_for_context(
+        project=project, members=members
+    )
+    return [
+        serialize_drawing_pin(
+            pin,
+            membership=membership,
+            company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_post_id=post_translation_map,
+            translation_by_comment_id=comment_translation_map,
+        )
+        for pin in pins
+    ]
+
+
+def upsert_project_drawing_pin(
+    *,
+    profile: Profile,
+    project_id: int,
+    drawing_document_id: int,
+    post_id: int,
+    x: float,
+    y: float,
+    page_number: int = 1,
+    label: str = "",
+    target_language: str | None = None,
+) -> dict:
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
+    document = project.documents.filter(id=drawing_document_id).first()
+    if document is None:
+        raise ValueError("Disegno non trovato nel progetto.")
+
+    post = project_posts_queryset().filter(project=project, id=post_id, is_deleted=False).first()
+    if post is None:
+        raise ValueError("Post non trovato nel progetto.")
+
+    normalized_x = normalize_pin_coordinate(x, field_name="x")
+    normalized_y = normalize_pin_coordinate(y, field_name="y")
+    normalized_page = normalize_pin_page_number(page_number)
+    trimmed_label = (label or "").strip()[:255]
+
+    pin, _created = ProjectDrawingPin.objects.update_or_create(
+        drawing_document=document,
+        post=post,
+        defaults={
+            "project": project,
+            "created_by": profile,
+            "x": normalized_x,
+            "y": normalized_y,
+            "page_number": normalized_page,
+            "label": trimmed_label,
+        },
+    )
+    pin = drawing_pin_queryset().get(id=pin.id)
+    company_colors_by_workspace_id = project_company_colors_for_context(
+        project=project, members=members
+    )
+    post_translation_map = resolve_post_translation_memory(
+        [pin.post],
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    comment_translation_map = resolve_comment_translation_memory(
+        list(pin.post.comments.all()),
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    return serialize_drawing_pin(
+        pin,
+        membership=membership,
+        company_colors_by_workspace_id=company_colors_by_workspace_id,
+        translation_by_post_id=post_translation_map,
+        translation_by_comment_id=comment_translation_map,
+    )
+
+
+def update_project_drawing_pin(
+    *,
+    profile: Profile,
+    project_id: int,
+    pin_id: int,
+    drawing_document_id: int | None = None,
+    post_id: int | None = None,
+    x: float | None = None,
+    y: float | None = None,
+    page_number: int | None = None,
+    label: str | None = None,
+    target_language: str | None = None,
+) -> dict:
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
+    pin = ProjectDrawingPin.objects.filter(project=project, id=pin_id).first()
+    if pin is None:
+        raise ValueError("Pin disegno non trovato.")
+
+    if drawing_document_id is not None:
+        document = project.documents.filter(id=drawing_document_id).first()
+        if document is None:
+            raise ValueError("Disegno non trovato nel progetto.")
+        pin.drawing_document = document
+    if post_id is not None:
+        post = project.posts.filter(id=post_id, is_deleted=False).first()
+        if post is None:
+            raise ValueError("Post non trovato nel progetto.")
+        pin.post = post
+    if x is not None:
+        pin.x = normalize_pin_coordinate(x, field_name="x")
+    if y is not None:
+        pin.y = normalize_pin_coordinate(y, field_name="y")
+    if page_number is not None:
+        pin.page_number = normalize_pin_page_number(page_number)
+    if label is not None:
+        pin.label = label.strip()[:255]
+    pin.save()
+
+    pin = drawing_pin_queryset().get(id=pin.id)
+    company_colors_by_workspace_id = project_company_colors_for_context(
+        project=project, members=members
+    )
+    post_translation_map = resolve_post_translation_memory(
+        [pin.post],
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    comment_translation_map = resolve_comment_translation_memory(
+        list(pin.post.comments.all()),
+        target_language=target_language,
+        fallback_language=profile.language,
+    )
+    return serialize_drawing_pin(
+        pin,
+        membership=membership,
+        company_colors_by_workspace_id=company_colors_by_workspace_id,
+        translation_by_post_id=post_translation_map,
+        translation_by_comment_id=comment_translation_map,
+    )
+
+
+def delete_project_drawing_pin(*, profile: Profile, project_id: int, pin_id: int) -> None:
+    project = get_project_for_profile(profile=profile, project_id=project_id)
+    deleted, _ = ProjectDrawingPin.objects.filter(project=project, id=pin_id).delete()
+    if not deleted:
+        raise ValueError("Pin disegno non trovato.")
+
+
 def list_project_photos(*, profile: Profile, project_id: int) -> list[dict]:
     project = get_project_for_profile(profile=profile, project_id=project_id)
     photos = list(project.photos.order_by("-created_at", "-id"))
@@ -2855,7 +3232,9 @@ def get_project_document_file_response(*, profile: Profile, document_id: int):
     if document is None:
         raise ValueError("Documento non trovato.")
     get_project_with_team_context(profile=profile, project_id=document.project_id)
-    file_name = Path(document.document.name).name if document.document else document.title or "documento"
+    file_name = (
+        Path(document.document.name).name if document.document else document.title or "documento"
+    )
     return build_inline_file_response(document.document, filename=file_name)
 
 
@@ -2904,14 +3283,18 @@ def list_project_alert_posts(
     lightweight: bool = False,
     target_language: str | None = None,
 ) -> list[dict]:
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     posts = list(
         annotate_posts_with_feed_activity(project_posts_queryset())
         .filter(project=project, alert=True, is_deleted=False)
         .order_by("-effective_last_activity_at", "-id")
     )
     serializer = serialize_post_summary if lightweight else serialize_post
-    company_colors_by_workspace_id = project_company_colors_for_context(project=project, members=members)
+    company_colors_by_workspace_id = project_company_colors_for_context(
+        project=project, members=members
+    )
     post_translation_map = resolve_post_translation_memory(
         posts,
         target_language=target_language,
@@ -2947,14 +3330,18 @@ def list_project_recent_posts(
     lightweight: bool = False,
     target_language: str | None = None,
 ) -> list[dict]:
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     posts = list(
         annotate_posts_with_feed_activity(project_posts_queryset())
         .filter(project=project, is_deleted=False)
         .order_by("-effective_last_activity_at", "-id")[:limit]
     )
     serializer = serialize_post_summary if lightweight else serialize_post
-    company_colors_by_workspace_id = project_company_colors_for_context(project=project, members=members)
+    company_colors_by_workspace_id = project_company_colors_for_context(
+        project=project, members=members
+    )
     post_translation_map = resolve_post_translation_memory(
         posts,
         target_language=target_language,
@@ -2993,7 +3380,11 @@ def list_project_feed(
     safe_offset = max(int(offset or 0), 0)
 
     queryset = accessible_feed_posts_queryset(profile=profile)
-    posts = list(queryset.order_by("-effective_last_activity_at", "-id")[safe_offset : safe_offset + safe_limit + 1])
+    posts = list(
+        queryset.order_by("-effective_last_activity_at", "-id")[
+            safe_offset : safe_offset + safe_limit + 1
+        ]
+    )
     page_posts = posts[:safe_limit]
     membership_by_project_id = {
         membership.project_id: membership
@@ -3047,7 +3438,9 @@ def accessible_feed_posts_queryset(*, profile: Profile):
     ).values_list("project_id", flat=True)
 
     return prefetch_post_feed_seen_state(
-        annotate_posts_with_feed_activity(project_posts_queryset()).filter(project_id__in=accessible_project_ids),
+        annotate_posts_with_feed_activity(project_posts_queryset()).filter(
+            project_id__in=accessible_project_ids
+        ),
         profile=profile,
     )
 
@@ -3104,8 +3497,12 @@ def mark_feed_posts_seen(*, profile: Profile, post_ids: list[int] | None = None)
     }
 
 
-def get_project_overview(*, profile: Profile, project_id: int, target_language: str | None = None) -> dict:
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
+def get_project_overview(
+    *, profile: Profile, project_id: int, target_language: str | None = None
+) -> dict:
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     tasks = list(project_tasks_queryset(project))
     documents = list(project.documents.select_related("folder").order_by("-updated_at", "-id"))
     photos = list(project.photos.order_by("-created_at", "-id"))
@@ -3153,17 +3550,23 @@ def get_project_overview(*, profile: Profile, project_id: int, target_language: 
     }
 
 
-def list_posts_for_task(*, profile: Profile, task_id: int, target_language: str | None = None) -> list[dict]:
+def list_posts_for_task(
+    *, profile: Profile, task_id: int, target_language: str | None = None
+) -> list[dict]:
     task = ProjectTask.objects.select_related("project").filter(id=task_id).first()
     if task is None:
         raise ValueError("Task non trovato.")
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=task.project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=task.project_id
+    )
     posts = list(
         project_posts_queryset()
         .filter(task=task, activity__isnull=True)
         .order_by("-published_date", "-id")
     )
-    company_colors_by_workspace_id = project_company_colors_for_context(project=project, members=members)
+    company_colors_by_workspace_id = project_company_colors_for_context(
+        project=project, members=members
+    )
     post_translation_map = resolve_post_translation_memory(
         posts,
         target_language=target_language,
@@ -3186,7 +3589,9 @@ def list_posts_for_task(*, profile: Profile, task_id: int, target_language: str 
     ]
 
 
-def list_posts_for_activity(*, profile: Profile, activity_id: int, target_language: str | None = None) -> list[dict]:
+def list_posts_for_activity(
+    *, profile: Profile, activity_id: int, target_language: str | None = None
+) -> list[dict]:
     activity = (
         ProjectActivity.objects.select_related("task", "task__project")
         .filter(id=activity_id)
@@ -3199,11 +3604,11 @@ def list_posts_for_activity(*, profile: Profile, activity_id: int, target_langua
         project_id=activity.task.project_id,
     )
     posts = list(
-        project_posts_queryset()
-        .filter(activity=activity)
-        .order_by("-published_date", "-id")
+        project_posts_queryset().filter(activity=activity).order_by("-published_date", "-id")
     )
-    company_colors_by_workspace_id = project_company_colors_for_context(project=project, members=members)
+    company_colors_by_workspace_id = project_company_colors_for_context(
+        project=project, members=members
+    )
     post_translation_map = resolve_post_translation_memory(
         posts,
         target_language=target_language,
@@ -3286,8 +3691,7 @@ def resolve_project_member_profile_ids(*, project: Project, ids: list[int]) -> l
     if not ids:
         return []
     members = list(
-        ProjectMember.objects.select_related("profile")
-        .filter(
+        ProjectMember.objects.select_related("profile").filter(
             project=project,
             profile_id__in=ids,
             status=ProjectMemberStatus.ACTIVE,
@@ -3314,7 +3718,9 @@ def add_project_team_member(
 ) -> dict:
     del is_external
 
-    project, membership, _members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_manage_project(membership):
         raise ValueError("Non hai permessi per invitare membri su questo progetto.")
 
@@ -3359,7 +3765,9 @@ def add_project_team_member(
             "project_name": project.name,
             "member_name": profile_display_name(target_profile),
             "member_role": project_role_label(project_member_effective_role(member)),
-            "member_company_name": target_profile.workspace.name if target_profile.workspace_id else None,
+            "member_company_name": target_profile.workspace.name
+            if target_profile.workspace_id
+            else None,
         },
     )
     create_project_notification_from_blueprint(
@@ -3388,12 +3796,16 @@ def update_project_team_member(
     company_color_project: str | None = None,
     project_role_codes: list[str] | None = None,
 ) -> dict:
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_manage_project(membership):
         raise ValueError("Non hai permessi per gestire questo membro del progetto.")
 
     member = (
-        ProjectMember.objects.select_related("project", "profile", "profile__workspace", "profile__user")
+        ProjectMember.objects.select_related(
+            "project", "profile", "profile__workspace", "profile__user"
+        )
         .filter(project=project, id=member_id, disabled=False)
         .first()
     )
@@ -3465,7 +3877,9 @@ def generate_project_invite(
     project_id: int,
     email: str,
 ) -> dict:
-    project, membership, _members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_manage_project(membership):
         raise ValueError("Non hai permessi per invitare aziende o collaboratori esterni.")
 
@@ -3533,7 +3947,9 @@ def create_project_task(
     alert: bool = False,
     starred: bool = False,
 ) -> dict:
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per creare task in questo progetto.")
     if not normalize_text(name):
@@ -3589,7 +4005,9 @@ def create_project_task(
         if task.assigned_company_id and recipient.workspace_id == task.assigned_company_id
     ]
     generic_recipients = [
-        recipient for recipient in recipients if recipient.id not in {item.id for item in assigned_recipients}
+        recipient
+        for recipient in recipients
+        if recipient.id not in {item.id for item in assigned_recipients}
     ]
     if assigned_recipients:
         notify_profiles_with_blueprint(
@@ -3637,10 +4055,14 @@ def update_project_task(
     alert: bool = False,
     starred: bool = False,
 ) -> dict:
-    task = ProjectTask.objects.select_related("project", "assigned_company").filter(id=task_id).first()
+    task = (
+        ProjectTask.objects.select_related("project", "assigned_company").filter(id=task_id).first()
+    )
     if task is None:
         raise ValueError("Task non trovato.")
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=task.project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=task.project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per modificare task in questo progetto.")
     previous_name = task.name
@@ -3673,7 +4095,9 @@ def update_project_task(
     shifted_activity_refs: list[str] = []
     shift_delta_days = (task.date_start - previous_date_start).days
     if shift_delta_days != 0 and shift_delta_days == (task.date_end - previous_date_end).days:
-        shifted_activity_refs = shift_task_activities_only(task_id=task.id, delta_days=shift_delta_days)
+        shifted_activity_refs = shift_task_activities_only(
+            task_id=task.id, delta_days=shift_delta_days
+        )
     sync_task_bounds_to_activities(task_id=task.id)
     propagate_project_schedule_delays(
         project=project,
@@ -3691,12 +4115,25 @@ def update_project_task(
     )
     changes = [
         build_timeline_change(label="Nome", before=previous_name, after=task.name),
-        build_timeline_change(label="Azienda", before=previous_assigned_company_name, after=task.assigned_company.name if task.assigned_company else None),
+        build_timeline_change(
+            label="Azienda",
+            before=previous_assigned_company_name,
+            after=task.assigned_company.name if task.assigned_company else None,
+        ),
         build_timeline_change(label="Inizio", before=previous_date_start, after=task.date_start),
         build_timeline_change(label="Fine", before=previous_date_end, after=task.date_end),
-        build_timeline_change(label="Chiusura", before=previous_date_completed, after=task.date_completed),
-        build_timeline_change(label="Progresso", before=f"{previous_progress}%", after=f"{task.progress}%", tone="positive"),
-        build_timeline_change(label="Alert", before=previous_alert, after=task.alert, tone="warning"),
+        build_timeline_change(
+            label="Chiusura", before=previous_date_completed, after=task.date_completed
+        ),
+        build_timeline_change(
+            label="Progresso",
+            before=f"{previous_progress}%",
+            after=f"{task.progress}%",
+            tone="positive",
+        ),
+        build_timeline_change(
+            label="Alert", before=previous_alert, after=task.alert, tone="warning"
+        ),
         build_timeline_change(label="Star", before=previous_starred, after=task.starred),
         build_timeline_change(label="Nota", before=previous_note, after=task.note),
     ]
@@ -3715,7 +4152,8 @@ def update_project_task(
             "date_completed": task.date_completed,
             "progress": task.progress,
             "alert": task.alert,
-            "completed": task.date_completed is not None and previous_date_completed != task.date_completed,
+            "completed": task.date_completed is not None
+            and previous_date_completed != task.date_completed,
             "changes": [change for change in changes if change],
         },
     )
@@ -3731,7 +4169,9 @@ def update_project_task(
         and recipient.workspace_id == task.assigned_company_id
     ]
     generic_recipients = [
-        recipient for recipient in recipients if recipient.id not in {item.id for item in newly_assigned_recipients}
+        recipient
+        for recipient in recipients
+        if recipient.id not in {item.id for item in newly_assigned_recipients}
     ]
     if newly_assigned_recipients:
         notify_profiles_with_blueprint(
@@ -3783,7 +4223,9 @@ def create_task_activity(
     task = ProjectTask.objects.select_related("project").filter(id=task_id).first()
     if task is None:
         raise ValueError("Task non trovato.")
-    _project, membership, members = get_project_with_team_context(profile=profile, project_id=task.project_id)
+    _project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=task.project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per creare attivita in questo progetto.")
 
@@ -3846,7 +4288,9 @@ def create_task_activity(
     worker_ids = set(activity.workers.values_list("id", flat=True))
     assigned_recipients = [recipient for recipient in recipients if recipient.id in worker_ids]
     generic_recipients = [
-        recipient for recipient in recipients if recipient.id not in {item.id for item in assigned_recipients}
+        recipient
+        for recipient in recipients
+        if recipient.id not in {item.id for item in assigned_recipients}
     ]
     if assigned_recipients:
         notify_profiles_with_blueprint(
@@ -3907,7 +4351,9 @@ def update_task_activity(
     )
     if activity is None:
         raise ValueError("Attivita non trovata.")
-    _project, membership, members = get_project_with_team_context(profile=profile, project_id=activity.task.project_id)
+    _project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=activity.task.project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per modificare attivita in questo progetto.")
     previous_title = activity.title
@@ -3943,7 +4389,9 @@ def update_task_activity(
     activity.alert = bool(alert)
     activity.starred = bool(starred)
     activity.save()
-    activity.workers.set(resolve_project_member_profile_ids(project=activity.task.project, ids=workers or []))
+    activity.workers.set(
+        resolve_project_member_profile_ids(project=activity.task.project, ids=workers or [])
+    )
     activity.refresh_from_db()
     expanded_task_ref = sync_task_bounds_to_activities(task_id=activity.task_id)
     propagate_seed_refs = [
@@ -3954,13 +4402,35 @@ def update_task_activity(
     next_worker_names = [profile_display_name(worker) for worker in activity.workers.all()]
     changes = [
         build_timeline_change(label="Titolo", before=previous_title, after=activity.title),
-        build_timeline_change(label="Descrizione", before=previous_description, after=activity.description),
-        build_timeline_change(label="Stato", before=task_activity_status_label(previous_status), after=task_activity_status_label(activity.status), tone="positive" if activity.status == TaskActivityStatus.COMPLETED else "neutral"),
-        build_timeline_change(label="Progresso", before=f"{previous_progress}%", after=f"{activity.progress}%", tone="positive"),
-        build_timeline_change(label="Inizio", before=previous_datetime_start, after=activity.datetime_start),
-        build_timeline_change(label="Fine", before=previous_datetime_end, after=activity.datetime_end),
-        build_timeline_change(label="Squadra", before=", ".join(previous_worker_names), after=", ".join(next_worker_names)),
-        build_timeline_change(label="Alert", before=previous_alert, after=activity.alert, tone="warning"),
+        build_timeline_change(
+            label="Descrizione", before=previous_description, after=activity.description
+        ),
+        build_timeline_change(
+            label="Stato",
+            before=task_activity_status_label(previous_status),
+            after=task_activity_status_label(activity.status),
+            tone="positive" if activity.status == TaskActivityStatus.COMPLETED else "neutral",
+        ),
+        build_timeline_change(
+            label="Progresso",
+            before=f"{previous_progress}%",
+            after=f"{activity.progress}%",
+            tone="positive",
+        ),
+        build_timeline_change(
+            label="Inizio", before=previous_datetime_start, after=activity.datetime_start
+        ),
+        build_timeline_change(
+            label="Fine", before=previous_datetime_end, after=activity.datetime_end
+        ),
+        build_timeline_change(
+            label="Squadra",
+            before=", ".join(previous_worker_names),
+            after=", ".join(next_worker_names),
+        ),
+        build_timeline_change(
+            label="Alert", before=previous_alert, after=activity.alert, tone="warning"
+        ),
         build_timeline_change(label="Star", before=previous_starred, after=activity.starred),
         build_timeline_change(label="Nota", before=previous_note, after=activity.note),
     ]
@@ -3978,7 +4448,8 @@ def update_task_activity(
             "status": activity.status,
             "progress": activity.progress,
             "alert": activity.alert,
-            "completed": activity.status == TaskActivityStatus.COMPLETED and previous_status != activity.status,
+            "completed": activity.status == TaskActivityStatus.COMPLETED
+            and previous_status != activity.status,
             "changes": [change for change in changes if change],
         },
     )
@@ -3988,9 +4459,13 @@ def update_task_activity(
     )
     worker_ids = set(activity.workers.values_list("id", flat=True))
     newly_assigned_ids = worker_ids - previous_worker_ids
-    assigned_recipients = [recipient for recipient in recipients if recipient.id in newly_assigned_ids]
+    assigned_recipients = [
+        recipient for recipient in recipients if recipient.id in newly_assigned_ids
+    ]
     generic_recipients = [
-        recipient for recipient in recipients if recipient.id not in {item.id for item in assigned_recipients}
+        recipient
+        for recipient in recipients
+        if recipient.id not in {item.id for item in assigned_recipients}
     ]
     if assigned_recipients:
         notify_profiles_with_blueprint(
@@ -4031,7 +4506,9 @@ def save_post_attachments(post: ProjectPost, files: list[object]) -> None:
     from edilcloud.modules.billing.services import assert_storage_quota_available
 
     prepared_files = [optimize_media_for_storage(uploaded_file) for uploaded_file in files]
-    incoming_bytes = sum(int(getattr(uploaded_file, "size", 0) or 0) for uploaded_file in prepared_files)
+    incoming_bytes = sum(
+        int(getattr(uploaded_file, "size", 0) or 0) for uploaded_file in prepared_files
+    )
     assert_storage_quota_available(post.project.workspace, incoming_bytes=incoming_bytes)
     for uploaded_file in prepared_files:
         PostAttachment.objects.create(post=post, file=uploaded_file)
@@ -4041,21 +4518,29 @@ def save_comment_attachments(comment: PostComment, files: list[object]) -> None:
     from edilcloud.modules.billing.services import assert_storage_quota_available
 
     prepared_files = [optimize_media_for_storage(uploaded_file) for uploaded_file in files]
-    incoming_bytes = sum(int(getattr(uploaded_file, "size", 0) or 0) for uploaded_file in prepared_files)
+    incoming_bytes = sum(
+        int(getattr(uploaded_file, "size", 0) or 0) for uploaded_file in prepared_files
+    )
     assert_storage_quota_available(comment.post.project.workspace, incoming_bytes=incoming_bytes)
     for uploaded_file in prepared_files:
         CommentAttachment.objects.create(comment=comment, file=uploaded_file)
 
 
 def get_post_for_profile(*, profile: Profile, post_id: int) -> tuple[ProjectPost, ProjectMember]:
-    post = ProjectPost.objects.select_related("project", "task", "activity", "author").filter(id=post_id).first()
+    post = (
+        ProjectPost.objects.select_related("project", "task", "activity", "author")
+        .filter(id=post_id)
+        .first()
+    )
     if post is None:
         raise ValueError("Post non trovato.")
     membership = get_project_membership(post.project, profile)
     return post, membership
 
 
-def get_comment_for_profile(*, profile: Profile, comment_id: int) -> tuple[PostComment, ProjectMember]:
+def get_comment_for_profile(
+    *, profile: Profile, comment_id: int
+) -> tuple[PostComment, ProjectMember]:
     comment = (
         PostComment.objects.select_related("post", "post__project", "author")
         .filter(id=comment_id)
@@ -4082,7 +4567,9 @@ def get_post_attachment_file_response(*, profile: Profile, attachment_id: int):
 
 def get_comment_attachment_file_response(*, profile: Profile, attachment_id: int):
     attachment = (
-        CommentAttachment.objects.select_related("comment", "comment__post", "comment__post__project")
+        CommentAttachment.objects.select_related(
+            "comment", "comment__post", "comment__post__project"
+        )
         .filter(id=attachment_id)
         .first()
     )
@@ -4183,7 +4670,12 @@ def notify_comment_created(
         )
 
     personalized_recipients: list[tuple[Profile, str, str]] = []
-    if comment.parent_id and comment.parent and comment.parent.author_id and comment.parent.author_id not in already_notified:
+    if (
+        comment.parent_id
+        and comment.parent
+        and comment.parent.author_id
+        and comment.parent.author_id not in already_notified
+    ):
         personalized_recipients.append(
             (
                 comment.parent.author,
@@ -4252,7 +4744,9 @@ def notify_post_change(
 ) -> None:
     recipients = project_participant_recipients(post, exclude_profile_ids={actor_profile.id})
     if not recipients:
-        recipients = project_notification_recipients(post.project, exclude_profile_ids={actor_profile.id})
+        recipients = project_notification_recipients(
+            post.project, exclude_profile_ids={actor_profile.id}
+        )
     if not recipients:
         return
     post_excerpt = notification_excerpt(post.text)
@@ -4301,6 +4795,60 @@ def notify_comment_change(
     )
 
 
+def get_existing_project_client_mutation(
+    *,
+    profile: Profile,
+    client_mutation_id: str,
+    operation: str,
+) -> ProjectClientMutation | None:
+    normalized_mutation_id = normalize_text(client_mutation_id)
+    if not normalized_mutation_id:
+        return None
+
+    mutation = (
+        ProjectClientMutation.objects.select_related("post", "comment")
+        .filter(profile=profile, mutation_id=normalized_mutation_id)
+        .first()
+    )
+    if mutation is None:
+        return None
+    if mutation.operation != operation:
+        raise ValueError("Client mutation id gia utilizzato per un'altra operazione.")
+    return mutation
+
+
+def record_project_client_mutation(
+    *,
+    profile: Profile,
+    client_mutation_id: str,
+    operation: str,
+    post: ProjectPost | None = None,
+    comment: PostComment | None = None,
+) -> None:
+    normalized_mutation_id = normalize_text(client_mutation_id)
+    if not normalized_mutation_id:
+        return
+
+    try:
+        ProjectClientMutation.objects.create(
+            profile=profile,
+            mutation_id=normalized_mutation_id,
+            operation=operation,
+            post=post,
+            comment=comment,
+        )
+    except IntegrityError:
+        existing = (
+            ProjectClientMutation.objects.select_related("post", "comment")
+            .filter(profile=profile, mutation_id=normalized_mutation_id)
+            .first()
+        )
+        if existing is None:
+            raise
+        if existing.operation != operation:
+            raise ValueError("Client mutation id gia utilizzato per un'altra operazione.")
+
+
 @transaction.atomic
 def create_task_post(
     *,
@@ -4315,11 +4863,36 @@ def create_task_post(
     mentioned_profile_ids: list[int] | None = None,
     weather_payload: dict | None = None,
     target_language: str | None = None,
+    client_mutation_id: str = "",
 ) -> dict:
     task = ProjectTask.objects.select_related("project").filter(id=task_id).first()
     if task is None:
         raise ValueError("Task non trovato.")
-    project, membership, members = get_project_with_team_context(profile=profile, project_id=task.project_id)
+    project, membership, members = get_project_with_team_context(
+        profile=profile, project_id=task.project_id
+    )
+    existing_mutation = get_existing_project_client_mutation(
+        profile=profile,
+        client_mutation_id=client_mutation_id,
+        operation="task_post_create",
+    )
+    if existing_mutation is not None and existing_mutation.post_id is not None:
+        existing_post = project_posts_queryset().get(id=existing_mutation.post_id)
+        company_colors_by_workspace_id = project_company_colors_for_context(
+            project=project,
+            members=members,
+            tasks=[task],
+        )
+        return serialize_post(
+            post=existing_post,
+            membership=membership,
+            company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_post_id=resolve_post_translation_memory(
+                [existing_post],
+                target_language=target_language,
+                fallback_language=profile.language,
+            ),
+        )
     post = ProjectPost.objects.create(
         project=task.project,
         task=task,
@@ -4344,6 +4917,12 @@ def create_task_post(
         )
         .prefetch_related("attachments", "comments__attachments")
         .get(id=post.id)
+    )
+    record_project_client_mutation(
+        profile=profile,
+        client_mutation_id=client_mutation_id,
+        operation="task_post_create",
+        post=post,
     )
     mentioned_profiles = resolve_project_mentioned_profiles(
         project=task.project,
@@ -4413,6 +4992,7 @@ def create_activity_post(
     mentioned_profile_ids: list[int] | None = None,
     weather_payload: dict | None = None,
     target_language: str | None = None,
+    client_mutation_id: str = "",
 ) -> dict:
     activity = (
         ProjectActivity.objects.select_related("task", "task__project")
@@ -4425,6 +5005,28 @@ def create_activity_post(
         profile=profile,
         project_id=activity.task.project_id,
     )
+    existing_mutation = get_existing_project_client_mutation(
+        profile=profile,
+        client_mutation_id=client_mutation_id,
+        operation="activity_post_create",
+    )
+    if existing_mutation is not None and existing_mutation.post_id is not None:
+        existing_post = project_posts_queryset().get(id=existing_mutation.post_id)
+        company_colors_by_workspace_id = project_company_colors_for_context(
+            project=project,
+            members=members,
+            tasks=[activity.task],
+        )
+        return serialize_post(
+            post=existing_post,
+            membership=membership,
+            company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_post_id=resolve_post_translation_memory(
+                [existing_post],
+                target_language=target_language,
+                fallback_language=profile.language,
+            ),
+        )
     post = ProjectPost.objects.create(
         project=activity.task.project,
         task=activity.task,
@@ -4451,6 +5053,12 @@ def create_activity_post(
         )
         .prefetch_related("attachments", "comments__attachments")
         .get(id=post.id)
+    )
+    record_project_client_mutation(
+        profile=profile,
+        client_mutation_id=client_mutation_id,
+        operation="activity_post_create",
+        post=post,
     )
     mentioned_profiles = resolve_project_mentioned_profiles(
         project=activity.task.project,
@@ -4518,9 +5126,38 @@ def create_post_comment(
     files: list[object] | None = None,
     mentioned_profile_ids: list[int] | None = None,
     target_language: str | None = None,
+    client_mutation_id: str = "",
 ) -> dict:
     post, membership = get_post_for_profile(profile=profile, post_id=post_id)
-    _project, _membership, members = get_project_with_team_context(profile=profile, project_id=post.project_id)
+    _project, _membership, members = get_project_with_team_context(
+        profile=profile, project_id=post.project_id
+    )
+    existing_mutation = get_existing_project_client_mutation(
+        profile=profile,
+        client_mutation_id=client_mutation_id,
+        operation="post_comment_create",
+    )
+    if existing_mutation is not None and existing_mutation.comment_id is not None:
+        existing_comment = (
+            PostComment.objects.select_related("author", "author__workspace", "author__user")
+            .prefetch_related("attachments", "replies__attachments")
+            .get(id=existing_mutation.comment_id)
+        )
+        company_colors_by_workspace_id = project_company_colors_for_context(
+            project=post.project,
+            members=members,
+            tasks=[post.task] if post.task is not None else None,
+        )
+        return serialize_comment(
+            existing_comment,
+            membership=membership,
+            company_colors_by_workspace_id=company_colors_by_workspace_id,
+            translation_by_comment_id=resolve_comment_translation_memory(
+                [existing_comment],
+                target_language=target_language,
+                fallback_language=profile.language,
+            ),
+        )
     parent = None
     if parent_id is not None:
         parent = PostComment.objects.filter(id=parent_id, post=post).first()
@@ -4540,6 +5177,12 @@ def create_post_comment(
         PostComment.objects.select_related("author", "author__workspace", "author__user")
         .prefetch_related("attachments", "replies__attachments")
         .get(id=comment.id)
+    )
+    record_project_client_mutation(
+        profile=profile,
+        client_mutation_id=client_mutation_id,
+        operation="post_comment_create",
+        comment=comment,
     )
     mentioned_profiles = resolve_project_mentioned_profiles(
         project=post.project,
@@ -4616,7 +5259,9 @@ def update_post(
     target_language: str | None = None,
 ) -> dict:
     post, membership = get_post_for_profile(profile=profile, post_id=post_id)
-    _project, _membership, members = get_project_with_team_context(profile=profile, project_id=post.project_id)
+    _project, _membership, members = get_project_with_team_context(
+        profile=profile, project_id=post.project_id
+    )
     if not can_edit_project_content(membership, author_profile_id=post.author_id):
         raise ValueError("Non hai permessi per modificare questo post.")
     was_alert = bool(post.alert)
@@ -4691,12 +5336,34 @@ def update_post(
             "changes": [
                 change
                 for change in [
-                    build_timeline_change(label="Testo", before=notification_excerpt(previous_text), after=notification_excerpt(refreshed.text)),
-                    build_timeline_change(label="Tipo", before=post_kind_label(previous_post_kind), after=post_kind_label(refreshed.post_kind)),
-                    build_timeline_change(label="Visibilita", before="Pubblico" if previous_is_public else "Privato", after="Pubblico" if refreshed.is_public else "Privato"),
-                    build_timeline_change(label="Alert", before=previous_alert, after=refreshed.alert, tone="warning"),
-                    build_timeline_change(label="Lingua", before=previous_source_language, after=refreshed.source_language),
-                    build_timeline_change(label="Allegati", before=attachment_count_label(previous_attachment_count), after=attachment_count_label(refreshed.attachments.count())),
+                    build_timeline_change(
+                        label="Testo",
+                        before=notification_excerpt(previous_text),
+                        after=notification_excerpt(refreshed.text),
+                    ),
+                    build_timeline_change(
+                        label="Tipo",
+                        before=post_kind_label(previous_post_kind),
+                        after=post_kind_label(refreshed.post_kind),
+                    ),
+                    build_timeline_change(
+                        label="Visibilita",
+                        before="Pubblico" if previous_is_public else "Privato",
+                        after="Pubblico" if refreshed.is_public else "Privato",
+                    ),
+                    build_timeline_change(
+                        label="Alert", before=previous_alert, after=refreshed.alert, tone="warning"
+                    ),
+                    build_timeline_change(
+                        label="Lingua",
+                        before=previous_source_language,
+                        after=refreshed.source_language,
+                    ),
+                    build_timeline_change(
+                        label="Allegati",
+                        before=attachment_count_label(previous_attachment_count),
+                        after=attachment_count_label(refreshed.attachments.count()),
+                    ),
                 ]
                 if change
             ],
@@ -4722,7 +5389,9 @@ def update_post(
     notify_post_change(
         actor_profile=profile,
         post=refreshed,
-        kind="project.issue.resolved" if was_alert and not refreshed.alert else ("project.issue.updated" if refreshed.alert else "project.post.updated"),
+        kind="project.issue.resolved"
+        if was_alert and not refreshed.alert
+        else ("project.issue.updated" if refreshed.alert else "project.post.updated"),
         subject=(
             f"{profile_display_name(profile)} ha risolto una segnalazione"
             if was_alert and not refreshed.alert
@@ -4822,7 +5491,9 @@ def update_comment(
     target_language: str | None = None,
 ) -> dict:
     comment, membership = get_comment_for_profile(profile=profile, comment_id=comment_id)
-    _project, _membership, members = get_project_with_team_context(profile=profile, project_id=comment.post.project_id)
+    _project, _membership, members = get_project_with_team_context(
+        profile=profile, project_id=comment.post.project_id
+    )
     if not can_edit_project_content(membership, author_profile_id=comment.author_id):
         raise ValueError("Non hai permessi per modificare questo commento.")
     previous_text = comment.text
@@ -4866,9 +5537,21 @@ def update_comment(
             "changes": [
                 change
                 for change in [
-                    build_timeline_change(label="Testo", before=notification_excerpt(previous_text), after=notification_excerpt(refreshed.text)),
-                    build_timeline_change(label="Lingua", before=previous_source_language, after=refreshed.source_language),
-                    build_timeline_change(label="Allegati", before=attachment_count_label(previous_attachment_count), after=attachment_count_label(refreshed.attachments.count())),
+                    build_timeline_change(
+                        label="Testo",
+                        before=notification_excerpt(previous_text),
+                        after=notification_excerpt(refreshed.text),
+                    ),
+                    build_timeline_change(
+                        label="Lingua",
+                        before=previous_source_language,
+                        after=refreshed.source_language,
+                    ),
+                    build_timeline_change(
+                        label="Allegati",
+                        before=attachment_count_label(previous_attachment_count),
+                        after=attachment_count_label(refreshed.attachments.count()),
+                    ),
                 ]
                 if change
             ],
@@ -4987,7 +5670,9 @@ def create_project_folder(
     parent_id: int | None = None,
     is_public: bool = False,
 ) -> dict:
-    project, membership, _members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per creare cartelle in questo progetto.")
     parent = None
@@ -5058,7 +5743,9 @@ def update_project_folder(
     )
     if folder is None:
         raise ValueError("Cartella non trovata.")
-    _project, membership, _members = get_project_with_team_context(profile=profile, project_id=folder.project_id)
+    _project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=folder.project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per modificare cartelle in questo progetto.")
     previous_name = folder.name
@@ -5101,17 +5788,27 @@ def update_project_folder(
                 change
                 for change in [
                     build_timeline_change(label="Nome", before=previous_name, after=folder.name),
-                    build_timeline_change(label="Percorso", before=previous_path, after=folder.path),
-                    build_timeline_change(label="Parent", before=previous_parent_id, after=folder.parent_id),
-                    build_timeline_change(label="Visibilita", before=previous_is_public, after=folder.is_public),
-                    build_timeline_change(label="Root", before=previous_is_root, after=folder.is_root),
+                    build_timeline_change(
+                        label="Percorso", before=previous_path, after=folder.path
+                    ),
+                    build_timeline_change(
+                        label="Parent", before=previous_parent_id, after=folder.parent_id
+                    ),
+                    build_timeline_change(
+                        label="Visibilita", before=previous_is_public, after=folder.is_public
+                    ),
+                    build_timeline_change(
+                        label="Root", before=previous_is_root, after=folder.is_root
+                    ),
                 ]
                 if change
             ],
         },
     )
     notify_profiles_with_blueprint(
-        recipients=project_notification_recipients(folder.project, exclude_profile_ids={profile.id}),
+        recipients=project_notification_recipients(
+            folder.project, exclude_profile_ids={profile.id}
+        ),
         actor_profile=profile,
         blueprint=build_project_folder_notification(
             kind="project.folder.updated",
@@ -5131,7 +5828,9 @@ def delete_project_folder(*, profile: Profile, folder_id: int) -> None:
     folder = ProjectFolder.objects.select_related("project").filter(id=folder_id).first()
     if folder is None:
         raise ValueError("Cartella non trovata.")
-    _project, membership, _members = get_project_with_team_context(profile=profile, project_id=folder.project_id)
+    _project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=folder.project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per eliminare cartelle in questo progetto.")
     project_id = folder.project_id
@@ -5169,6 +5868,18 @@ def delete_project_folder(*, profile: Profile, folder_id: int) -> None:
     )
 
 
+def _assert_project_document_upload_size(uploaded_file) -> None:
+    max_bytes = int(getattr(settings, "PROJECT_DOCUMENT_MAX_UPLOAD_BYTES", 15 * 1024 * 1024))
+    size = int(getattr(uploaded_file, "size", 0) or 0)
+    if size <= 0:
+        return
+    if size > max_bytes:
+        max_mb = max(1, math.ceil(max_bytes / (1024 * 1024)))
+        raise ValueError(
+            f"Il documento supera il limite consentito di {max_mb:.0f} MB."
+        )
+
+
 @transaction.atomic
 def upload_project_document(
     *,
@@ -5181,11 +5892,14 @@ def upload_project_document(
     additional_path: str = "",
     is_public: bool = False,
 ) -> dict:
-    project, membership, _members = get_project_with_team_context(profile=profile, project_id=project_id)
+    project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per caricare documenti in questo progetto.")
     from edilcloud.modules.billing.services import assert_storage_quota_available
 
+    _assert_project_document_upload_size(uploaded_file)
     prepared_file = optimize_media_for_storage(uploaded_file)
     assert_storage_quota_available(
         project.workspace,
@@ -5193,13 +5907,15 @@ def upload_project_document(
     )
 
     folder = None
+    parent = None
     if folder_id is not None:
         folder = ProjectFolder.objects.filter(project=project, id=folder_id).first()
         if folder is None:
             raise ValueError("Cartella documento non valida.")
-    elif normalize_text(additional_path):
+        parent = folder
+
+    if normalize_text(additional_path):
         path_chunks = [chunk for chunk in normalize_text(additional_path).split("/") if chunk]
-        parent = None
         for chunk in path_chunks:
             folder, _created = ProjectFolder.objects.get_or_create(
                 project=project,
@@ -5254,6 +5970,213 @@ def upload_project_document(
     return serialize_document(document)
 
 
+def _clone_uploaded_binary(
+    *,
+    file_name: str,
+    content: bytes,
+    content_type: str,
+):
+    return SimpleUploadedFile(
+        file_name or "document.pdf",
+        content,
+        content_type=content_type or "application/octet-stream",
+    )
+
+
+def _build_inspection_report_post_text(
+    *,
+    document_title: str,
+    summary: str,
+    general_summary: str = "",
+) -> str:
+    lines = [
+        f"Verbale di sopralluogo: {normalize_text(document_title) or 'Documento'}",
+        "",
+        normalize_text(summary),
+    ]
+    if normalize_text(general_summary):
+        lines.extend(["", f"Contesto generale: {normalize_text(general_summary)}"])
+    lines.extend(
+        [
+            "",
+            "Documento completo disponibile nel drive di progetto e in allegato PDF.",
+        ]
+    )
+    return "\n".join(line for line in lines if line is not None).strip()
+
+
+@transaction.atomic
+def create_project_inspection_report(
+    *,
+    profile: Profile,
+    project_id: int,
+    uploaded_file,
+    title: str = "",
+    description: str = "",
+    folder_id: int | None = None,
+    additional_path: str = "",
+    is_public: bool = False,
+    source_language: str = "",
+    general_summary: str = "",
+    entries: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    project, membership, _members = get_project_with_team_context(
+        profile=profile,
+        project_id=project_id,
+    )
+    if not can_edit_project(membership):
+        raise ValueError("Non hai permessi per creare verbali in questo progetto.")
+
+    if uploaded_file is None:
+        raise ValueError("File PDF del verbale obbligatorio.")
+
+    prepared_entries: list[dict[str, Any]] = []
+    for index, raw_entry in enumerate(entries or []):
+        if not isinstance(raw_entry, dict):
+            raise ValueError("Le fasi operative del verbale non sono valide.")
+
+        raw_summary = raw_entry.get("summary")
+        summary = normalize_text(raw_summary)
+        if not summary:
+            raise ValueError(
+                f"Il riepilogo della fase/lavorazione #{index + 1} e obbligatorio."
+            )
+
+        task_id = raw_entry.get("task_id")
+        activity_id = raw_entry.get("activity_id")
+        task_id = int(task_id) if str(task_id or "").isdigit() else None
+        activity_id = int(activity_id) if str(activity_id or "").isdigit() else None
+
+        if activity_id is not None:
+            activity = (
+                ProjectActivity.objects.select_related("task", "task__project")
+                .filter(id=activity_id, task__project_id=project.id)
+                .first()
+            )
+            if activity is None:
+                raise ValueError("Una lavorazione selezionata non appartiene al progetto.")
+            if task_id is not None and activity.task_id != task_id:
+                raise ValueError("La lavorazione selezionata non corrisponde alla fase scelta.")
+            prepared_entries.append(
+                {
+                    "task": activity.task,
+                    "activity": activity,
+                    "summary": summary,
+                    "target_label": f"{activity.task.name} > {activity.title}",
+                }
+            )
+            continue
+
+        if task_id is None:
+            raise ValueError("Ogni riepilogo deve essere collegato a una fase o lavorazione.")
+
+        task = ProjectTask.objects.select_related("project").filter(
+            id=task_id,
+            project_id=project.id,
+        ).first()
+        if task is None:
+            raise ValueError("Una fase selezionata non appartiene al progetto.")
+        prepared_entries.append(
+            {
+                "task": task,
+                "activity": None,
+                "summary": summary,
+                "target_label": task.name,
+            }
+        )
+
+    if not prepared_entries:
+        raise ValueError("Seleziona almeno una fase o lavorazione per il verbale.")
+
+    file_name = Path(getattr(uploaded_file, "name", "") or "verbale-sopralluogo.pdf").name
+    content_type = (
+        getattr(uploaded_file, "content_type", "")
+        or mimetypes.guess_type(file_name)[0]
+        or "application/pdf"
+    )
+    try:
+        uploaded_file.seek(0)
+    except Exception:
+        pass
+    content = uploaded_file.read()
+    try:
+        uploaded_file.seek(0)
+    except Exception:
+        pass
+    if not content:
+        raise ValueError("Il file del verbale e vuoto o non leggibile.")
+
+    created_document = upload_project_document(
+        profile=profile,
+        project_id=project.id,
+        uploaded_file=_clone_uploaded_binary(
+            file_name=file_name,
+            content=content,
+            content_type=content_type,
+        ),
+        title=title,
+        description=description,
+        folder_id=folder_id,
+        additional_path=additional_path,
+        is_public=is_public,
+    )
+
+    normalized_general_summary = normalize_text(general_summary)
+    normalized_source_language = normalize_text(source_language)
+    created_posts: list[dict[str, Any]] = []
+
+    for prepared_entry in prepared_entries:
+        post_text = _build_inspection_report_post_text(
+            document_title=created_document["title"],
+            summary=prepared_entry["summary"],
+            general_summary=normalized_general_summary,
+        )
+        post_attachment = _clone_uploaded_binary(
+            file_name=file_name,
+            content=content,
+            content_type=content_type,
+        )
+
+        activity = prepared_entry["activity"]
+        if activity is not None:
+            created_post = create_activity_post(
+                profile=profile,
+                activity_id=activity.id,
+                text=post_text,
+                post_kind=PostKind.DOCUMENTATION,
+                is_public=is_public,
+                alert=False,
+                source_language=normalized_source_language,
+                files=[post_attachment],
+            )
+        else:
+            created_post = create_task_post(
+                profile=profile,
+                task_id=prepared_entry["task"].id,
+                text=post_text,
+                post_kind=PostKind.DOCUMENTATION,
+                is_public=is_public,
+                alert=False,
+                source_language=normalized_source_language,
+                files=[post_attachment],
+            )
+
+        created_posts.append(
+            {
+                "post_id": created_post["id"],
+                "task_id": prepared_entry["task"].id,
+                "activity_id": activity.id if activity is not None else None,
+                "target_label": prepared_entry["target_label"],
+            }
+        )
+
+    return {
+        "document": created_document,
+        "created_count": len(created_posts),
+        "posts": created_posts,
+    }
+
+
 @transaction.atomic
 def update_project_document(
     *,
@@ -5264,10 +6187,14 @@ def update_project_document(
     folder_id: int | None = None,
     uploaded_file=None,
 ) -> dict:
-    document = ProjectDocument.objects.select_related("project", "folder").filter(id=document_id).first()
+    document = (
+        ProjectDocument.objects.select_related("project", "folder").filter(id=document_id).first()
+    )
     if document is None:
         raise ValueError("Documento non trovato.")
-    _project, membership, _members = get_project_with_team_context(profile=profile, project_id=document.project_id)
+    _project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=document.project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per modificare documenti in questo progetto.")
     previous_title = document.title
@@ -5290,6 +6217,7 @@ def update_project_document(
                 raise ValueError("Cartella documento non valida.")
             document.folder = folder
     if uploaded_file is not None:
+        _assert_project_document_upload_size(uploaded_file)
         document.document = optimize_media_for_storage(uploaded_file)
     document.save()
     emit_project_realtime_event(
@@ -5309,18 +6237,35 @@ def update_project_document(
             "changes": [
                 change
                 for change in [
-                    build_timeline_change(label="Titolo", before=previous_title, after=document.title),
-                    build_timeline_change(label="Descrizione", before=previous_description, after=document.description),
-                    build_timeline_change(label="Cartella", before=previous_folder_path or previous_folder_id, after=(document.folder.path if document.folder else None) or document.folder_id),
-                    build_timeline_change(label="Visibilita", before=previous_is_public, after=document.is_public),
-                    build_timeline_change(label="Dimensione", before=previous_size, after=attachment_size(document.document)),
+                    build_timeline_change(
+                        label="Titolo", before=previous_title, after=document.title
+                    ),
+                    build_timeline_change(
+                        label="Descrizione", before=previous_description, after=document.description
+                    ),
+                    build_timeline_change(
+                        label="Cartella",
+                        before=previous_folder_path or previous_folder_id,
+                        after=(document.folder.path if document.folder else None)
+                        or document.folder_id,
+                    ),
+                    build_timeline_change(
+                        label="Visibilita", before=previous_is_public, after=document.is_public
+                    ),
+                    build_timeline_change(
+                        label="Dimensione",
+                        before=previous_size,
+                        after=attachment_size(document.document),
+                    ),
                 ]
                 if change
             ],
         },
     )
     notify_profiles_with_blueprint(
-        recipients=project_notification_recipients(document.project, exclude_profile_ids={profile.id}),
+        recipients=project_notification_recipients(
+            document.project, exclude_profile_ids={profile.id}
+        ),
         actor_profile=profile,
         blueprint=build_project_document_notification(
             kind="project.document.updated",
@@ -5342,7 +6287,9 @@ def delete_project_document(*, profile: Profile, document_id: int) -> None:
     document = ProjectDocument.objects.select_related("project").filter(id=document_id).first()
     if document is None:
         raise ValueError("Documento non trovato.")
-    _project, membership, _members = get_project_with_team_context(profile=profile, project_id=document.project_id)
+    _project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=document.project_id
+    )
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per eliminare documenti in questo progetto.")
     project_id = document.project_id

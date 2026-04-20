@@ -167,6 +167,15 @@ class CreateWorkspaceInviteRequestSchema(Schema):
     expires_in_days: int = 14
 
 
+class WorkspaceInviteCodeAcceptRequestSchema(Schema):
+    invite_code: str
+
+
+class CreateWorkspaceAccessRequestSchema(Schema):
+    position: str = ""
+    message: str = ""
+
+
 class UpdateWorkspaceTeamMemberRequestSchema(Schema):
     email: str | None = None
     role: str | None = None

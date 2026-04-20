@@ -366,6 +366,59 @@ class ProjectDocument(TimestampedModel):
         return self.title
 
 
+class ProjectDrawingPin(TimestampedModel):
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="drawing_pins",
+    )
+    drawing_document = models.ForeignKey(
+        ProjectDocument,
+        on_delete=models.CASCADE,
+        related_name="drawing_pins",
+    )
+    post = models.ForeignKey(
+        "ProjectPost",
+        on_delete=models.CASCADE,
+        related_name="drawing_pins",
+    )
+    created_by = models.ForeignKey(
+        Profile,
+        on_delete=models.SET_NULL,
+        related_name="created_project_drawing_pins",
+        null=True,
+        blank=True,
+    )
+    x = models.FloatField()
+    y = models.FloatField()
+    page_number = models.PositiveIntegerField(default=1)
+    label = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ("drawing_document_id", "page_number", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("drawing_document", "post"),
+                name="unique_drawing_pin_document_post",
+            ),
+            models.CheckConstraint(
+                check=models.Q(x__gte=0.0) & models.Q(x__lte=1.0),
+                name="drawing_pin_x_normalized",
+            ),
+            models.CheckConstraint(
+                check=models.Q(y__gte=0.0) & models.Q(y__lte=1.0),
+                name="drawing_pin_y_normalized",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("project", "drawing_document")),
+            models.Index(fields=("project", "post")),
+        ]
+
+    def __str__(self) -> str:
+        return f"Drawing pin #{self.id} doc={self.drawing_document_id} post={self.post_id}"
+
+
 class ProjectPhoto(TimestampedModel):
     project = models.ForeignKey(
         Project,
@@ -715,3 +768,42 @@ class CommentAttachment(TimestampedModel):
 
     class Meta:
         ordering = ("id",)
+
+
+class ProjectClientMutation(TimestampedModel):
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.CASCADE,
+        related_name="project_client_mutations",
+    )
+    mutation_id = models.CharField(max_length=128)
+    operation = models.CharField(max_length=64)
+    post = models.ForeignKey(
+        ProjectPost,
+        on_delete=models.CASCADE,
+        related_name="client_mutations",
+        null=True,
+        blank=True,
+    )
+    comment = models.ForeignKey(
+        PostComment,
+        on_delete=models.CASCADE,
+        related_name="client_mutations",
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("profile", "mutation_id"),
+                name="unique_project_client_mutation_profile",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("profile", "operation")),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.profile_id}:{self.operation}:{self.mutation_id}"

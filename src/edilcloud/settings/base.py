@@ -214,6 +214,18 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+PROJECT_DOCUMENT_MAX_UPLOAD_BYTES = int(
+    get_env("PROJECT_DOCUMENT_MAX_UPLOAD_BYTES", str(15 * 1024 * 1024))
+)
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(
+    get_env("FILE_UPLOAD_MAX_MEMORY_SIZE", str(PROJECT_DOCUMENT_MAX_UPLOAD_BYTES))
+)
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(
+    get_env(
+        "DATA_UPLOAD_MAX_MEMORY_SIZE",
+        str(PROJECT_DOCUMENT_MAX_UPLOAD_BYTES + 1024 * 1024),
+    )
+)
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

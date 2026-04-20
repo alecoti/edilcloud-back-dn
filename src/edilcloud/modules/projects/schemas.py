@@ -195,6 +195,24 @@ class UpdateProjectFolderRequestSchema(Schema):
     is_root: bool | None = None
 
 
+class CreateProjectDrawingPinRequestSchema(Schema):
+    drawing_document: int
+    post: int
+    x: float
+    y: float
+    page_number: int = 1
+    label: str = ""
+
+
+class UpdateProjectDrawingPinRequestSchema(Schema):
+    drawing_document: int | None = None
+    post: int | None = None
+    x: float | None = None
+    y: float | None = None
+    page_number: int | None = None
+    label: str | None = None
+
+
 class CreateDemoMasterSnapshotRequestSchema(Schema):
     version: str | None = None
     business_date: date | None = None

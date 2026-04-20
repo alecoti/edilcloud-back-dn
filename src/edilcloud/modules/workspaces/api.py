@@ -6,11 +6,14 @@ from edilcloud.modules.identity.auth import JWTAuth
 from edilcloud.modules.workspaces.schemas import (
     CompanyContactsResponseSchema,
     CompanySchema,
+    CreateWorkspaceAccessRequestSchema,
     CreateWorkspaceInviteRequestSchema,
     CreateWorkspaceRequestSchema,
     UpdateCurrentWorkspaceProfileRequestSchema,
     UpdateWorkspaceTeamMemberRequestSchema,
+    WorkspaceAccessRequestCreatedSchema,
     WorkspaceCurrentProfileSchema,
+    WorkspaceInviteCodeAcceptRequestSchema,
     WorkspaceInviteDecisionSchema,
     WorkspaceInviteSchema,
     WorkspaceOptionSchema,
@@ -21,7 +24,9 @@ from edilcloud.modules.workspaces.schemas import (
 )
 from edilcloud.modules.workspaces.services import (
     accept_workspace_invite,
+    accept_workspace_invite_by_code,
     create_current_workspace_member,
+    create_workspace_access_request,
     create_workspace_for_user,
     create_workspace_invite,
     delete_current_workspace_member,
@@ -36,6 +41,7 @@ from edilcloud.modules.workspaces.services import (
     refuse_workspace_invite,
     resend_current_workspace_invite,
     search_companies,
+    select_default_profile,
     update_current_workspace_profile_settings,
     update_current_workspace_member,
 )
@@ -196,6 +202,17 @@ def get_pending_workspace_invites(request):
     return list_pending_invites(request.auth.user)
 
 
+@router.post("/invites/code/accept", response=WorkspaceProvisionedResponseSchema, auth=auth)
+def accept_invite_code(request, payload: WorkspaceInviteCodeAcceptRequestSchema):
+    try:
+        return accept_workspace_invite_by_code(
+            request.auth.user,
+            invite_code=payload.invite_code,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
 @router.post("/invites/{uidb36}/{token}/accept", response=WorkspaceProvisionedResponseSchema, auth=auth)
 def accept_invite(request, uidb36: str, token: str):
     try:
@@ -209,6 +226,33 @@ def refuse_invite(request, uidb36: str, token: str):
     del request
     try:
         return refuse_workspace_invite(uidb36=uidb36, token=token)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post(
+    "/{workspace_id}/request-access",
+    response=WorkspaceAccessRequestCreatedSchema,
+    auth=auth,
+)
+def request_workspace_access(
+    request,
+    workspace_id: int,
+    payload: CreateWorkspaceAccessRequestSchema,
+):
+    try:
+        profile = select_default_profile(request.auth.user)
+        return create_workspace_access_request(
+            request.auth.user,
+            workspace_id=workspace_id,
+            email=request.auth.user.email,
+            first_name=(profile.first_name if profile else request.auth.user.first_name) or "",
+            last_name=(profile.last_name if profile else request.auth.user.last_name) or "",
+            phone=(profile.phone if profile else "") or "",
+            language=(profile.language if profile else getattr(request.auth.user, "language", "it")) or "it",
+            position=payload.position or (profile.position if profile else ""),
+            message=payload.message,
+        )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
 

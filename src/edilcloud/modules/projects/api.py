@@ -23,6 +23,7 @@ from edilcloud.modules.projects.schemas import (
     CreateDemoMasterSnapshotRequestSchema,
     CreateProjectGanttLinkRequestSchema,
     CreateProjectFolderRequestSchema,
+    CreateProjectDrawingPinRequestSchema,
     CreateProjectRequestSchema,
     CreateProjectTaskRequestSchema,
     CreateProjectTeamMemberRequestSchema,
@@ -41,6 +42,7 @@ from edilcloud.modules.projects.schemas import (
     RestoreDemoMasterSnapshotRequestSchema,
     RunDemoMasterScenarioRequestSchema,
     UpdateCommentRequestSchema,
+    UpdateProjectDrawingPinRequestSchema,
     UpdateProjectGanttLinkRequestSchema,
     UpdateProjectTeamMemberRequestSchema,
     UpdatePostRequestSchema,
@@ -53,9 +55,11 @@ from edilcloud.modules.projects.services import (
     add_project_team_member,
     apply_project_gantt_import,
     create_activity_post,
+    create_project_inspection_report,
     create_post_comment,
     create_project,
     create_project_folder,
+    delete_project_drawing_pin,
     create_project_gantt_link,
     create_project_task,
     create_task_activity,
@@ -79,6 +83,7 @@ from edilcloud.modules.projects.services import (
     list_posts_for_task,
     list_project_alert_posts,
     list_project_documents,
+    list_project_drawing_pins,
     list_project_feed,
     list_project_folders,
     list_project_gantt,
@@ -92,12 +97,14 @@ from edilcloud.modules.projects.services import (
     update_comment,
     update_post,
     update_project_document,
+    update_project_drawing_pin,
     update_project_folder,
     update_project_gantt_link,
     update_project_team_member,
     update_project_task,
     update_task_activity,
     upload_project_document,
+    upsert_project_drawing_pin,
 )
 from edilcloud.platform.realtime.services import build_project_realtime_session
 
@@ -112,6 +119,7 @@ folders_router = Router(tags=["folders"])
 documents_router = Router(tags=["documents"])
 photos_router = Router(tags=["photos"])
 REQUEST_LOCALE_HEADER = "X-Edilcloud-Locale"
+REQUEST_CLIENT_MUTATION_HEADER = "X-Edilcloud-Client-Mutation-Id"
 
 
 def is_multipart_request(request) -> bool:
@@ -152,6 +160,10 @@ def require_superuser(request) -> None:
 
 def request_locale(request) -> str:
     return (request.headers.get(REQUEST_LOCALE_HEADER) or "").strip()
+
+
+def request_client_mutation_id(request) -> str:
+    return (request.headers.get(REQUEST_CLIENT_MUTATION_HEADER) or "").strip()
 
 
 def parse_post_form_payload(request) -> dict[str, Any]:
@@ -199,9 +211,7 @@ def parse_update_post_payload(request) -> dict[str, Any]:
                 else None
             ),
             "alert": (
-                request.POST.get("alert", "").lower() == "true"
-                if "alert" in request.POST
-                else None
+                request.POST.get("alert", "").lower() == "true" if "alert" in request.POST else None
             ),
             "source_language": request.POST.get("source_language"),
             "mentioned_profile_ids": parse_int_list(request.POST.get("mentioned_profile_ids")),
@@ -280,6 +290,40 @@ def parse_project_document_update_payload(request) -> dict[str, Any]:
         "description": payload.get("description"),
         "folder_id": payload.get("folder"),
         "uploaded_file": None,
+    }
+
+
+def parse_project_inspection_report_payload(request) -> dict[str, Any]:
+    raw_folder = request.POST.get("folder")
+    folder_id = None
+    if raw_folder and raw_folder.strip():
+        try:
+            folder_id = int(raw_folder)
+        except (TypeError, ValueError) as exc:
+            raise HttpError(400, "Cartella documento non valida.") from exc
+
+    uploaded_file = request.FILES.get("document")
+    if uploaded_file is None:
+        raise HttpError(400, "File PDF del verbale obbligatorio.")
+
+    raw_entries = request.POST.get("entries", "[]")
+    try:
+        entries = json.loads(raw_entries)
+    except json.JSONDecodeError as exc:
+        raise HttpError(400, "Le fasi/lavorazioni del verbale non sono valide.") from exc
+    if not isinstance(entries, list):
+        raise HttpError(400, "Le fasi/lavorazioni del verbale devono essere una lista.")
+
+    return {
+        "uploaded_file": uploaded_file,
+        "title": request.POST.get("title", ""),
+        "description": request.POST.get("description", ""),
+        "folder_id": folder_id,
+        "additional_path": request.POST.get("additional_path", ""),
+        "is_public": request.POST.get("is_public", "false").lower() == "true",
+        "source_language": request.POST.get("source_language", ""),
+        "general_summary": request.POST.get("general_summary", ""),
+        "entries": entries,
     }
 
 
@@ -506,7 +550,9 @@ def get_project_team_compliance_endpoint(request, project_id: int):
 
 
 @router.post("/{project_id}/team", response={201: ProjectTeamMemberSchema}, auth=auth)
-def add_project_team_member_endpoint(request, project_id: int, payload: CreateProjectTeamMemberRequestSchema):
+def add_project_team_member_endpoint(
+    request, project_id: int, payload: CreateProjectTeamMemberRequestSchema
+):
     try:
         member = add_project_team_member(
             profile=current_profile(request),
@@ -541,7 +587,9 @@ def update_project_team_member_endpoint(
 
 
 @router.post("/{project_id}/invite-code", response={201: ProjectInviteCodeSchema}, auth=auth)
-def generate_project_invite_code_endpoint(request, project_id: int, payload: GenerateProjectInviteCodeRequestSchema):
+def generate_project_invite_code_endpoint(
+    request, project_id: int, payload: GenerateProjectInviteCodeRequestSchema
+):
     try:
         invite = generate_project_invite(
             profile=current_profile(request),
@@ -575,6 +623,93 @@ def upload_project_document_endpoint(request, project_id: int):
     return Status(201, document)
 
 
+@router.post("/{project_id}/inspection-reports", response={201: dict[str, Any]}, auth=auth)
+def create_project_inspection_report_endpoint(request, project_id: int):
+    try:
+        payload = parse_project_inspection_report_payload(request)
+        result = create_project_inspection_report(
+            profile=current_profile(request),
+            project_id=project_id,
+            **payload,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return Status(201, result)
+
+
+@router.get("/{project_id}/drawing-pins", response=list[dict[str, Any]], auth=auth)
+def get_project_drawing_pins_endpoint(request, project_id: int):
+    try:
+        profile = current_profile(request)
+        return list_project_drawing_pins(
+            profile=profile,
+            project_id=project_id,
+            target_language=request_locale(request),
+        )
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.post("/{project_id}/drawing-pins", response={201: dict[str, Any]}, auth=auth)
+def create_project_drawing_pin_endpoint(
+    request, project_id: int, payload: CreateProjectDrawingPinRequestSchema
+):
+    try:
+        profile = current_profile(request)
+        pin = upsert_project_drawing_pin(
+            profile=profile,
+            project_id=project_id,
+            drawing_document_id=payload.drawing_document,
+            post_id=payload.post,
+            x=payload.x,
+            y=payload.y,
+            page_number=payload.page_number,
+            label=payload.label,
+            target_language=request_locale(request),
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return Status(201, pin)
+
+
+@router.patch("/{project_id}/drawing-pins/{pin_id}", response=dict[str, Any], auth=auth)
+def update_project_drawing_pin_endpoint(
+    request,
+    project_id: int,
+    pin_id: int,
+    payload: UpdateProjectDrawingPinRequestSchema,
+):
+    try:
+        profile = current_profile(request)
+        return update_project_drawing_pin(
+            profile=profile,
+            project_id=project_id,
+            pin_id=pin_id,
+            drawing_document_id=payload.drawing_document,
+            post_id=payload.post,
+            x=payload.x,
+            y=payload.y,
+            page_number=payload.page_number,
+            label=payload.label,
+            target_language=request_locale(request),
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.delete("/{project_id}/drawing-pins/{pin_id}", response={204: None}, auth=auth)
+def delete_project_drawing_pin_endpoint(request, project_id: int, pin_id: int):
+    try:
+        delete_project_drawing_pin(
+            profile=current_profile(request),
+            project_id=project_id,
+            pin_id=pin_id,
+        )
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+    return 204, None
+
+
 @router.get("/{project_id}/photos", response=list[dict[str, Any]], auth=auth)
 def get_project_photos_endpoint(request, project_id: int):
     try:
@@ -592,7 +727,9 @@ def get_project_folders_endpoint(request, project_id: int):
 
 
 @router.post("/{project_id}/folders", response={201: dict[str, Any]}, auth=auth)
-def create_project_folder_endpoint(request, project_id: int, payload: CreateProjectFolderRequestSchema):
+def create_project_folder_endpoint(
+    request, project_id: int, payload: CreateProjectFolderRequestSchema
+):
     try:
         folder = create_project_folder(
             profile=current_profile(request),
@@ -780,6 +917,7 @@ def create_task_post_endpoint(request, task_id: int):
             profile=profile,
             task_id=task_id,
             target_language=request_locale(request),
+            client_mutation_id=request_client_mutation_id(request),
             **payload,
         )
     except ValueError as exc:
@@ -830,6 +968,7 @@ def create_activity_post_endpoint(request, activity_id: int):
             profile=profile,
             activity_id=activity_id,
             target_language=request_locale(request),
+            client_mutation_id=request_client_mutation_id(request),
             **payload,
         )
     except ValueError as exc:
@@ -870,6 +1009,7 @@ def create_comment_endpoint(request, post_id: int):
             profile=profile,
             post_id=post_id,
             target_language=request_locale(request),
+            client_mutation_id=request_client_mutation_id(request),
             **payload,
         )
     except ValueError as exc:

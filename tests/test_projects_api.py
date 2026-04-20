@@ -1508,6 +1508,104 @@ def test_project_task_activity_post_and_comment_mutations_work_end_to_end():
 
 
 @pytest.mark.django_db
+def test_project_post_and_comment_creates_are_idempotent_by_client_mutation_id():
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.idempotent@example.com",
+        password="devpass123",
+        workspace_name="Idempotent Workspace",
+    )
+    project = Project.objects.create(
+        workspace=profile.workspace,
+        created_by=profile,
+        name="Cantiere Idempotenza",
+        date_start=date.today(),
+        date_end=date.today() + timedelta(days=30),
+    )
+    ProjectMember.objects.create(
+        project=project,
+        profile=profile,
+        role=WorkspaceRole.OWNER,
+        status=ProjectMemberStatus.ACTIVE,
+    )
+    headers = auth_headers(client, email="projects.idempotent@example.com", password="devpass123")
+
+    task = ProjectTask.objects.create(
+        project=project,
+        name="Impianto meccanico",
+        assigned_company=profile.workspace,
+        date_start=date.today(),
+        date_end=date.today() + timedelta(days=5),
+    )
+    activity = ProjectActivity.objects.create(
+        task=task,
+        title="Montaggio dorsali",
+        status="progress",
+        datetime_start=timezone.now(),
+        datetime_end=timezone.now() + timedelta(hours=4),
+    )
+
+    create_post_headers = {
+        **headers,
+        "HTTP_X_EDILCLOUD_CLIENT_MUTATION_ID": "mobile-post-001",
+    }
+    first_post_response = client.post(
+        f"/api/v1/activities/{activity.id}/posts",
+        data={
+            "text": "Aggiornamento offline con retry",
+            "post_kind": "work-progress",
+            "is_public": "true",
+            "alert": "false",
+            "source_language": "it",
+        },
+        **create_post_headers,
+    )
+    second_post_response = client.post(
+        f"/api/v1/activities/{activity.id}/posts",
+        data={
+            "text": "Aggiornamento offline con retry",
+            "post_kind": "work-progress",
+            "is_public": "true",
+            "alert": "false",
+            "source_language": "it",
+        },
+        **create_post_headers,
+    )
+
+    assert first_post_response.status_code == 201
+    assert second_post_response.status_code == 201
+    assert first_post_response.json()["id"] == second_post_response.json()["id"]
+    assert ProjectPost.objects.filter(activity=activity).count() == 1
+
+    post_id = first_post_response.json()["id"]
+    create_comment_headers = {
+        **headers,
+        "HTTP_X_EDILCLOUD_CLIENT_MUTATION_ID": "mobile-comment-001",
+    }
+    first_comment_response = client.post(
+        f"/api/v1/posts/{post_id}/comments",
+        data={
+            "text": "Commento idempotente",
+            "source_language": "it",
+        },
+        **create_comment_headers,
+    )
+    second_comment_response = client.post(
+        f"/api/v1/posts/{post_id}/comments",
+        data={
+            "text": "Commento idempotente",
+            "source_language": "it",
+        },
+        **create_comment_headers,
+    )
+
+    assert first_comment_response.status_code == 201
+    assert second_comment_response.status_code == 201
+    assert first_comment_response.json()["id"] == second_comment_response.json()["id"]
+    assert PostComment.objects.filter(post_id=post_id).count() == 1
+
+
+@pytest.mark.django_db
 def test_project_feed_orders_by_latest_activity_and_resets_unread_when_post_changes_again():
     client = Client()
     _user, _workspace, profile = create_workspace_profile(
@@ -1728,6 +1826,204 @@ def test_project_folder_and_document_routes_support_create_update_delete():
 
     delete_folder_response = client.delete(f"/api/v1/folders/{folder_id}", **headers)
     assert delete_folder_response.status_code == 204
+
+
+@pytest.mark.django_db
+def test_project_document_upload_rejects_files_over_limit(settings):
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.documents.limit@example.com",
+        password="devpass123",
+        workspace_name="Docs Limit Workspace",
+    )
+    project = Project.objects.create(
+        workspace=profile.workspace,
+        created_by=profile,
+        name="Cantiere Limiti",
+        date_start=date.today(),
+        date_end=date.today() + timedelta(days=15),
+    )
+    ProjectMember.objects.create(
+        project=project,
+        profile=profile,
+        role=WorkspaceRole.OWNER,
+        status=ProjectMemberStatus.ACTIVE,
+    )
+    headers = auth_headers(
+        client,
+        email="projects.documents.limit@example.com",
+        password="devpass123",
+    )
+    settings.PROJECT_DOCUMENT_MAX_UPLOAD_BYTES = 10
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/documents",
+        data={
+            "title": "Documento fuori limite",
+            "description": "Troppo pesante",
+            "is_public": "false",
+            "document": SimpleUploadedFile(
+                "fuori-limite.pdf",
+                b"01234567890",
+                content_type="application/pdf",
+            ),
+        },
+        **headers,
+    )
+
+    assert response.status_code == 400
+    assert "1 MB" in response.json()["detail"]
+    assert "limite consentito" in response.json()["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_project_document_upload_supports_nested_additional_path_inside_existing_folder():
+    from edilcloud.modules.projects.services import create_project_folder, upload_project_document
+
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.documents.nested@example.com",
+        password="devpass123",
+        workspace_name="Nested Docs Workspace",
+    )
+    project = Project.objects.create(
+        workspace=profile.workspace,
+        created_by=profile,
+        name="Cantiere Cartelle",
+        date_start=date.today(),
+        date_end=date.today() + timedelta(days=15),
+    )
+    ProjectMember.objects.create(
+        project=project,
+        profile=profile,
+        role=WorkspaceRole.OWNER,
+        status=ProjectMemberStatus.ACTIVE,
+    )
+
+    base_folder = create_project_folder(
+        profile=profile,
+        project_id=project.id,
+        name="Documenti tecnici",
+        parent_id=None,
+        is_public=False,
+    )
+
+    created_document = upload_project_document(
+        profile=profile,
+        project_id=project.id,
+        uploaded_file=SimpleUploadedFile(
+            "relazione-impianto.pdf",
+            b"%PDF-1.4 nested",
+            content_type="application/pdf",
+        ),
+        title="Relazione impianto",
+        description="Upload annidato dentro cartella esistente",
+        folder_id=base_folder["id"],
+        additional_path="Impianti/Elettrico",
+        is_public=False,
+    )
+
+    document = ProjectDocument.objects.select_related("folder").get(id=created_document["id"])
+    assert document.folder is not None
+    assert document.folder.path == "Documenti tecnici/Impianti/Elettrico"
+
+    nested_paths = list(
+        ProjectFolder.objects.filter(project=project).order_by("path").values_list("path", flat=True)
+    )
+    assert nested_paths == [
+        "Documenti tecnici",
+        "Documenti tecnici/Impianti",
+        "Documenti tecnici/Impianti/Elettrico",
+    ]
+
+
+@pytest.mark.django_db
+def test_project_inspection_report_endpoint_creates_document_and_phase_posts():
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.inspection@example.com",
+        password="devpass123",
+        workspace_name="Inspection Workspace",
+    )
+    project = Project.objects.create(
+        workspace=profile.workspace,
+        created_by=profile,
+        name="Cantiere Verbali",
+        date_start=date.today(),
+        date_end=date.today() + timedelta(days=20),
+    )
+    ProjectMember.objects.create(
+        project=project,
+        profile=profile,
+        role=WorkspaceRole.OWNER,
+        status=ProjectMemberStatus.ACTIVE,
+    )
+    task = ProjectTask.objects.create(
+        project=project,
+        name="Scavi e fondazioni",
+        date_start=date.today(),
+        date_end=date.today() + timedelta(days=5),
+        assigned_company_id=profile.workspace_id,
+    )
+    activity = ProjectActivity.objects.create(
+        task=task,
+        title="Tracciamento quote",
+        datetime_start=timezone.now(),
+        datetime_end=timezone.now() + timedelta(hours=2),
+        status="progress",
+    )
+    headers = auth_headers(client, email="projects.inspection@example.com", password="devpass123")
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/inspection-reports",
+        data={
+            "title": "Verbale sopralluogo fronte nord",
+            "description": "Riepilogo tecnico del sopralluogo giornaliero",
+            "general_summary": "Sopralluogo con verifica quote e scarichi.",
+            "source_language": "it",
+            "document": SimpleUploadedFile(
+                "verbale-sopralluogo.pdf",
+                b"%PDF-1.4 inspection",
+                content_type="application/pdf",
+            ),
+            "entries": json.dumps(
+                [
+                    {
+                        "task_id": task.id,
+                        "summary": "Quote di scavo confermate. Da correggere il drenaggio lato est.",
+                    },
+                    {
+                        "task_id": task.id,
+                        "activity_id": activity.id,
+                        "summary": "Tracciamento completato con richiesta di verifica finale prima del getto.",
+                    },
+                ]
+            ),
+        },
+        **headers,
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["created_count"] == 2
+    assert payload["document"]["title"] == "Verbale sopralluogo fronte nord"
+    assert len(payload["posts"]) == 2
+
+    document = ProjectDocument.objects.get(id=payload["document"]["id"])
+    assert document.project_id == project.id
+    assert document.document.name.endswith(".pdf")
+
+    posts = list(
+        ProjectPost.objects.filter(project=project).prefetch_related("attachments").order_by("id")
+    )
+    assert len(posts) == 2
+    assert all(post.post_kind == PostKind.DOCUMENTATION for post in posts)
+    assert posts[0].attachments.count() == 1
+    assert posts[1].attachments.count() == 1
+    assert "Verbale di sopralluogo" in posts[0].text
+    assert "drive di progetto" in posts[0].text
+    assert posts[0].task_id == task.id
+    assert posts[0].activity_id is None
+    assert posts[1].activity_id == activity.id
 
 
 @pytest.mark.django_db
