@@ -6,9 +6,20 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: edilcloud-back-production
   cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUNBUFFERED: "1"
 
 jobs:
   validate:
@@ -17,18 +28,25 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           cache: "pip"
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .[dev]
+          for attempt in 1 2 3; do
+            python -m pip install --upgrade pip && python -m pip install -e ".[dev]" && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "Dependency installation failed after ${attempt} attempts."
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
 
       - name: Migration drift check
         run: python manage.py makemigrations --dry-run --check --settings=edilcloud.settings.test
@@ -57,7 +75,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Validate required secrets
         run: |
@@ -97,25 +115,27 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -p "$PORT" "$PROD_HOST" >> ~/.ssh/known_hosts
+          timeout 30 ssh-keyscan -p "$PORT" "$PROD_HOST" >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
       - name: Upload release archive
         run: |
+          SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=5)
           PORT="${PROD_PORT:-22}"
           REMOTE_ARCHIVE="/tmp/${ARCHIVE}"
-          scp -P "$PORT" "$ARCHIVE_PATH" "${PROD_USER}@${PROD_HOST}:${REMOTE_ARCHIVE}"
+          scp "${SSH_OPTIONS[@]}" -P "$PORT" "$ARCHIVE_PATH" "${PROD_USER}@${PROD_HOST}:${REMOTE_ARCHIVE}"
           echo "REMOTE_ARCHIVE=$REMOTE_ARCHIVE" >> "$GITHUB_ENV"
 
       - name: Upload server config files
         run: |
           set -euo pipefail
+          SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=5)
           PORT="${PROD_PORT:-22}"
           LOCAL_ENV_FILE="$(mktemp)"
           REMOTE_ENV_FILE="/tmp/edilcloud-back-dn-env-${GITHUB_SHA}"
           printf '%s' "$PROD_ENV_FILE" > "$LOCAL_ENV_FILE"
           chmod 600 "$LOCAL_ENV_FILE"
-          scp -P "$PORT" "$LOCAL_ENV_FILE" "${PROD_USER}@${PROD_HOST}:${REMOTE_ENV_FILE}"
+          scp "${SSH_OPTIONS[@]}" -P "$PORT" "$LOCAL_ENV_FILE" "${PROD_USER}@${PROD_HOST}:${REMOTE_ENV_FILE}"
           rm -f "$LOCAL_ENV_FILE"
           echo "REMOTE_ENV_FILE=$REMOTE_ENV_FILE" >> "$GITHUB_ENV"
 
@@ -124,15 +144,16 @@ jobs:
             REMOTE_DEPLOY_CONFIG_FILE="/tmp/edilcloud-back-dn-deploy-${GITHUB_SHA}"
             printf '%s' "$PROD_DEPLOY_CONFIG" > "$LOCAL_DEPLOY_CONFIG_FILE"
             chmod 600 "$LOCAL_DEPLOY_CONFIG_FILE"
-            scp -P "$PORT" "$LOCAL_DEPLOY_CONFIG_FILE" "${PROD_USER}@${PROD_HOST}:${REMOTE_DEPLOY_CONFIG_FILE}"
+            scp "${SSH_OPTIONS[@]}" -P "$PORT" "$LOCAL_DEPLOY_CONFIG_FILE" "${PROD_USER}@${PROD_HOST}:${REMOTE_DEPLOY_CONFIG_FILE}"
             rm -f "$LOCAL_DEPLOY_CONFIG_FILE"
             echo "REMOTE_DEPLOY_CONFIG_FILE=$REMOTE_DEPLOY_CONFIG_FILE" >> "$GITHUB_ENV"
           fi
 
       - name: Deploy on server
         run: |
+          SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=5)
           PORT="${PROD_PORT:-22}"
-          ssh -p "$PORT" "${PROD_USER}@${PROD_HOST}" \
+          ssh "${SSH_OPTIONS[@]}" -p "$PORT" "${PROD_USER}@${PROD_HOST}" \
             "sudo env GITHUB_SHA='${GITHUB_SHA}' REMOTE_ARCHIVE='${REMOTE_ARCHIVE}' REMOTE_ENV_FILE='${REMOTE_ENV_FILE}' REMOTE_DEPLOY_CONFIG_FILE='${REMOTE_DEPLOY_CONFIG_FILE:-}' bash -s" <<'EOS'
           set -euo pipefail
 
@@ -153,6 +174,15 @@ jobs:
               "$@"
             else
               sudo "$@"
+            fi
+          }
+
+          acquire_deploy_lock() {
+            local lock_file="/tmp/edilcloud-back-dn-deploy.lock"
+            exec 9>"${lock_file}"
+            if ! flock -w 900 9; then
+              echo "Another backend deployment is still running after 15 minutes." >&2
+              return 1
             fi
           }
 
@@ -388,6 +418,8 @@ jobs:
             return 0
           }
 
+          trap cleanup EXIT
+          acquire_deploy_lock
           load_deploy_config
           run_priv test -f "${ENV_FILE}"
           ensure_runtime_dirs
