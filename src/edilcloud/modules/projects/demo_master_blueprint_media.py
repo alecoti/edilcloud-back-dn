@@ -66,6 +66,7 @@ AUDIO_EXTENSION_BY_MIME = {
     "audio/x-wav": ".wav",
 }
 LANGUAGE_LABELS = {
+    "ar": "Arabic",
     "de": "German",
     "en": "English",
     "es": "Spanish",
@@ -80,8 +81,10 @@ LANGUAGE_LABELS = {
     "uk": "Ukrainian",
 }
 SPEAKER_VOICE_OVERRIDES = {
+    "alina-popescu": "Sulafat",
     "andrea-fontana": "Charon",
     "antonio-esposito": "Gacrux",
+    "bogdan-muresan": "Orus",
     "davide-pini": "Iapetus",
     "davide-sala": "Sadaltager",
     "elisa-brambilla": "Schedar",
@@ -92,11 +95,14 @@ SPEAKER_VOICE_OVERRIDES = {
     "luca-gatti": "Umbriel",
     "marco-rinaldi": "Rasalgethi",
     "martina-cattaneo": "Leda",
+    "marius-dumitru": "Umbriel",
     "omar-elidrissi": "Alnilam",
     "paolo-longhi": "Charon",
+    "rachid-ziani": "Alnilam",
     "serena-costantini": "Pulcherrima",
     "sofia-mancini": "Sulafat",
     "stefano-riva": "Achird",
+    "ionut-marin": "Rasalgethi",
 }
 VOICE_BY_TONE_KEYWORD = {
     "amichevole": "Achird",
@@ -448,6 +454,18 @@ def build_tts_prompt(*, audio_data: dict[str, Any], transcript: str, voice_name:
     prompt_parts.append("Transcript:")
     prompt_parts.append(transcript.strip())
     return "\n".join(prompt_parts)
+
+
+def resolve_audio_transcript(*, audio_data: dict[str, Any], requested_language: str | None) -> str:
+    normalized_language = (requested_language or audio_data.get("language") or "it").strip().lower() or "it"
+    language_specific_key = f"script_{normalized_language}"
+    transcript = (
+        audio_data.get(language_specific_key)
+        or audio_data.get("script_it")
+        or audio_data.get("script")
+        or ""
+    )
+    return str(transcript).strip()
 
 
 def build_pdf(title: str, lines: list[str]) -> bytes:
@@ -924,8 +942,10 @@ def collect_audio_jobs(
             raise BlueprintMediaError(f'Missing audio library entry "{audio_ref}".')
         transcript = (
             request.get("transcript_draft")
-            or audio_data.get("script_it")
-            or audio_data.get("script")
+            or resolve_audio_transcript(
+                audio_data=audio_data,
+                requested_language=request.get("language") or audio_data.get("language"),
+            )
             or ""
         ).strip()
         speaker_code = request.get("speaker_code") or audio_data.get("speaker_code") or ""

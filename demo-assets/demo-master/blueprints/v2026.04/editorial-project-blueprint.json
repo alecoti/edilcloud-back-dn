@@ -17,10 +17,13 @@
     "document_post_usages": 20,
     "target_images": 69,
     "reply_images": 12,
-    "target_audio_drafts": 57,
+    "target_audio_drafts": 55,
     "prompt_library_assets": 58,
     "pin_registry_assets": 17,
-    "document_library_assets": 14
+    "document_library_assets": 14,
+    "multilingual_root_posts": 2,
+    "multilingual_comments": 3,
+    "multilingual_audio_drafts": 3
   },
   "generation_rules": {
     "dialogue": [
@@ -1150,12 +1153,14 @@
       "script_it": "Il briefing e' servito proprio a questo: accessi, regole e responsabilita' devono restare quelli condivisi oggi. Se cambia qualcosa, la variazione passa da qui e non in corridoio."
     },
     "foundation-scavo-fronte-nord-note": {
-      "speaker_code": "giorgio-bellini",
-      "language": "it",
+      "speaker_code": "omar-elidrissi",
+      "language": "fr",
       "tone": "tranquillo, concreto",
       "estimated_duration_sec": 11,
       "recording_context": "nota vocale dal fronte nord dopo pulizia scavo",
-      "script_it": "Sul fronte nord lo scavo e' venuto bene perche' il percorso camion e' rimasto sempre leggibile. Quando l'inizio e' ordinato, poi il cantiere non si inceppa da solo."
+      "script_it": "Sul fronte nord lo scavo e' venuto bene perche' il percorso camion e' rimasto sempre leggibile. Quando l'inizio e' ordinato, poi il cantiere non si inceppa da solo.",
+      "script_ar": "????? ???????? ???? ????? ??? ???? ???????? ??? ???? ?? ???????. ????? ???? ??????? ?????? ?????? ????? ???? ?? ??? ?????.",
+      "script_fr": "Sur le front nord l'excavation est venue propre parce que le passage des camions est reste clair depuis le debut. Quand le depart est range, le chantier ne se bloque pas tout seul."
     },
     "foundation-passaggi-check-note": {
       "speaker_code": "giorgio-bellini",
@@ -1190,12 +1195,13 @@
       "script_it": "Su scala e ascensore ci siamo fermati il giusto per controllare quote e allineamenti. Sono quei punti dove una svista piccola oggi diventa un problema grosso domani."
     },
     "structures-solai-passaggi-note": {
-      "speaker_code": "giorgio-bellini",
-      "language": "it",
+      "speaker_code": "bogdan-muresan",
+      "language": "ro",
       "tone": "concreto",
       "estimated_duration_sec": 11,
       "recording_context": "nota vocale sui solai con passaggi tecnici",
-      "script_it": "I solai li abbiamo chiusi solo dopo aver riguardato bene i passaggi tecnici. Se li lasci sporchi adesso, poi gli impianti te li rimettono davanti quando e' troppo tardi."
+      "script_it": "I solai li abbiamo chiusi solo dopo aver riguardato bene i passaggi tecnici. Se li lasci sporchi adesso, poi gli impianti te li rimettono davanti quando e' troppo tardi.",
+      "script_ro": "Planseele le-am inchis doar dupa ce am mai vazut o data toate trecerile tehnice. Daca le lasi neclare acum, instalatiile ti le aduc inapoi exact cand nu mai ai timp."
     },
     "structures-copertura-rilievo-note": {
       "speaker_code": "elisa-brambilla",
@@ -1324,6 +1330,15 @@
       "estimated_duration_sec": 11,
       "recording_context": "nota vocale su porte, sanitari e arredi fissi",
       "script_it": "Porte, sanitari e arredi fissi entrano solo dove il fronte e' pronto davvero. Mischiare materiale in arrivo e lavorazioni ancora aperte e' il modo piu' veloce per perdere il controllo."
+    },
+    "interiors-bagno-alina-note": {
+      "speaker_code": "alina-popescu",
+      "language": "ro",
+      "tone": "calmo, preciso, da riferimento squadra",
+      "estimated_duration_sec": 10,
+      "recording_context": "nota vocale dal bagno campione 2B dopo il giro approvativo",
+      "script_it": "Se partiamo tutti dallo stesso bagno campione il lotto resta uniforme anche nei dettagli piccoli, quindi per me questo va tenuto come riferimento fisso.",
+      "script_ro": "Daca plecam toti de la aceeasi baie campione, lotul ramane uniform si in detaliile mici, deci pentru mine acesta trebuie sa ramana reperul fix."
     }
   },
   "pin_registry": [
@@ -2099,8 +2114,8 @@
               "narrative_priority": "standard",
               "target_comment_count": 2,
               "root_post": {
-                "author_code": "giorgio-bellini",
-                "text": "Scavo e pulizia del fronte nord sono chiusi bene. Il percorso camion e' rimasto sempre leggibile e non abbiamo creato punti morti che poi si trascinano sulle lavorazioni successive.",
+                "author_code": "omar-elidrissi",
+                "text": "Le front nord est propre et ferme comme il faut. Le passage des camions est reste lisible tout le temps et on n'a pas laisse de points morts qui se trainent ensuite sur les phases suivantes.",
                 "drawing_context": {
                   "drawing_codes": [
                     "ar-101",
@@ -2122,13 +2137,17 @@
                   {
                     "slot": "post_audio_field",
                     "placement": "post",
-                    "speaker_code": "giorgio-bellini",
-                    "language": "it",
+                    "speaker_code": "omar-elidrissi",
+                    "language": "fr",
                     "audio_ref": "foundation-scavo-fronte-nord-note",
                     "estimated_duration_sec": 11,
-                    "transcript_draft": "Sul fronte nord lo scavo e' venuto bene perche' il percorso camion e' rimasto sempre leggibile. Quando l'inizio e' ordinato, poi il cantiere non si inceppa da solo."
+                    "transcript_draft": "Sur le front nord l'excavation est venue propre parce que le passage des camions est reste clair depuis le debut. Quand le depart est range, le chantier ne se bloque pas tout seul."
                   }
-                ]
+                ],
+                "source_language": "fr",
+                "translation_memory": {
+                  "it": "Scavo e pulizia del fronte nord sono chiusi bene. Il percorso camion e' rimasto sempre leggibile e non abbiamo creato punti morti che poi si trascinano sulle lavorazioni successive."
+                }
               },
               "comment_script": [
                 {
@@ -2604,8 +2623,8 @@
               "narrative_priority": "standard",
               "target_comment_count": 2,
               "root_post": {
-                "author_code": "giorgio-bellini",
-                "text": "Solai del primo e del secondo piano chiusi dopo il controllo dei passaggi tecnici. Qui il lavoro vero era non farci trovare in contrasto con gli impianti a getto gia' fatto.",
+                "author_code": "bogdan-muresan",
+                "text": "Planseele de la etajul intai si de la etajul doi le-am inchis numai dupa ce am reverificat toate trecerile tehnice. Miza aici era sa nu intram in conflict cu instalatiile dupa turnare.",
                 "drawing_context": {
                   "drawing_codes": [
                     "st-204",
@@ -2629,13 +2648,17 @@
                   {
                     "slot": "post_audio_passaggi",
                     "placement": "post",
-                    "speaker_code": "giorgio-bellini",
-                    "language": "it",
+                    "speaker_code": "bogdan-muresan",
+                    "language": "ro",
                     "audio_ref": "structures-solai-passaggi-note",
                     "estimated_duration_sec": 11,
-                    "transcript_draft": "I solai li abbiamo chiusi solo dopo aver riguardato bene i passaggi tecnici. Se li lasci sporchi adesso, poi gli impianti te li rimettono davanti quando e' troppo tardi."
+                    "transcript_draft": "Planseele le-am inchis doar dupa ce am mai vazut o data toate trecerile tehnice. Daca le lasi neclare acum, instalatiile ti le aduc inapoi exact cand nu mai ai timp."
                   }
-                ]
+                ],
+                "source_language": "ro",
+                "translation_memory": {
+                  "it": "Solai del primo e del secondo piano chiusi dopo il controllo dei passaggi tecnici. Qui il lavoro vero era non farci trovare in contrasto con gli impianti a getto gia' fatto."
+                }
               },
               "comment_script": [
                 {
@@ -2918,7 +2941,7 @@
                   "comment_key": "envelope-copertura-main-c3",
                   "speaker_code": "omar-elidrissi",
                   "intent": "field_update",
-                  "text": "Carico il dettaglio appena finiamo la fascia aggiuntiva. Cosi' si vede subito come abbiamo richiuso il punto.",
+                  "text": "Je charge le detail des qu'on finit la bande supplementaire. Comme ca on voit tout de suite comment on a referme ce point.",
                   "image_requests": [
                     {
                       "slot": "comment_detail_update",
@@ -2928,7 +2951,11 @@
                       "prompt_ref": "copertura-risvolto-ovest",
                       "brief": "Dettaglio finale del nodo dopo la fascia aggiuntiva, agganciato alla risposta di aggiornamento."
                     }
-                  ]
+                  ],
+                  "source_language": "fr",
+                  "translation_memory": {
+                    "it": "Carico il dettaglio appena finiamo la fascia aggiuntiva. Cosi' si vede subito come abbiamo richiuso il punto."
+                  }
                 }
               ]
             },
@@ -4869,7 +4896,22 @@
                 {
                   "speaker_code": "alina-popescu",
                   "intent": "detail_alignment",
-                  "text": "Bene cosi'. Se partiamo tutti dallo stesso bagno campione il lotto resta molto piu' uniforme anche nelle piccole cose."
+                  "text": "Asa este bine. Daca plecam toti de la aceeasi baie campione, lotul ramane mult mai uniform si in detaliile mici.",
+                  "comment_key": "interiors-bagno-approvazione-lotto-c3",
+                  "source_language": "ro",
+                  "translation_memory": {
+                    "it": "Bene cosi'. Se partiamo tutti dallo stesso bagno campione il lotto resta molto piu' uniforme anche nelle piccole cose."
+                  },
+                  "audio_requests": [
+                    {
+                      "slot": "comment_audio_native",
+                      "placement": "comment",
+                      "speaker_code": "alina-popescu",
+                      "language": "ro",
+                      "audio_ref": "interiors-bagno-alina-note",
+                      "estimated_duration_sec": 10
+                    }
+                  ]
                 },
                 {
                   "speaker_code": "sofia-mancini",
@@ -4993,7 +5035,12 @@
                 {
                   "speaker_code": "alina-popescu",
                   "intent": "execution_note",
-                  "text": "Stiamo lavorando proprio cosi'. Prima fissiamo il criterio, poi andiamo in serie."
+                  "text": "Exact asa lucram si noi. Intai fixam criteriul, dupa aceea mergem in serie fara interpretari diferite.",
+                  "comment_key": "finishes-rivestimenti-main-c2",
+                  "source_language": "ro",
+                  "translation_memory": {
+                    "it": "Stiamo lavorando proprio cosi'. Prima fissiamo il criterio, poi andiamo in serie."
+                  }
                 }
               ]
             }

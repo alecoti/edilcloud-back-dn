@@ -12,6 +12,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from edilcloud.modules.files.media_optimizer import optimize_media_content
+from edilcloud.modules.identity.services import normalize_language
 from edilcloud.modules.projects.demo_master_assets import (
     AUDIO_SOURCE_EXTENSIONS,
     AVATAR_SOURCE_EXTENSIONS,
@@ -29,6 +30,7 @@ from edilcloud.modules.projects.models import (
     CommentAttachment,
     PostAttachment,
     PostComment,
+    PostCommentTranslation,
     PostKind,
     ProjectCompanyColor,
     Project,
@@ -41,10 +43,12 @@ from edilcloud.modules.projects.models import (
     ProjectMemberStatus,
     ProjectPhoto,
     ProjectPost,
+    ProjectPostTranslation,
     ProjectStatus,
     ProjectTask,
     TaskActivityStatus,
 )
+from edilcloud.modules.projects.services import build_project_content_translation_signature
 from edilcloud.modules.workspaces.models import Profile, Workspace, WorkspaceRole
 
 
@@ -80,6 +84,18 @@ DEMO_PROJECT_COMPANY_COLORS: dict[str, str] = {
     "committente": "#6a7352",
 }
 DEMO_VIEWER_PROJECT_COLOR = "#4b5563"
+SEED_TRANSLATION_PROVIDER = "seed"
+SEED_TRANSLATION_MODEL = "editorial-project-blueprint"
+PROFILE_LANGUAGE_OVERRIDES: dict[str, str] = {
+    "ahmed-bensalem": "fr",
+    "alina-popescu": "ro",
+    "bogdan-muresan": "ro",
+    "cosmin-petrescu": "ro",
+    "ionut-marin": "ro",
+    "marius-dumitru": "ro",
+    "omar-elidrissi": "fr",
+    "rachid-ziani": "fr",
+}
 
 COMPANIES: list[dict[str, Any]] = [
     {
@@ -1692,6 +1708,12 @@ class Seeder:
                         "alert": bool(thread.get("alert")),
                     }
 
+    def language_for_profile_code(self, code: str | None, *, fallback: str = "it") -> str:
+        candidate = str(code or "").strip()
+        if candidate and candidate in self.profiles:
+            return normalize_language(self.profiles[candidate].language or fallback)
+        return normalize_language(PROFILE_LANGUAGE_OVERRIDES.get(candidate, fallback))
+
     def shift_day(self, value: str | date) -> date:
         return parse_day(value) + self.shift
 
@@ -1779,6 +1801,7 @@ class Seeder:
                 )
             self.workspaces[company["code"]] = workspace
             for code, first_name, last_name, email, position, role, project_role_codes in company["people"]:
+                profile_language = normalize_language(PROFILE_LANGUAGE_OVERRIDES.get(code, "it"))
                 user = self.user_model.objects.filter(email__iexact=email).first()
                 if user is None:
                     user = self.user_model.objects.create_user(
@@ -1786,8 +1809,11 @@ class Seeder:
                         password=self.viewer_password,
                         first_name=first_name,
                         last_name=last_name,
-                        language="it",
+                        language=profile_language,
                     )
+                elif getattr(user, "language", "") != profile_language:
+                    user.language = profile_language
+                    user.save(update_fields=["language"])
                 profile, _ = Profile.objects.get_or_create(
                     workspace=workspace,
                     user=user,
@@ -1796,7 +1822,7 @@ class Seeder:
                         "role": role,
                         "first_name": first_name,
                         "last_name": last_name,
-                        "language": "it",
+                        "language": profile_language,
                         "position": position,
                     },
                 )
@@ -1804,7 +1830,7 @@ class Seeder:
                 profile.role = role
                 profile.first_name = first_name
                 profile.last_name = last_name
-                profile.language = "it"
+                profile.language = profile_language
                 profile.position = position
                 profile.is_active = True
                 profile.save()
@@ -2353,6 +2379,86 @@ class Seeder:
             return "progress"
         return "todo"
 
+    def content_source_language(self, *, payload: dict[str, Any] | None, author_code: str) -> str:
+        explicit_language = ""
+        if isinstance(payload, dict):
+            explicit_language = str(payload.get("source_language") or payload.get("language") or "").strip()
+        if explicit_language:
+            return normalize_language(explicit_language)
+        return self.language_for_profile_code(author_code)
+
+    def content_translation_memory(self, payload: dict[str, Any] | None) -> dict[str, str]:
+        if not isinstance(payload, dict):
+            return {}
+        raw_memory = payload.get("translation_memory")
+        if not isinstance(raw_memory, dict):
+            return {}
+        translations: dict[str, str] = {}
+        for language, translated_text in raw_memory.items():
+            normalized_language = normalize_language(str(language or "").strip())
+            normalized_text = str(translated_text or "").strip()
+            if normalized_language and normalized_text:
+                translations[normalized_language] = normalized_text
+        return translations
+
+    def seed_post_translation_memory(
+        self,
+        *,
+        post: ProjectPost,
+        translation_memory: dict[str, str],
+    ) -> None:
+        if not translation_memory:
+            return
+        source_text = str(post.original_text or post.text or "").strip()
+        source_language = normalize_language(post.source_language or post.display_language or "it")
+        source_signature = build_project_content_translation_signature(
+            source_text=source_text,
+            source_language=source_language,
+        )
+        for target_language, translated_text in translation_memory.items():
+            if not translated_text or target_language == source_language:
+                continue
+            ProjectPostTranslation.objects.update_or_create(
+                post=post,
+                target_language=target_language,
+                defaults={
+                    "source_language": source_language,
+                    "source_signature": source_signature,
+                    "translated_text": translated_text,
+                    "provider": SEED_TRANSLATION_PROVIDER,
+                    "model": SEED_TRANSLATION_MODEL,
+                },
+            )
+
+    def seed_comment_translation_memory(
+        self,
+        *,
+        comment: PostComment,
+        translation_memory: dict[str, str],
+    ) -> None:
+        if not translation_memory:
+            return
+        source_text = str(comment.original_text or comment.text or "").strip()
+        source_language = normalize_language(comment.source_language or comment.display_language or "it")
+        source_signature = build_project_content_translation_signature(
+            source_text=source_text,
+            source_language=source_language,
+        )
+        for target_language, translated_text in translation_memory.items():
+            if not translated_text or target_language == source_language:
+                continue
+            PostCommentTranslation.objects.update_or_create(
+                comment=comment,
+                target_language=target_language,
+                defaults={
+                    "source_language": source_language,
+                    "source_signature": source_signature,
+                    "translated_text": translated_text,
+                    "provider": SEED_TRANSLATION_PROVIDER,
+                    "model": SEED_TRANSLATION_MODEL,
+                },
+            )
+
     def create_post(
         self,
         *,
@@ -2365,10 +2471,13 @@ class Seeder:
         alert: bool = False,
         is_public: bool = True,
         add_weather: bool = False,
+        source_language: str | None = None,
+        translation_memory: dict[str, str] | None = None,
         attachment: dict[str, Any] | None = None,
         attachments: list[dict[str, Any]] | None = None,
     ) -> ProjectPost:
         assert self.project is not None
+        normalized_source_language = normalize_language(source_language or self.language_for_profile_code(author_code))
         post = ProjectPost.objects.create(
             project=self.project,
             task=task,
@@ -2377,8 +2486,8 @@ class Seeder:
             post_kind=post_kind,
             text=text,
             original_text=text,
-            source_language="it",
-            display_language="it",
+            source_language=normalized_source_language,
+            display_language=normalized_source_language,
             alert=alert,
             is_public=is_public,
             weather_snapshot=self.weather(when.date()) if add_weather else {},
@@ -2386,6 +2495,7 @@ class Seeder:
         ProjectPost.objects.filter(pk=post.pk).update(created_at=when, updated_at=when, published_date=when)
         for item in self.attachment_items(attachment=attachment, attachments=attachments):
             self.save_post_attachment(post, item)
+        self.seed_post_translation_memory(post=post, translation_memory=translation_memory or {})
         post.refresh_from_db()
         return post
 
@@ -2397,22 +2507,26 @@ class Seeder:
         when: datetime,
         text: str,
         parent: PostComment | None = None,
+        source_language: str | None = None,
+        translation_memory: dict[str, str] | None = None,
         attachment: dict[str, Any] | None = None,
         attachments: list[dict[str, Any]] | None = None,
     ) -> PostComment:
+        normalized_source_language = normalize_language(source_language or self.language_for_profile_code(author_code))
         comment = PostComment.objects.create(
             post=post,
             author=self.profiles[author_code],
             parent=parent,
             text=text,
             original_text=text,
-            source_language="it",
-            display_language="it",
+            source_language=normalized_source_language,
+            display_language=normalized_source_language,
         )
         PostComment.objects.filter(pk=comment.pk).update(created_at=when, updated_at=when)
         ProjectPost.objects.filter(pk=post.pk).update(updated_at=when)
         for item in self.attachment_items(attachment=attachment, attachments=attachments):
             self.save_comment_attachment(comment, item)
+        self.seed_comment_translation_memory(comment=comment, translation_memory=translation_memory or {})
         comment.refresh_from_db()
         return comment
 
@@ -2485,6 +2599,8 @@ class Seeder:
                 author_code=speaker_code,
                 when=root_when + timedelta(minutes=12 * index),
                 text=comment_text,
+                source_language=self.content_source_language(payload=comment_blueprint, author_code=speaker_code),
+                translation_memory=self.content_translation_memory(comment_blueprint),
                 attachments=self.thread_attachments(comment_blueprint),
             )
             comment_key = str(comment_blueprint.get("comment_key") or "").strip()
@@ -2517,6 +2633,8 @@ class Seeder:
             alert=bool(thread_blueprint.get("alert")),
             is_public=self.thread_public_state(post_kind=post_kind, alert=bool(thread_blueprint.get("alert"))),
             add_weather=add_weather,
+            source_language=self.content_source_language(payload=root_post, author_code=author_code),
+            translation_memory=self.content_translation_memory(root_post),
             attachments=self.thread_attachments(root_post),
         )
         thread_key = str(thread_blueprint.get("thread_key") or "").strip()

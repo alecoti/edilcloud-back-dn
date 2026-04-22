@@ -9,6 +9,7 @@ from django.core.management import call_command
 from edilcloud.modules.projects.models import (
     CommentAttachment,
     PostAttachment,
+    PostCommentTranslation,
     PostKind,
     Project,
     ProjectActivity,
@@ -16,6 +17,7 @@ from edilcloud.modules.projects.models import (
     ProjectMember,
     ProjectPhoto,
     ProjectPost,
+    ProjectPostTranslation,
     ProjectTask,
 )
 from edilcloud.modules.projects.demo_master_snapshot import build_demo_snapshot_payload
@@ -75,6 +77,23 @@ def test_seed_rich_demo_project_creates_accessible_realistic_project(tmp_path, s
     assert CommentAttachment.objects.filter(comment__post__project=project).exists()
     assert ProjectPost.objects.filter(project=project, post_kind=PostKind.ISSUE, alert=True).exists()
     assert ProjectPost.objects.filter(project=project, post_kind=PostKind.ISSUE, alert=False).exists()
+    assert Profile.objects.filter(
+        project_memberships__project=project,
+        language="ro",
+        email__in=[
+            "bogdan.muresan@strutturenord.it",
+            "alina.popescu@internibianchi.it",
+        ],
+    ).count() == 2
+    assert Profile.objects.filter(
+        project_memberships__project=project,
+        language="fr",
+        email="omar.elidrissi@auroracostruzioni.it",
+    ).exists()
+    assert ProjectPost.objects.filter(project=project, author__email="omar.elidrissi@auroracostruzioni.it", source_language="fr").exists()
+    assert ProjectPost.objects.filter(project=project, author__email="bogdan.muresan@strutturenord.it", source_language="ro").exists()
+    assert ProjectPostTranslation.objects.filter(post__project=project, target_language="it", post__source_language__in=["fr", "ro"]).exists()
+    assert PostCommentTranslation.objects.filter(comment__post__project=project, target_language="it", comment__source_language__in=["fr", "ro"]).exists()
 
 
 @pytest.mark.django_db

@@ -43,8 +43,18 @@ def test_collect_demo_blueprint_media_jobs_uses_attachment_root():
     )
     assert all(job.output_path.parent.name == "attachments" for job in image_jobs)
 
-    assert any(job.audio_ref == "foundation-box-03-04-field-note" and job.voice_name == "Achird" for job in audio_jobs)
+    assert any(
+        job.audio_ref == "foundation-box-03-04-field-note" and job.voice_name == "Achird"
+        for job in audio_jobs
+    )
     assert any(job.audio_ref == "handover-task-overview-note" and job.voice_name == "Kore" for job in audio_jobs)
+    multilingual_audio_job_map = {job.audio_ref: job for job in audio_jobs}
+    assert multilingual_audio_job_map["foundation-scavo-fronte-nord-note"].language == "fr"
+    assert multilingual_audio_job_map["foundation-scavo-fronte-nord-note"].speaker_code == "omar-elidrissi"
+    assert multilingual_audio_job_map["structures-solai-passaggi-note"].language == "ro"
+    assert multilingual_audio_job_map["structures-solai-passaggi-note"].speaker_code == "bogdan-muresan"
+    assert multilingual_audio_job_map["interiors-bagno-alina-note"].language == "ro"
+    assert multilingual_audio_job_map["interiors-bagno-alina-note"].speaker_code == "alina-popescu"
     assert all(job.output_path.parent.name == "attachments" for job in audio_jobs)
 
 
