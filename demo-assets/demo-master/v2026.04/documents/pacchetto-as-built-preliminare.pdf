@@ -1,0 +1,61 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 948 >>
+stream
+BT
+/F1 18 Tf
+72 742 Td
+(Pacchetto as-built preliminare) Tj
+/F1 11 Tf
+0 -28 Td
+(Tipo documento: pacchetto as-built) Tj
+0 -18 Td
+(Cartella demo: Consegna / As built) Tj
+0 -18 Td
+(Data riferimento: 2026-03-27) Tj
+0 -18 Td
+(Fasi collegate: handover) Tj
+0 -18 Td
+(Lavorazioni collegate: handover-asbuilt-manuali-formazione) Tj
+0 -18 Td
+(Sintesi usi nel demo:) Tj
+0 -18 Td
+(- Allego il pacchetto as-built preliminare per mostrare che questa fase non sta solo raccogliendo file: il documento fissa indice, seriali e logica di consegna mentre il cantiere e' ancora vivo.) Tj
+0 -18 Td
+(Contenuto sintetico:) Tj
+0 -18 Td
+(- Indice preliminare tavole architettoniche, strutturali e impiantistiche.) Tj
+0 -18 Td
+(- Schede tecniche apparecchiature in raccolta da elettrico e meccanico.) Tj
+0 -18 Td
+(- Manuali manutenzione da completare prima del walkthrough finale.) Tj
+0 -18 Td
+(- Versione non valida per consegna definitiva fino a chiusura punch list.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001240 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1310
+%%EOF

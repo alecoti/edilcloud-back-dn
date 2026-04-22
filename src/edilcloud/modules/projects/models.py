@@ -409,10 +409,6 @@ class ProjectDrawingPin(TimestampedModel):
     class Meta:
         ordering = ("drawing_document_id", "page_number", "id")
         constraints = [
-            models.UniqueConstraint(
-                fields=("drawing_document", "post"),
-                name="unique_drawing_pin_document_post",
-            ),
             models.CheckConstraint(
                 check=models.Q(x__gte=0.0) & models.Q(x__lte=1.0),
                 name="drawing_pin_x_normalized",

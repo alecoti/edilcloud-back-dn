@@ -1,0 +1,61 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 907 >>
+stream
+BT
+/F1 18 Tf
+72 742 Td
+(Schema aggiornato quadro Q3) Tj
+/F1 11 Tf
+0 -28 Td
+(Tipo documento: schema elettrico aggiornato) Tj
+0 -18 Td
+(Cartella demo: Impianti / Elettrico) Tj
+0 -18 Td
+(Data riferimento: 2026-02-28) Tj
+0 -18 Td
+(Fasi collegate: electrical) Tj
+0 -18 Td
+(Lavorazioni collegate: electrical-quadri-dorsali-linee-speciali) Tj
+0 -18 Td
+(Sintesi usi nel demo:) Tj
+0 -18 Td
+(- Allego lo schema aggiornato del quadro Q3 per spiegare perche' la revisione sulle linee speciali non e' un dettaglio cosmetico: nel PDF si legge il riordino che rende il quadro coerente con la fase elettrica che stiamo chiudendo.) Tj
+0 -18 Td
+(Contenuto sintetico:) Tj
+0 -18 Td
+(- Riposizionamento morsettiere linee speciali.) Tj
+0 -18 Td
+(- Separazione tra forza motrice, dati e sicurezza.) Tj
+0 -18 Td
+(- Test continuita eseguito e firmato dal capo commessa.) Tj
+0 -18 Td
+(- Q3 disponibile per collegamento finale.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001199 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1269
+%%EOF

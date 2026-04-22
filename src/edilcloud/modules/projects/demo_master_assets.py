@@ -10,6 +10,7 @@ DEMO_ASSET_SOURCE_ROOT = BACKEND_ROOT / "demo-assets" / "demo-master" / DEMO_ASS
 DRAWING_FILENAME_PREFIXES = ("ar-", "st-", "fa-", "im-", "el-", "fn-")
 IMAGE_SOURCE_EXTENSIONS = (".svg", ".png", ".jpg", ".jpeg", ".webp", ".avif")
 DOCUMENT_SOURCE_EXTENSIONS = (".pdf", ".docx", ".xlsx", ".zip")
+AUDIO_SOURCE_EXTENSIONS = (".wav", ".wave", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".webm")
 LOGO_SOURCE_EXTENSIONS = (".svg", ".png", ".jpg", ".jpeg", ".webp", ".avif")
 AVATAR_SOURCE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".avif")
 

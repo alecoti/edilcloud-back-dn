@@ -133,6 +133,25 @@ PYTHONPATH=src python manage.py report_demo_master_assets
 PYTHONPATH=src python manage.py report_demo_master_assets --format json
 ```
 
+## Generazione media da blueprint
+
+Il blueprint editoriale puo' generare documenti, disegni, immagini e audio direttamente nella sorgente stabile del demo:
+
+```bash
+cd edilcloud-back-dn
+PYTHONPATH=src python manage.py generate_demo_master_blueprint_media --dry-run
+PYTHONPATH=src python manage.py generate_demo_master_blueprint_media
+PYTHONPATH=src python manage.py generate_demo_master_blueprint_media --skip-drawings --skip-images --skip-audio
+```
+
+Output previsti:
+
+- PDF di sopralluoghi, rapportini, checklist e verbali in `demo-assets/demo-master/v2026.04/documents/`;
+- disegni planimetrici e tavole tecniche in `demo-assets/demo-master/v2026.04/drawings/`;
+- immagini e audio in `demo-assets/demo-master/v2026.04/attachments/`;
+- summary contestuali per documento dentro al blueprint editoriale, cosi' lo stesso allegato puo' essere riusato su piu' fasi o lavorazioni;
+- manifest generato in `demo-assets/demo-master/blueprints/v2026.04/generated-media-manifest.json`.
+
 ## Guardrail attuali
 
 - lo snapshot si aggancia al progetto demo corrente ma sopravvive anche a un reseed;

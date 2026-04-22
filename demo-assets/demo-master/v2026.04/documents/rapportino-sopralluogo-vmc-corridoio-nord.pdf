@@ -1,0 +1,63 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 1284 >>
+stream
+BT
+/F1 18 Tf
+72 742 Td
+(Rapportino sopralluogo VMC corridoio nord) Tj
+/F1 11 Tf
+0 -28 Td
+(Tipo documento: rapportino di sopralluogo) Tj
+0 -18 Td
+(Cartella demo: Impianti / Sopralluoghi) Tj
+0 -18 Td
+(Data riferimento: 2026-03-11) Tj
+0 -18 Td
+(Fasi collegate: mechanical, electrical) Tj
+0 -18 Td
+(Lavorazioni collegate: mechanical-vmc-corridoi-antincendio) Tj
+0 -18 Td
+(Sintesi usi nel demo:) Tj
+0 -18 Td
+(- Allego il rapportino del sopralluogo sul corridoio nord per spiegare perche' il coordinamento VMC-passarelle va visto ora: nel documento ci sono il punto osservato, il criterio di staffaggio e il motivo per cui non conviene chiudere alla cieca.) Tj
+0 -18 Td
+(- Riporto lo stesso rapportino sul follow-up perche' qui diventa operativo: il sopralluogo non serve piu' a descrivere il punto in astratto, ma a dire quali staffaggi spostare e perche' il corridoio puo' restare pulito.) Tj
+0 -18 Td
+(Contenuto sintetico:) Tj
+0 -18 Td
+(- Sopralluogo con meccanico ed elettrico sul corridoio nord del piano secondo.) Tj
+0 -18 Td
+(- Verificato il rapporto tra due staffaggi VMC e il passaggio delle passerelle.) Tj
+0 -18 Td
+(- Correzione preventiva consigliata prima della chiusura del controsoffitto.) Tj
+0 -18 Td
+(- Richiesto aggiornamento foto finale a valle dell'aggiustamento.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001577 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1647
+%%EOF

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from django.utils.text import slugify
 
 from edilcloud.modules.files.media_optimizer import optimize_media_content
 from edilcloud.modules.projects.demo_master_assets import (
+    AUDIO_SOURCE_EXTENSIONS,
     AVATAR_SOURCE_EXTENSIONS,
     DEMO_ASSET_SOURCE_ROOT,
     DEMO_ASSET_VERSION,
@@ -30,6 +32,8 @@ from edilcloud.modules.projects.models import (
     PostKind,
     ProjectCompanyColor,
     Project,
+    ProjectDocumentKind,
+    ProjectDrawingPin,
     ProjectActivity,
     ProjectDocument,
     ProjectFolder,
@@ -47,6 +51,8 @@ from edilcloud.modules.workspaces.models import Profile, Workspace, WorkspaceRol
 BLUEPRINT_TODAY = date(2026, 4, 4)
 DEFAULT_VIEWER_EMAIL = "demo.viewer@edilcloud.local"
 DEFAULT_VIEWER_PASSWORD = "demo1234!"
+EDITORIAL_BLUEPRINT_PATH = DEMO_ASSET_SOURCE_ROOT.parent / "blueprints" / DEMO_ASSET_VERSION / "editorial-project-blueprint.json"
+GENERATED_MEDIA_MANIFEST_PATH = DEMO_ASSET_SOURCE_ROOT.parent / "blueprints" / DEMO_ASSET_VERSION / "generated-media-manifest.json"
 
 PROJECT_BLUEPRINT = {
     "name": "Residenza Parco Naviglio - Lotto A",
@@ -392,6 +398,81 @@ PHOTOS: list[dict[str, str]] = [
     {"filename": "hall-monitor-citofonico.svg", "title": "Hall monitor citofonico", "subtitle": "Posizione da confermare con committente e sistemi speciali.", "accent": "#0284c7", "created_at": "2026-03-14"},
 ]
 
+PROJECT_GALLERY_ITEMS: list[dict[str, str]] = [
+    {
+        "filename": "accesso-pedonale-varco-nord.jpg",
+        "title": "Accesso pedonale e varco nord",
+        "subtitle": "Ingresso mezzi e percorso pedonale gia leggibili dall'avvio cantiere.",
+        "accent": "#0f766e",
+        "created_at": "2025-08-04",
+    },
+    {
+        "filename": "interferenza-passaggi-box-03-04.jpg",
+        "title": "Interferenza passaggi box 03-04",
+        "subtitle": "Nodo fondazioni rilevato e corretto prima del getto.",
+        "accent": "#1d4ed8",
+        "created_at": "2025-08-18",
+    },
+    {
+        "filename": "mockup-facciata-sud-ovest.jpg",
+        "title": "Mockup facciata sud-ovest",
+        "subtitle": "Nodo serramento, lattoneria e pannelli campione del fronte.",
+        "accent": "#7c3aed",
+        "created_at": "2026-01-31",
+    },
+    {
+        "filename": "centrale-termica-precollaudo.jpg",
+        "title": "Centrale termica in preparazione pre-collaudo",
+        "subtitle": "Dorsali e collettori di piano con focus sulle valvole mancanti.",
+        "accent": "#ea580c",
+        "created_at": "2026-02-10",
+    },
+    {
+        "filename": "vmc-corridoio-nord-staffaggi.jpg",
+        "title": "Coordinamento VMC corridoio nord",
+        "subtitle": "Staffaggi e passerelle visti prima della chiusura del controsoffitto.",
+        "accent": "#f97316",
+        "created_at": "2026-03-08",
+    },
+    {
+        "filename": "bagno-campione-2b.jpg",
+        "title": "Bagno campione 2B",
+        "subtitle": "Riferimento reale per fughe, tagli, sanitari e standard del lotto.",
+        "accent": "#be123c",
+        "created_at": "2026-03-20",
+    },
+    {
+        "filename": "quote-massetti-1a-3c-rilievo.jpg",
+        "title": "Rilievo quote massetti 1A e 3C",
+        "subtitle": "Controllo misurato prima di propagare l'errore a posa e finiture.",
+        "accent": "#be123c",
+        "created_at": "2026-04-04",
+    },
+    {
+        "filename": "punch-list-parti-comuni-foto.jpg",
+        "title": "Punch list parti comuni",
+        "subtitle": "Sopralluogo finale con owner e data di rientro gia impostati.",
+        "accent": "#64748b",
+        "created_at": "2026-04-16",
+    },
+    {
+        "filename": "prerequisiti-vmc-antincendio.jpg",
+        "title": "Prerequisiti collaudi integrati",
+        "subtitle": "Punti aperti ancora visibili prima del via ai pre-collaudi.",
+        "accent": "#64748b",
+        "created_at": "2026-04-10",
+    },
+]
+
+DRAWING_FOLDER_PATHS: dict[str, list[str]] = {
+    "ar": ["Disegni", "Architettonici"],
+    "st": ["Disegni", "Strutturali"],
+    "fa": ["Disegni", "Facciate"],
+    "im": ["Disegni", "Impianti Meccanici"],
+    "el": ["Disegni", "Impianti Elettrici"],
+    "fn": ["Disegni", "Finiture"],
+}
+
 FAMILY_LABELS = {
     "logistics": "accessi, sicurezza, aree operative e avvio documentale",
     "foundation": "quote, ferri, riprese e passaggi impiantistici",
@@ -642,6 +723,45 @@ def resolve_visual_source(
             asset_kind=asset_placeholder_kind(filename, category=category),
         ),
     )
+
+
+def resolve_binary_source(
+    *,
+    relative_dir: str,
+    preferred_filename: str,
+    extensions: tuple[str, ...],
+) -> tuple[str, bytes]:
+    source = find_demo_source_file(
+        relative_dir=relative_dir,
+        preferred_filename=preferred_filename,
+        extensions=extensions,
+    )
+    if source is None:
+        raise FileNotFoundError(f"Asset demo non trovato: {relative_dir}/{preferred_filename}")
+    return source.name, source.read_bytes()
+
+
+def load_json_asset(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def normalize_document_request(item: Any) -> dict[str, Any] | None:
+    if isinstance(item, str) and item.strip():
+        return {"document_ref": item.strip()}
+    if isinstance(item, dict):
+        document_ref = str(item.get("document_ref") or item.get("filename") or "").strip()
+        if document_ref:
+            payload = dict(item)
+            payload["document_ref"] = document_ref
+            return payload
+    return None
+
+
+def drawing_folder_chunks(drawing_code: str) -> list[str]:
+    prefix = drawing_code.split("-", 1)[0].lower()
+    return list(DRAWING_FOLDER_PATHS.get(prefix, ["Disegni"]))
 
 
 ROLE_AUTHOR_CODES = {
@@ -1523,6 +1643,54 @@ class Seeder:
         self.viewer_profile: Profile | None = None
         self.project: Project | None = None
         self.folders: dict[str, ProjectFolder] = {}
+        self.editorial_blueprint = load_json_asset(EDITORIAL_BLUEPRINT_PATH)
+        self.generated_media_manifest = load_json_asset(GENERATED_MEDIA_MANIFEST_PATH)
+        self.document_library_by_ref: dict[str, dict[str, Any]] = {
+            str(item.get("document_ref") or item.get("filename") or "").strip(): item
+            for item in self.editorial_blueprint.get("document_library", [])
+            if isinstance(item, dict) and str(item.get("document_ref") or item.get("filename") or "").strip()
+        }
+        self.pin_registry_by_code: dict[str, dict[str, Any]] = {
+            str(item.get("pin_code") or "").strip(): item
+            for item in self.editorial_blueprint.get("pin_registry", [])
+            if isinstance(item, dict) and str(item.get("pin_code") or "").strip()
+        }
+        self.drawing_manifest_by_code: dict[str, dict[str, Any]] = {
+            str(item.get("drawing_code") or "").strip(): item
+            for item in self.generated_media_manifest.get("drawings", [])
+            if isinstance(item, dict) and str(item.get("drawing_code") or "").strip()
+        }
+        self.image_manifest_by_stem: dict[str, dict[str, Any]] = {
+            str(item.get("asset_stem") or "").strip(): item
+            for item in self.generated_media_manifest.get("images", [])
+            if isinstance(item, dict) and str(item.get("asset_stem") or "").strip()
+        }
+        self.audio_manifest_by_ref: dict[str, dict[str, Any]] = {
+            str(item.get("audio_ref") or "").strip(): item
+            for item in self.generated_media_manifest.get("audio", [])
+            if isinstance(item, dict) and str(item.get("audio_ref") or "").strip()
+        }
+        self.documents_by_ref: dict[str, ProjectDocument] = {}
+        self.drawings_by_code: dict[str, ProjectDocument] = {}
+        self.posts_by_thread_key: dict[str, ProjectPost] = {}
+        self.thread_meta_by_key: dict[str, dict[str, Any]] = {}
+        for task in self.editorial_blueprint.get("tasks", []):
+            task_thread = task.get("task_thread") or {}
+            task_thread_key = str(task_thread.get("thread_key") or "").strip()
+            if task_thread_key:
+                self.thread_meta_by_key[task_thread_key] = {
+                    "thread_role": str(task_thread.get("thread_role") or ""),
+                    "alert": bool(task_thread.get("alert")),
+                }
+            for activity in task.get("activities", []):
+                for thread in activity.get("threads", []):
+                    thread_key = str(thread.get("thread_key") or "").strip()
+                    if not thread_key:
+                        continue
+                    self.thread_meta_by_key[thread_key] = {
+                        "thread_role": str(thread.get("thread_role") or ""),
+                        "alert": bool(thread.get("alert")),
+                    }
 
     def shift_day(self, value: str | date) -> date:
         return parse_day(value) + self.shift
@@ -1849,33 +2017,193 @@ class Seeder:
             parent = folder
         return self.folders[key]
 
+    def thread_post_kind(self, value: str | None) -> str:
+        if value in PostKind.values:
+            return str(value)
+        return PostKind.WORK_PROGRESS
+
+    def thread_public_state(self, *, post_kind: str, alert: bool) -> bool:
+        if post_kind == PostKind.ISSUE:
+            return False
+        return not alert
+
+    def append_document_summaries(self, text: str, document_refs: list[Any] | None) -> str:
+        summaries: list[str] = []
+        for item in document_refs or []:
+            request = normalize_document_request(item)
+            if request is None:
+                continue
+            summary = str(request.get("post_summary_it") or "").strip()
+            if not summary:
+                document_ref = request["document_ref"]
+                document_meta = self.document_library_by_ref.get(document_ref, {})
+                title = str(document_meta.get("title") or document_ref).strip()
+                summary = f"Allego {title} come riferimento documentale di questo passaggio."
+            summaries.append(summary)
+        if not summaries:
+            return text
+        return f"{text.strip()}\n\n" + "\n".join(summaries)
+
+    def build_document_attachments(self, document_refs: list[Any] | None) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for item in document_refs or []:
+            request = normalize_document_request(item)
+            if request is None:
+                continue
+            document_ref = request["document_ref"]
+            document_meta = self.document_library_by_ref.get(document_ref, {})
+            items.append(
+                {
+                    "kind": "document",
+                    "name": document_ref,
+                    "title": str(document_meta.get("title") or document_ref),
+                    "lines": [str(value) for value in document_meta.get("lines") or []],
+                    "source_dir": "documents",
+                }
+            )
+        return items
+
+    def build_image_attachments(self, image_requests: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for request in image_requests or []:
+            if not isinstance(request, dict):
+                continue
+            asset_stem = str(request.get("target_asset_stem") or "").strip()
+            if not asset_stem:
+                continue
+            image_meta = self.image_manifest_by_stem.get(asset_stem, {})
+            preferred_name = Path(str(image_meta.get("output_relative_path") or f"{asset_stem}.jpg")).name
+            items.append(
+                {
+                    "kind": "image",
+                    "name": preferred_name,
+                    "title": asset_stem.replace("-", " ").strip().title(),
+                    "subtitle": str(request.get("brief") or asset_stem).strip(),
+                    "accent": "#475569",
+                    "source_dir": "attachments",
+                    "asset_category": "attachment",
+                }
+            )
+        return items
+
+    def build_audio_attachments(self, audio_requests: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for request in audio_requests or []:
+            if not isinstance(request, dict):
+                continue
+            audio_ref = str(request.get("audio_ref") or "").strip()
+            if not audio_ref:
+                continue
+            audio_meta = self.audio_manifest_by_ref.get(audio_ref, {})
+            preferred_name = Path(str(audio_meta.get("output_relative_path") or f"{audio_ref}.wav")).name
+            items.append(
+                {
+                    "kind": "audio",
+                    "name": preferred_name,
+                    "title": audio_ref.replace("-", " ").strip().title(),
+                    "source_dir": "attachments",
+                }
+            )
+        return items
+
+    def thread_attachments(self, payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+        root = payload or {}
+        return [
+            *self.build_document_attachments(root.get("document_refs")),
+            *self.build_image_attachments(root.get("image_requests")),
+            *self.build_audio_attachments(root.get("audio_requests")),
+        ]
+
+    def gallery_visual_source(self, blueprint: dict[str, str]) -> tuple[str, bytes]:
+        return resolve_visual_source(
+            blueprint["filename"],
+            blueprint["title"],
+            blueprint["subtitle"],
+            blueprint["accent"],
+            source_dir="attachments",
+            category="gallery",
+        )
+
+    def drawing_created_day(self, drawing_stem: str, *, fallback_index: int) -> date:
+        photo_meta = next((item for item in PHOTOS if Path(item["filename"]).stem == drawing_stem), None)
+        if photo_meta and photo_meta.get("created_at"):
+            return self.shift_day(photo_meta["created_at"])
+        assert self.project is not None
+        return self.project.date_start + timedelta(days=fallback_index)
+
     def create_documents(self) -> None:
         assert self.project is not None
-        for blueprint in DOCUMENTS:
-            folder = self.create_folder(blueprint["folder"])
-            document = ProjectDocument(project=self.project, folder=folder, title=blueprint["title"], description=blueprint["title"])
-            stored_name, stored_bytes = resolve_document_source(blueprint["filename"], blueprint["title"], blueprint["lines"])
+        library_rows = self.editorial_blueprint.get("document_library") or DOCUMENTS
+        for blueprint in library_rows:
+            document_ref = str(blueprint.get("document_ref") or blueprint.get("filename") or "").strip()
+            if not document_ref:
+                continue
+            folder = self.create_folder(list(blueprint.get("folder") or ["Documenti"]))
+            document = ProjectDocument(
+                project=self.project,
+                folder=folder,
+                title=str(blueprint.get("title") or document_ref),
+                description=str(blueprint.get("document_type") or blueprint.get("title") or document_ref),
+                document_kind=ProjectDocumentKind.DOCUMENT,
+            )
+            stored_name, stored_bytes = resolve_document_source(
+                document_ref,
+                str(blueprint.get("title") or document_ref),
+                [str(value) for value in blueprint.get("lines") or []],
+            )
             optimized_file = optimize_media_content(filename=stored_name, content=stored_bytes)
             document.document.save(Path(getattr(optimized_file, "name", "") or stored_name).name, optimized_file, save=False)
             document.save()
-            created_at = aware(self.shift_day(blueprint["created_at"]), 10, 30)
+            created_at_value = str(blueprint.get("created_at") or PROJECT_BLUEPRINT["date_start"])
+            created_at = aware(self.shift_day(created_at_value), 10, 30)
             ProjectDocument.objects.filter(pk=document.pk).update(created_at=created_at, updated_at=created_at)
+            self.documents_by_ref[document_ref] = document
 
     def create_photos(self) -> None:
         assert self.project is not None
-        for blueprint in PHOTOS:
+        for blueprint in PROJECT_GALLERY_ITEMS:
             photo = ProjectPhoto(project=self.project, title=blueprint["title"])
-            stored_name, stored_bytes = resolve_visual_source(
-                blueprint["filename"],
-                blueprint["title"],
-                blueprint["subtitle"],
-                blueprint["accent"],
-            )
+            stored_name, stored_bytes = self.gallery_visual_source(blueprint)
             optimized_file = optimize_media_content(filename=stored_name, content=stored_bytes)
             photo.photo.save(Path(getattr(optimized_file, "name", "") or stored_name).name, optimized_file, save=False)
             photo.save()
             created_at = aware(self.shift_day(blueprint["created_at"]), 15, 20)
             ProjectPhoto.objects.filter(pk=photo.pk).update(created_at=created_at, updated_at=created_at)
+
+    def create_drawings(self) -> None:
+        assert self.project is not None
+        for index, drawing_blueprint in enumerate(self.generated_media_manifest.get("drawings", []), start=1):
+            drawing_code = str(drawing_blueprint.get("drawing_code") or "").strip()
+            if not drawing_code:
+                continue
+            folder = self.create_folder(drawing_folder_chunks(drawing_code))
+            title = str(drawing_blueprint.get("title") or drawing_code)
+            subtitle = str(drawing_blueprint.get("subtitle") or drawing_blueprint.get("sheet_goal") or title)
+            preferred_filename = Path(
+                str(drawing_blueprint.get("output_relative_path") or f"{drawing_blueprint.get('drawing_stem', drawing_code)}.jpg")
+            ).name
+            document = ProjectDocument(
+                project=self.project,
+                folder=folder,
+                title=title,
+                description=subtitle,
+                document_kind=ProjectDocumentKind.DRAWING,
+            )
+            stored_name, stored_bytes = resolve_visual_source(
+                preferred_filename,
+                title,
+                subtitle,
+                "#475569",
+                source_dir="drawings",
+                category="drawing",
+            )
+            optimized_file = optimize_media_content(filename=stored_name, content=stored_bytes)
+            document.document.save(Path(getattr(optimized_file, "name", "") or stored_name).name, optimized_file, save=False)
+            document.save()
+            created_day = self.drawing_created_day(str(drawing_blueprint.get("drawing_stem") or drawing_code), fallback_index=index)
+            created_at = aware(created_day, 14, min(59, index))
+            ProjectDocument.objects.filter(pk=document.pk).update(created_at=created_at, updated_at=created_at)
+            self.drawings_by_code[drawing_code] = document
 
     def weather(self, day: date) -> dict[str, Any]:
         return {
@@ -1935,6 +2263,12 @@ class Seeder:
                 attachment["accent"],
                 source_dir=attachment.get("source_dir"),
                 category=attachment.get("asset_category", "attachment"),
+            )
+        elif attachment.get("kind") == "audio":
+            stored_name, stored_bytes = resolve_binary_source(
+                relative_dir=str(attachment.get("source_dir") or "attachments"),
+                preferred_filename=attachment["name"],
+                extensions=AUDIO_SOURCE_EXTENSIONS,
             )
         else:
             stored_name, stored_bytes = resolve_document_source(attachment["name"], attachment["title"], attachment["lines"])
@@ -2081,6 +2415,221 @@ class Seeder:
             self.save_comment_attachment(comment, item)
         comment.refresh_from_db()
         return comment
+
+    def task_progress_from_editorial(self, task_blueprint: dict[str, Any]) -> int:
+        activities = list(task_blueprint.get("activities") or [])
+        if not activities:
+            return 0
+        total = 0
+        for activity in activities:
+            explicit = activity.get("progress")
+            if explicit is not None:
+                total += int(explicit)
+            else:
+                total += int(ACTIVITY_STATUS_PROGRESS.get(str(activity.get("status") or ""), 0))
+        return round(total / len(activities))
+
+    def task_date_window_from_editorial(self, task_blueprint: dict[str, Any]) -> tuple[date, date]:
+        activities = list(task_blueprint.get("activities") or [])
+        if not activities:
+            assert self.project is not None
+            return self.project.date_start, self.project.date_end or self.project.date_start
+        starts = [self.shift_day(activity["date_window"]["start"]) for activity in activities]
+        ends = [self.shift_day(activity["date_window"]["end"]) for activity in activities]
+        return min(starts), max(ends)
+
+    def task_alert_from_editorial(self, task_blueprint: dict[str, Any]) -> bool:
+        if bool((task_blueprint.get("task_thread") or {}).get("alert")):
+            return True
+        for activity in task_blueprint.get("activities", []):
+            for thread in activity.get("threads", []):
+                if bool(thread.get("alert")):
+                    return True
+        return False
+
+    def activity_thread_when(
+        self,
+        *,
+        activity_status: str,
+        start_day: date,
+        end_day: date,
+        thread_index: int,
+        thread_role: str,
+    ) -> datetime:
+        base_day = self.clamp_report_day(activity_status, start_day, end_day)
+        if thread_role == "issue":
+            hour, minute = 16, 10 + thread_index * 6
+        elif thread_role in {"coordination_followup", "review"}:
+            hour, minute = 11 + min(thread_index, 3), 15 + thread_index * 5
+        else:
+            hour, minute = 8 + min(thread_index * 2, 8), 20 + thread_index * 7
+        return aware(base_day, min(hour, 19), minute % 60)
+
+    def create_editorial_comments(
+        self,
+        *,
+        post: ProjectPost,
+        thread_blueprint: dict[str, Any],
+        root_when: datetime,
+    ) -> None:
+        for index, comment_blueprint in enumerate(thread_blueprint.get("comment_script", []), start=1):
+            speaker_code = str(comment_blueprint.get("speaker_code") or comment_blueprint.get("author_code") or "").strip()
+            if not speaker_code:
+                raise ValueError(f"Commento senza speaker_code nel thread {thread_blueprint.get('thread_key')}")
+            comment_text = self.append_document_summaries(
+                str(comment_blueprint.get("text") or "").strip(),
+                list(comment_blueprint.get("document_refs") or []),
+            )
+            comment = self.create_comment(
+                post=post,
+                author_code=speaker_code,
+                when=root_when + timedelta(minutes=12 * index),
+                text=comment_text,
+                attachments=self.thread_attachments(comment_blueprint),
+            )
+            comment_key = str(comment_blueprint.get("comment_key") or "").strip()
+            if comment_key:
+                PostComment.objects.filter(pk=comment.pk).update(updated_at=comment.created_at)
+
+    def create_editorial_thread(
+        self,
+        *,
+        task: ProjectTask,
+        activity: ProjectActivity | None,
+        thread_blueprint: dict[str, Any],
+        when: datetime,
+        add_weather: bool,
+    ) -> ProjectPost:
+        root_post = thread_blueprint.get("root_post") or {}
+        post_kind = self.thread_post_kind(str(thread_blueprint.get("post_kind") or ""))
+        text = self.append_document_summaries(
+            str(root_post.get("text") or "").strip(),
+            list(root_post.get("document_refs") or []),
+        )
+        author_code = str(root_post.get("author_code") or "").strip() or "laura-ferretti"
+        post = self.create_post(
+            author_code=author_code,
+            when=when,
+            text=text,
+            task=task,
+            activity=activity,
+            post_kind=post_kind,
+            alert=bool(thread_blueprint.get("alert")),
+            is_public=self.thread_public_state(post_kind=post_kind, alert=bool(thread_blueprint.get("alert"))),
+            add_weather=add_weather,
+            attachments=self.thread_attachments(root_post),
+        )
+        thread_key = str(thread_blueprint.get("thread_key") or "").strip()
+        if thread_key:
+            self.posts_by_thread_key[thread_key] = post
+        self.create_editorial_comments(post=post, thread_blueprint=thread_blueprint, root_when=when)
+        return post
+
+    def choose_pin_thread_key(self, pin_blueprint: dict[str, Any]) -> str | None:
+        thread_refs = [str(value).strip() for value in pin_blueprint.get("thread_refs") or [] if str(value).strip()]
+        if not thread_refs:
+            return None
+        for thread_key in thread_refs:
+            thread_meta = self.thread_meta_by_key.get(thread_key) or {}
+            if thread_meta.get("thread_role") == "issue":
+                return thread_key
+        return thread_refs[0]
+
+    def create_drawing_pins(self) -> None:
+        assert self.project is not None
+        for pin_blueprint in self.editorial_blueprint.get("pin_registry", []):
+            drawing_code = str(pin_blueprint.get("drawing_code") or "").strip()
+            drawing_document = self.drawings_by_code.get(drawing_code)
+            if drawing_document is None:
+                raise ValueError(f"Disegno mancante per pin {pin_blueprint.get('pin_code')}: {drawing_code}")
+            thread_key = self.choose_pin_thread_key(pin_blueprint)
+            if not thread_key:
+                continue
+            post = self.posts_by_thread_key.get(thread_key)
+            if post is None:
+                raise ValueError(f"Thread non trovato per il pin {pin_blueprint.get('pin_code')}: {thread_key}")
+            pin = ProjectDrawingPin.objects.create(
+                project=self.project,
+                drawing_document=drawing_document,
+                post=post,
+                created_by=post.author,
+                x=float(pin_blueprint.get("x_percent") or 0) / 100.0,
+                y=float(pin_blueprint.get("y_percent") or 0) / 100.0,
+                page_number=1,
+                label=str(pin_blueprint.get("title") or pin_blueprint.get("pin_code") or "").strip(),
+            )
+            ProjectDrawingPin.objects.filter(pk=pin.pk).update(created_at=post.published_date, updated_at=post.published_date)
+
+    def seed_editorial_tasks(self) -> None:
+        assert self.project is not None
+        tasks = list(self.editorial_blueprint.get("tasks") or [])
+        if not tasks:
+            self.seed_tasks()
+            return
+
+        for task_index, task_blueprint in enumerate(tasks):
+            task_start, task_end = self.task_date_window_from_editorial(task_blueprint)
+            task_progress = self.task_progress_from_editorial(task_blueprint)
+            task_thread = task_blueprint.get("task_thread") or {}
+            task = ProjectTask.objects.create(
+                project=self.project,
+                name=str(task_blueprint.get("task_name") or f"Task {task_index + 1}"),
+                assigned_company=self.workspaces.get(str(task_blueprint.get("assigned_company_code") or "")),
+                date_start=task_start,
+                date_end=task_end,
+                date_completed=task_end if task_progress >= 100 else None,
+                progress=task_progress,
+                status=1,
+                share_status=True,
+                alert=self.task_alert_from_editorial(task_blueprint),
+                starred=task_progress < 100,
+                note=str((task_thread.get("root_post") or {}).get("text") or task_blueprint.get("task_name") or ""),
+            )
+            created_at = aware(task.date_start, 8, min(59, 15 + task_index))
+            ProjectTask.objects.filter(pk=task.pk).update(created_at=created_at, updated_at=created_at)
+            self.create_editorial_thread(
+                task=task,
+                activity=None,
+                thread_blueprint=task_thread,
+                when=aware(task.date_start, 8, min(59, 30 + task_index)),
+                add_weather=False,
+            )
+
+            for activity_index, activity_blueprint in enumerate(task_blueprint.get("activities", [])):
+                start_day = self.shift_day(activity_blueprint["date_window"]["start"])
+                end_day = self.shift_day(activity_blueprint["date_window"]["end"])
+                threads = list(activity_blueprint.get("threads") or [])
+                activity = ProjectActivity.objects.create(
+                    task=task,
+                    title=str(activity_blueprint.get("activity_title") or f"Attivita {activity_index + 1}"),
+                    description=str(((threads[0].get("root_post") or {}).get("text") if threads else "") or activity_blueprint.get("activity_title") or ""),
+                    status=str(activity_blueprint.get("status") or TaskActivityStatus.TODO),
+                    progress=int(activity_blueprint.get("progress") or ACTIVITY_STATUS_PROGRESS.get(str(activity_blueprint.get("status") or ""), 0)),
+                    datetime_start=aware(start_day, 7, 30),
+                    datetime_end=aware(end_day, 17, 30),
+                    alert=any(bool(thread.get("alert")) for thread in threads),
+                    starred=any(str(thread.get("thread_role") or "") == "issue" for thread in threads),
+                    note=str(((threads[0].get("root_post") or {}).get("text") if threads else "") or activity_blueprint.get("activity_title") or ""),
+                )
+                activity.workers.set([self.profiles[code] for code in activity_blueprint.get("workers", []) if code in self.profiles])
+                activity_created = aware(start_day, 7, min(59, 45 + activity_index))
+                ProjectActivity.objects.filter(pk=activity.pk).update(created_at=activity_created, updated_at=activity_created)
+
+                for thread_index, thread_blueprint in enumerate(threads):
+                    when = self.activity_thread_when(
+                        activity_status=str(activity_blueprint.get("status") or ""),
+                        start_day=start_day,
+                        end_day=end_day,
+                        thread_index=thread_index,
+                        thread_role=str(thread_blueprint.get("thread_role") or ""),
+                    )
+                    self.create_editorial_thread(
+                        task=task,
+                        activity=activity,
+                        thread_blueprint=thread_blueprint,
+                        when=when,
+                        add_weather=str(activity_blueprint.get("status") or "") != TaskActivityStatus.TODO or bool(thread_blueprint.get("alert")),
+                    )
 
     def activity_text(self, task_blueprint: dict[str, Any], activity_blueprint: dict[str, Any], worker_names: str) -> str:
         del task_blueprint, worker_names
@@ -2235,9 +2784,18 @@ class Seeder:
         self.attach_workspace_superusers()
         self.apply_demo_project_company_colors()
         self.create_documents()
+        self.create_drawings()
         self.create_photos()
-        self.seed_tasks()
+        self.seed_editorial_tasks()
+        self.create_drawing_pins()
         assert self.project is not None
+        task_rows = list(ProjectTask.objects.filter(project=self.project))
+        progress_percentage = round(sum(task.progress for task in task_rows) / len(task_rows)) if task_rows else 0
+        progress_formula = (
+            f"media aritmetica delle task create: {sum(task.progress for task in task_rows)} / {len(task_rows)} = {progress_percentage}%"
+            if task_rows
+            else "nessuna task creata"
+        )
         return {
             "project_id": self.project.id,
             "project_name": self.project.name,
@@ -2246,8 +2804,8 @@ class Seeder:
             "members": ProjectMember.objects.filter(project=self.project, status=ProjectMemberStatus.ACTIVE).count(),
             "tasks": ProjectTask.objects.filter(project=self.project).count(),
             "activities": ProjectActivity.objects.filter(task__project=self.project).count(),
-            "progress_percentage": seed_project_progress(),
-            "progress_formula": f"media aritmetica delle fasi: {sum(int(task['progress']) for task in TASKS)} / {len(TASKS)} = {seed_project_progress()}%",
+            "progress_percentage": progress_percentage,
+            "progress_formula": progress_formula,
             "target_progress": DEMO_TARGET_PROGRESS,
             "asset_source_root": str(DEMO_ASSET_SOURCE_ROOT),
             "asset_source_version": DEMO_ASSET_VERSION,

@@ -2499,6 +2499,18 @@ def serialize_drawing_pin(
     translation_by_post_id: dict[int, ProjectPostTranslation] | None = None,
     translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
 ) -> dict:
+    if pin.post.post_kind == PostKind.ISSUE:
+        pin_status = "open" if pin.post.alert else "resolved"
+        pin_color = "#ef4444" if pin.post.alert else "#16a34a"
+        pin_tone = "danger" if pin.post.alert else "success"
+    elif pin.post.alert:
+        pin_status = "attention"
+        pin_color = "#f59e0b"
+        pin_tone = "warning"
+    else:
+        pin_status = "linked"
+        pin_color = "#2563eb"
+        pin_tone = "info"
     return {
         "id": pin.id,
         "project": pin.project_id,
@@ -2514,6 +2526,9 @@ def serialize_drawing_pin(
         "y": pin.y,
         "page_number": pin.page_number,
         "label": pin.label or "",
+        "status": pin_status,
+        "color_hex": pin_color,
+        "tone": pin_tone,
         "created_by": serialize_project_profile(
             pin.created_by,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
@@ -3134,17 +3149,15 @@ def upsert_project_drawing_pin(
     normalized_page = normalize_pin_page_number(page_number)
     trimmed_label = (label or "").strip()[:255]
 
-    pin, _created = ProjectDrawingPin.objects.update_or_create(
+    pin = ProjectDrawingPin.objects.create(
+        project=project,
         drawing_document=document,
         post=post,
-        defaults={
-            "project": project,
-            "created_by": profile,
-            "x": normalized_x,
-            "y": normalized_y,
-            "page_number": normalized_page,
-            "label": trimmed_label,
-        },
+        created_by=profile,
+        x=normalized_x,
+        y=normalized_y,
+        page_number=normalized_page,
+        label=trimmed_label,
     )
     pin = drawing_pin_queryset().get(id=pin.id)
     company_colors_by_workspace_id = project_company_colors_for_context(

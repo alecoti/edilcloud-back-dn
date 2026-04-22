@@ -1,0 +1,61 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 972 >>
+stream
+BT
+/F1 18 Tf
+72 742 Td
+(Cronoprogramma generale lotto A) Tj
+/F1 11 Tf
+0 -28 Td
+(Tipo documento: cronoprogramma operativo) Tj
+0 -18 Td
+(Cartella demo: Direzione Lavori) Tj
+0 -18 Td
+(Data riferimento: 2026-03-24) Tj
+0 -18 Td
+(Fasi collegate: handover, facade, mechanical, interiors) Tj
+0 -18 Td
+(Lavorazioni collegate: handover-collaudi-integrati) Tj
+0 -18 Td
+(Sintesi usi nel demo:) Tj
+0 -18 Td
+(- Allego il cronoprogramma generale del lotto A per legare accessi, aree di servizio e sicurezza di avvio alla sequenza reale del cantiere: qui si vede perche' la logistica iniziale condiziona davvero tutte le prime lavorazioni.) Tj
+0 -18 Td
+(Contenuto sintetico:) Tj
+0 -18 Td
+(- Milestone generale aggiornata alla settimana del 24 marzo.) Tj
+0 -18 Td
+(- Facciata lotto B subordinata alla correzione del foro cucina 2B.) Tj
+0 -18 Td
+(- Pre-collaudo centrale termica vincolato alla consegna valvole.) Tj
+0 -18 Td
+(- Bagno campione 2B confermato come riferimento finiture.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001264 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1334
+%%EOF

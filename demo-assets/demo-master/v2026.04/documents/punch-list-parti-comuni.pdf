@@ -1,0 +1,65 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 1367 >>
+stream
+BT
+/F1 18 Tf
+72 742 Td
+(Punch list parti comuni) Tj
+/F1 11 Tf
+0 -28 Td
+(Tipo documento: punch list) Tj
+0 -18 Td
+(Cartella demo: Consegna / Punch list) Tj
+0 -18 Td
+(Data riferimento: 2026-03-24) Tj
+0 -18 Td
+(Fasi collegate: handover, finishes) Tj
+0 -18 Td
+(Lavorazioni collegate: handover-punch-list-direzione-lavori-sicurezza) Tj
+0 -18 Td
+(Sintesi usi nel demo:) Tj
+0 -18 Td
+(- Allego la prima punch list delle parti comuni gia' in questa fase per far capire che il walkthrough nasce dal controllo stanza per stanza e non il giorno finale: il documento aiuta a trasformare osservazioni sparse in voci chiudibili.) Tj
+0 -18 Td
+(- Allego la punch list parti comuni come base del giro DL e sicurezza: qui il documento serve a tenere insieme voce, responsabile e tempo di rientro invece di lasciare un elenco astratto di difetti.) Tj
+0 -18 Td
+(- Riporto la stessa punch list anche nel thread della griglia owner e date perche' qui conta la struttura di chiusura: il documento fa vedere come ogni voce esce gia' con owner, data promessa e stato.) Tj
+0 -18 Td
+(Contenuto sintetico:) Tj
+0 -18 Td
+(- Hall ingresso: confermare posizione monitor citofonico.) Tj
+0 -18 Td
+(- Vano scala B: chiudere stuccatura giunto verticale.) Tj
+0 -18 Td
+(- Autorimessa: tarare chiudiporta locali tecnici.) Tj
+0 -18 Td
+(- Corte interna: verificare pendenza ultimo tratto pavimentazione.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001660 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1730
+%%EOF

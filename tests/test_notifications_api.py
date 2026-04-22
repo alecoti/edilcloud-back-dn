@@ -1,6 +1,7 @@
 import json
 from base64 import b64decode
 from datetime import date, timedelta
+from pathlib import PurePosixPath
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -472,7 +473,9 @@ def test_notification_catalog_thread_and_document_builders_include_visual_media(
         snippet="Caricate le foto del fronte ovest.",
     )
     assert thread_blueprint.post_id == post.id
-    assert thread_blueprint.data["image_url"].endswith("fronte-ovest.png")
+    thread_image_name = PurePosixPath(thread_blueprint.data["image_url"]).name
+    assert thread_image_name.startswith("fronte-ovest")
+    assert thread_image_name.endswith(".png")
 
     document = ProjectDocument.objects.create(
         project=project,
@@ -489,7 +492,9 @@ def test_notification_catalog_thread_and_document_builders_include_visual_media(
         file_field=document.document,
     )
     assert document_blueprint.document_id == document.id
-    assert document_blueprint.data["image_url"].endswith("schema-facciata.png")
+    document_image_name = PurePosixPath(document_blueprint.data["image_url"]).name
+    assert document_image_name.startswith("schema-facciata")
+    assert document_image_name.endswith(".png")
 
 
 @pytest.mark.django_db

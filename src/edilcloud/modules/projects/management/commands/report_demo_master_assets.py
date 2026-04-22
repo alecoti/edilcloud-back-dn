@@ -6,6 +6,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 
 from edilcloud.modules.projects.demo_master_assets import (
+    AUDIO_SOURCE_EXTENSIONS,
     AVATAR_SOURCE_EXTENSIONS,
     DEMO_ASSET_SOURCE_ROOT,
     DOCUMENT_SOURCE_EXTENSIONS,
@@ -23,6 +24,7 @@ from edilcloud.modules.workspaces.services import file_url
 
 
 IMAGE_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp", ".avif"}
+AUDIO_EXTENSIONS = {".wav", ".wave", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".webm"}
 
 
 def company_code_by_name() -> dict[str, str]:
@@ -45,6 +47,10 @@ def normalize_path(value: str | None) -> str | None:
 
 def is_image_filename(filename: str) -> bool:
     return Path(filename).suffix.lower() in IMAGE_EXTENSIONS
+
+
+def is_audio_filename(filename: str) -> bool:
+    return Path(filename).suffix.lower() in AUDIO_EXTENSIONS
 
 
 def build_row(
@@ -182,7 +188,12 @@ class Command(BaseCommand):
 
         for attachment in PostAttachment.objects.select_related("post").filter(post__project=project).order_by("id"):
             filename = Path(attachment.file.name).name if attachment.file else f"post-attachment-{attachment.id}"
-            source_dir = "attachments" if is_image_filename(filename) else "documents"
+            if is_image_filename(filename) or is_audio_filename(filename):
+                source_dir = "attachments"
+                extensions = IMAGE_SOURCE_EXTENSIONS if is_image_filename(filename) else AUDIO_SOURCE_EXTENSIONS
+            else:
+                source_dir = "documents"
+                extensions = DOCUMENT_SOURCE_EXTENSIONS
             source_pattern = expected_source_pattern(
                 source_dir,
                 filename,
@@ -190,7 +201,7 @@ class Command(BaseCommand):
             source_file = find_demo_source_file(
                 relative_dir=source_dir,
                 preferred_filename=filename,
-                extensions=IMAGE_SOURCE_EXTENSIONS if is_image_filename(filename) else DOCUMENT_SOURCE_EXTENSIONS,
+                extensions=extensions,
             )
             rows.append(
                 build_row(
@@ -206,12 +217,17 @@ class Command(BaseCommand):
 
         for attachment in CommentAttachment.objects.select_related("comment").filter(comment__post__project=project).order_by("id"):
             filename = Path(attachment.file.name).name if attachment.file else f"comment-attachment-{attachment.id}"
-            source_dir = "attachments" if is_image_filename(filename) else "documents"
+            if is_image_filename(filename) or is_audio_filename(filename):
+                source_dir = "attachments"
+                extensions = IMAGE_SOURCE_EXTENSIONS if is_image_filename(filename) else AUDIO_SOURCE_EXTENSIONS
+            else:
+                source_dir = "documents"
+                extensions = DOCUMENT_SOURCE_EXTENSIONS
             source_pattern = expected_source_pattern(source_dir, filename)
             source_file = find_demo_source_file(
                 relative_dir=source_dir,
                 preferred_filename=filename,
-                extensions=IMAGE_SOURCE_EXTENSIONS if is_image_filename(filename) else DOCUMENT_SOURCE_EXTENSIONS,
+                extensions=extensions,
             )
             rows.append(
                 build_row(
