@@ -404,6 +404,7 @@ class ProjectDrawingPin(TimestampedModel):
     x = models.FloatField()
     y = models.FloatField()
     page_number = models.PositiveIntegerField(default=1)
+    pin_code = models.CharField(max_length=128, blank=True)
     label = models.CharField(max_length=255, blank=True)
 
     class Meta:

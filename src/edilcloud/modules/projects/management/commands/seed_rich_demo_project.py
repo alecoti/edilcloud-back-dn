@@ -2053,6 +2053,27 @@ class Seeder:
             return False
         return not alert
 
+    def require_document_library_entry(self, document_ref: str) -> dict[str, Any]:
+        document_meta = self.document_library_by_ref.get(document_ref)
+        if isinstance(document_meta, dict):
+            return document_meta
+        raise ValueError(f"Documento non presente nella libreria documentale: {document_ref}")
+
+    def normalize_pin_percent(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        pin_code: str,
+    ) -> float:
+        try:
+            normalized = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Coordinata {field_name} non valida per il pin {pin_code}.") from exc
+        if normalized < 0 or normalized > 100:
+            raise ValueError(f"Coordinata {field_name} fuori tavola per il pin {pin_code}.")
+        return normalized / 100.0
+
     def append_document_summaries(self, text: str, document_refs: list[Any] | None) -> str:
         summaries: list[str] = []
         for item in document_refs or []:
@@ -2062,7 +2083,7 @@ class Seeder:
             summary = str(request.get("post_summary_it") or "").strip()
             if not summary:
                 document_ref = request["document_ref"]
-                document_meta = self.document_library_by_ref.get(document_ref, {})
+                document_meta = self.require_document_library_entry(document_ref)
                 title = str(document_meta.get("title") or document_ref).strip()
                 summary = f"Allego {title} come riferimento documentale di questo passaggio."
             summaries.append(summary)
@@ -2077,7 +2098,7 @@ class Seeder:
             if request is None:
                 continue
             document_ref = request["document_ref"]
-            document_meta = self.document_library_by_ref.get(document_ref, {})
+            document_meta = self.require_document_library_entry(document_ref)
             items.append(
                 {
                     "kind": "document",
@@ -2656,25 +2677,37 @@ class Seeder:
     def create_drawing_pins(self) -> None:
         assert self.project is not None
         for pin_blueprint in self.editorial_blueprint.get("pin_registry", []):
+            pin_code = str(pin_blueprint.get("pin_code") or "").strip()
+            if not pin_code:
+                raise ValueError("Pin senza pin_code nel blueprint editoriale.")
             drawing_code = str(pin_blueprint.get("drawing_code") or "").strip()
             drawing_document = self.drawings_by_code.get(drawing_code)
             if drawing_document is None:
-                raise ValueError(f"Disegno mancante per pin {pin_blueprint.get('pin_code')}: {drawing_code}")
+                raise ValueError(f"Disegno mancante per pin {pin_code}: {drawing_code}")
             thread_key = self.choose_pin_thread_key(pin_blueprint)
             if not thread_key:
                 continue
             post = self.posts_by_thread_key.get(thread_key)
             if post is None:
-                raise ValueError(f"Thread non trovato per il pin {pin_blueprint.get('pin_code')}: {thread_key}")
+                raise ValueError(f"Thread non trovato per il pin {pin_code}: {thread_key}")
             pin = ProjectDrawingPin.objects.create(
                 project=self.project,
                 drawing_document=drawing_document,
                 post=post,
                 created_by=post.author,
-                x=float(pin_blueprint.get("x_percent") or 0) / 100.0,
-                y=float(pin_blueprint.get("y_percent") or 0) / 100.0,
+                x=self.normalize_pin_percent(
+                    pin_blueprint.get("x_percent"),
+                    field_name="x_percent",
+                    pin_code=pin_code,
+                ),
+                y=self.normalize_pin_percent(
+                    pin_blueprint.get("y_percent"),
+                    field_name="y_percent",
+                    pin_code=pin_code,
+                ),
                 page_number=1,
-                label=str(pin_blueprint.get("title") or pin_blueprint.get("pin_code") or "").strip(),
+                pin_code=pin_code,
+                label=str(pin_blueprint.get("title") or pin_code).strip(),
             )
             ProjectDrawingPin.objects.filter(pk=pin.pk).update(created_at=post.published_date, updated_at=post.published_date)
 

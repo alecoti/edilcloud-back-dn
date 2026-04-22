@@ -14,6 +14,8 @@ from edilcloud.modules.projects.models import (
     Project,
     ProjectActivity,
     ProjectDocument,
+    ProjectDocumentKind,
+    ProjectDrawingPin,
     ProjectMember,
     ProjectPhoto,
     ProjectPost,
@@ -21,6 +23,11 @@ from edilcloud.modules.projects.models import (
     ProjectTask,
 )
 from edilcloud.modules.projects.demo_master_snapshot import build_demo_snapshot_payload
+from edilcloud.modules.projects.services import (
+    list_project_documents,
+    list_project_drawings,
+    list_project_recent_posts,
+)
 from edilcloud.modules.workspaces.models import Profile, Workspace, WorkspaceRole
 
 
@@ -71,10 +78,13 @@ def test_seed_rich_demo_project_creates_accessible_realistic_project(tmp_path, s
     assert ProjectTask.objects.filter(project=project).count() >= 6
     assert ProjectActivity.objects.filter(task__project=project).count() >= 18
     assert ProjectDocument.objects.filter(project=project).count() >= 3
+    assert ProjectDocument.objects.filter(project=project, document_kind=ProjectDocumentKind.DOCUMENT).exists()
+    assert ProjectDocument.objects.filter(project=project, document_kind=ProjectDocumentKind.DRAWING).exists()
     assert ProjectPhoto.objects.filter(project=project).count() >= 2
     assert ProjectPost.objects.filter(project=project).count() >= 20
     assert PostAttachment.objects.filter(post__project=project).exists()
     assert CommentAttachment.objects.filter(comment__post__project=project).exists()
+    assert ProjectDrawingPin.objects.filter(project=project, pin_code__gt="").exists()
     assert ProjectPost.objects.filter(project=project, post_kind=PostKind.ISSUE, alert=True).exists()
     assert ProjectPost.objects.filter(project=project, post_kind=PostKind.ISSUE, alert=False).exists()
     assert Profile.objects.filter(
@@ -94,6 +104,25 @@ def test_seed_rich_demo_project_creates_accessible_realistic_project(tmp_path, s
     assert ProjectPost.objects.filter(project=project, author__email="bogdan.muresan@strutturenord.it", source_language="ro").exists()
     assert ProjectPostTranslation.objects.filter(post__project=project, target_language="it", post__source_language__in=["fr", "ro"]).exists()
     assert PostCommentTranslation.objects.filter(comment__post__project=project, target_language="it", comment__source_language__in=["fr", "ro"]).exists()
+
+    documents_payload = list_project_documents(profile=viewer_profile, project_id=project.id)
+    drawings_payload = list_project_drawings(profile=viewer_profile, project_id=project.id)
+    recent_posts_payload = list_project_recent_posts(
+        profile=viewer_profile,
+        project_id=project.id,
+        limit=100,
+    )
+
+    assert documents_payload
+    assert drawings_payload
+    assert all(item["document_kind"] == ProjectDocumentKind.DOCUMENT for item in documents_payload)
+    assert all(item["document_kind"] == ProjectDocumentKind.DRAWING for item in drawings_payload)
+    assert all(item["id"] not in {drawing["id"] for drawing in drawings_payload} for item in documents_payload)
+    assert any(post["drawing_pin_tags"] for post in recent_posts_payload)
+    assert any(
+        any(tag["pin_code"] and tag["tag_text"] for tag in post["drawing_pin_tags"])
+        for post in recent_posts_payload
+    )
 
 
 @pytest.mark.django_db

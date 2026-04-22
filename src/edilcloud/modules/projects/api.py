@@ -691,6 +691,7 @@ def create_project_drawing_pin_endpoint(
             x=payload.x,
             y=payload.y,
             page_number=payload.page_number,
+            pin_code=payload.pin_code,
             label=payload.label,
             target_language=request_locale(request),
         )
@@ -717,6 +718,7 @@ def update_project_drawing_pin_endpoint(
             x=payload.x,
             y=payload.y,
             page_number=payload.page_number,
+            pin_code=payload.pin_code,
             label=payload.label,
             target_language=request_locale(request),
         )

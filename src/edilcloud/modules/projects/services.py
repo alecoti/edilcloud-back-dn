@@ -2068,6 +2068,9 @@ def serialize_post(
     translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
 ) -> dict:
     effective_comments = comments if comments is not None else list(post.comments.all())
+    drawing_pin_tags = [
+        serialize_post_pin_tag(pin) for pin in list(post.drawing_pins.all())
+    ]
     last_activity_at = effective_last_activity_at or compute_post_last_activity_at(
         post=post,
         comments=effective_comments,
@@ -2113,6 +2116,7 @@ def serialize_post(
         "alert": post.alert,
         "is_public": post.is_public,
         "unique_code": post.unique_code,
+        "drawing_pin_tags": drawing_pin_tags,
         "weather_snapshot": post.weather_snapshot or None,
         "media_set": [serialize_attachment(attachment) for attachment in post.attachments.all()],
         "comment_set": serialize_comment_tree(
@@ -2135,6 +2139,9 @@ def serialize_post_summary(
     translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
 ) -> dict:
     """Serialize the overview-safe post shape without the full comment tree."""
+    drawing_pin_tags = [
+        serialize_post_pin_tag(pin) for pin in list(post.drawing_pins.all())
+    ]
     last_activity_at = effective_last_activity_at or compute_post_last_activity_at(post=post)
     viewer_seen_state = get_viewer_seen_state_for_post(post=post, viewer_profile=viewer_profile)
     viewer_seen_at = viewer_seen_state.seen_at if viewer_seen_state is not None else None
@@ -2177,6 +2184,7 @@ def serialize_post_summary(
         "alert": post.alert,
         "is_public": post.is_public,
         "unique_code": post.unique_code,
+        "drawing_pin_tags": drawing_pin_tags,
         "weather_snapshot": post.weather_snapshot or None,
         "media_set": [serialize_attachment(attachment) for attachment in post.attachments.all()],
         "comment_set": [],
@@ -2491,6 +2499,41 @@ def serialize_document(document: ProjectDocument) -> dict:
     }
 
 
+def drawing_pin_visual_state(pin: ProjectDrawingPin) -> tuple[str, str, str]:
+    if pin.post.post_kind == PostKind.ISSUE:
+        return (
+            ("open", "#ef4444", "danger")
+            if pin.post.alert
+            else ("resolved", "#16a34a", "success")
+        )
+    if pin.post.alert:
+        return ("attention", "#f59e0b", "warning")
+    return ("linked", "#2563eb", "info")
+
+
+def serialize_post_pin_tag(pin: ProjectDrawingPin) -> dict:
+    status, color_hex, tone = drawing_pin_visual_state(pin)
+    label = (pin.label or "").strip()
+    pin_code = (pin.pin_code or "").strip()
+    return {
+        "id": pin.id,
+        "pin_code": pin_code or None,
+        "label": label or None,
+        "tag_text": label or pin_code or f"Pin {pin.id}",
+        "status": status,
+        "color_hex": color_hex,
+        "tone": tone,
+        "x": pin.x,
+        "y": pin.y,
+        "page_number": pin.page_number,
+        "drawing_document": {
+            "id": pin.drawing_document_id,
+            "title": pin.drawing_document.title or None,
+            "document_kind": pin.drawing_document.document_kind,
+        },
+    }
+
+
 def serialize_drawing_pin(
     pin: ProjectDrawingPin,
     *,
@@ -2499,18 +2542,7 @@ def serialize_drawing_pin(
     translation_by_post_id: dict[int, ProjectPostTranslation] | None = None,
     translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
 ) -> dict:
-    if pin.post.post_kind == PostKind.ISSUE:
-        pin_status = "open" if pin.post.alert else "resolved"
-        pin_color = "#ef4444" if pin.post.alert else "#16a34a"
-        pin_tone = "danger" if pin.post.alert else "success"
-    elif pin.post.alert:
-        pin_status = "attention"
-        pin_color = "#f59e0b"
-        pin_tone = "warning"
-    else:
-        pin_status = "linked"
-        pin_color = "#2563eb"
-        pin_tone = "info"
+    pin_status, pin_color, pin_tone = drawing_pin_visual_state(pin)
     return {
         "id": pin.id,
         "project": pin.project_id,
@@ -2525,6 +2557,7 @@ def serialize_drawing_pin(
         "x": pin.x,
         "y": pin.y,
         "page_number": pin.page_number,
+        "pin_code": pin.pin_code or "",
         "label": pin.label or "",
         "status": pin_status,
         "color_hex": pin_color,
@@ -3079,6 +3112,13 @@ def drawing_pin_queryset():
             .prefetch_related("attachments")
             .order_by("created_at", "id"),
         ),
+        Prefetch(
+            "post__drawing_pins",
+            queryset=ProjectDrawingPin.objects.select_related(
+                "drawing_document",
+                "drawing_document__folder",
+            ).order_by("page_number", "id"),
+        ),
     )
 
 
@@ -3128,6 +3168,7 @@ def upsert_project_drawing_pin(
     x: float,
     y: float,
     page_number: int = 1,
+    pin_code: str = "",
     label: str = "",
     target_language: str | None = None,
 ) -> dict:
@@ -3147,6 +3188,7 @@ def upsert_project_drawing_pin(
     normalized_x = normalize_pin_coordinate(x, field_name="x")
     normalized_y = normalize_pin_coordinate(y, field_name="y")
     normalized_page = normalize_pin_page_number(page_number)
+    trimmed_pin_code = (pin_code or "").strip()[:128]
     trimmed_label = (label or "").strip()[:255]
 
     pin = ProjectDrawingPin.objects.create(
@@ -3157,6 +3199,7 @@ def upsert_project_drawing_pin(
         x=normalized_x,
         y=normalized_y,
         page_number=normalized_page,
+        pin_code=trimmed_pin_code,
         label=trimmed_label,
     )
     pin = drawing_pin_queryset().get(id=pin.id)
@@ -3192,6 +3235,7 @@ def update_project_drawing_pin(
     x: float | None = None,
     y: float | None = None,
     page_number: int | None = None,
+    pin_code: str | None = None,
     label: str | None = None,
     target_language: str | None = None,
 ) -> dict:
@@ -3220,6 +3264,8 @@ def update_project_drawing_pin(
         pin.y = normalize_pin_coordinate(y, field_name="y")
     if page_number is not None:
         pin.page_number = normalize_pin_page_number(page_number)
+    if pin_code is not None:
+        pin.pin_code = pin_code.strip()[:128]
     if label is not None:
         pin.label = label.strip()[:255]
     pin.save()
@@ -3296,6 +3342,13 @@ def project_posts_queryset():
         "project",
     ).prefetch_related(
         "attachments",
+        Prefetch(
+            "drawing_pins",
+            queryset=ProjectDrawingPin.objects.select_related(
+                "drawing_document",
+                "drawing_document__folder",
+            ).order_by("page_number", "id"),
+        ),
         Prefetch(
             "comments",
             queryset=PostComment.objects.select_related(
@@ -4564,11 +4617,7 @@ def save_comment_attachments(comment: PostComment, files: list[object]) -> None:
 
 
 def get_post_for_profile(*, profile: Profile, post_id: int) -> tuple[ProjectPost, ProjectMember]:
-    post = (
-        ProjectPost.objects.select_related("project", "task", "activity", "author")
-        .filter(id=post_id)
-        .first()
-    )
+    post = project_posts_queryset().filter(id=post_id).first()
     if post is None:
         raise ValueError("Post non trovato.")
     membership = get_project_membership(post.project, profile)

@@ -201,6 +201,7 @@ class CreateProjectDrawingPinRequestSchema(Schema):
     x: float
     y: float
     page_number: int = 1
+    pin_code: str = ""
     label: str = ""
 
 
@@ -210,6 +211,7 @@ class UpdateProjectDrawingPinRequestSchema(Schema):
     x: float | None = None
     y: float | None = None
     page_number: int | None = None
+    pin_code: str | None = None
     label: str | None = None
 
 
