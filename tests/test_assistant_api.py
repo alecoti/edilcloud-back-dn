@@ -15,11 +15,13 @@ from edilcloud.modules.assistant.models import (
     ProjectAssistantMessage,
     ProjectAssistantProjectSettings,
     ProjectAssistantRunLog,
+    ProjectAssistantState,
     ProjectAssistantUsage,
     ProjectAssistantThread,
 )
 from edilcloud.modules.assistant.services import (
     RetrievalBundle,
+    build_pgvector_retrieval_bundle,
     build_project_source_snapshot,
     get_or_create_project_assistant_state,
     sync_project_assistant_sources,
@@ -106,6 +108,110 @@ def test_project_assistant_state_and_ask_routes_work_with_shared_memory(monkeypa
     assert refreshed_messages[0]["role"] == "user"
     assert refreshed_messages[1]["role"] == "assistant"
     assert refreshed_state_response.json()["active_thread"]["message_count"] == 2
+
+
+@pytest.mark.django_db(transaction=True)
+def test_project_mutations_enqueue_assistant_indexing_without_opening_assistant(monkeypatch):
+    monkeypatch.setattr("edilcloud.modules.assistant.services.assistant_rag_enabled", lambda: True)
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.background-state@example.com",
+        password="devpass123",
+        workspace_name="Assistant Background State Workspace",
+    )
+    project, _task, _activity, _alert_post = create_project_fixture(profile)
+
+    state = ProjectAssistantState.objects.get(project=project)
+
+    assert state.is_dirty is True
+    assert state.background_sync_scheduled is True
+    assert state.last_indexed_version == 0
+
+
+@pytest.mark.django_db
+def test_project_assistant_state_read_does_not_rebuild_sources_inline(monkeypatch):
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.state-read@example.com",
+        password="devpass123",
+        workspace_name="Assistant State Read Workspace",
+    )
+    project, _task, _activity, _alert_post = create_project_fixture(profile)
+    headers = auth_headers(client, email="assistant.state-read@example.com", password="devpass123")
+    state = get_or_create_project_assistant_state(project)
+    state.is_dirty = True
+    state.background_sync_scheduled = False
+    state.save(update_fields=["is_dirty", "background_sync_scheduled"])
+
+    def fail_source_snapshot(*_args, **_kwargs):
+        raise AssertionError("Opening the assistant must not rebuild source snapshots inline.")
+
+    monkeypatch.setattr("edilcloud.modules.assistant.services.assistant_rag_enabled", lambda: True)
+    monkeypatch.setattr("edilcloud.modules.assistant.services.build_project_source_snapshot", fail_source_snapshot)
+
+    response = client.get(f"/api/v1/projects/{project.id}/assistant", **headers)
+
+    assert response.status_code == 200
+    stats = response.json()["stats"]
+    assert stats["index_status"] in {"processing", "stale"}
+    state.refresh_from_db()
+    assert state.background_sync_scheduled is True
+
+
+@pytest.mark.django_db
+def test_project_assistant_ask_schedules_initial_sync_without_blocking(monkeypatch):
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.ask-background@example.com",
+        password="devpass123",
+        workspace_name="Assistant Ask Background Workspace",
+    )
+    project, _task, _activity, alert_post = create_project_fixture(profile)
+    headers = auth_headers(client, email="assistant.ask-background@example.com", password="devpass123")
+
+    retrieval_bundle = RetrievalBundle(
+        provider="local-retrieval-fallback",
+        profile_static=["Il progetto e leggibile subito dal DB live."],
+        profile_dynamic=["La memoria vettoriale viene preparata in background."],
+        citations=[
+            {
+                "index": 1,
+                "source_key": f"post:{alert_post.id}",
+                "source_type": "post",
+                "label": "Criticita ancoraggio nord",
+                "score": 0.74,
+                "snippet": "Criticita ancoraggio nord disponibile prima del rebuild vettoriale.",
+                "metadata": {"source_type": "post"},
+            }
+        ],
+        context_markdown="## Memoria temporanea\n- Usa il DB live mentre l'indice si aggiorna.",
+    )
+
+    def fail_sync(*_args, **_kwargs):
+        raise AssertionError("Normal assistant asks must not run blocking source sync.")
+
+    monkeypatch.setattr("edilcloud.modules.assistant.services.assistant_rag_enabled", lambda: True)
+    monkeypatch.setattr("edilcloud.modules.assistant.services.sync_project_assistant_sources", fail_sync)
+    monkeypatch.setattr("edilcloud.modules.assistant.services.index_project_assistant_state", fail_sync)
+    monkeypatch.setattr(
+        "edilcloud.modules.assistant.services.retrieve_project_knowledge",
+        lambda **_kwargs: retrieval_bundle,
+    )
+    monkeypatch.setattr(
+        "edilcloud.modules.assistant.services.generate_assistant_completion",
+        lambda **_kwargs: "Risposta pronta mentre la memoria si aggiorna in background.",
+    )
+
+    response = client.post(
+        f"/api/v1/projects/{project.id}/assistant",
+        data=json.dumps({"message": "Fammi il punto del progetto"}),
+        content_type="application/json",
+        **headers,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["assistant_message"]["content"].startswith("Risposta pronta")
+    state = ProjectAssistantState.objects.get(project=project)
+    assert state.background_sync_scheduled is True
 
 
 @pytest.mark.django_db
@@ -371,6 +477,9 @@ def test_assistant_quality_gate_command_passes_for_green_dataset_and_run_logs():
     assert payload["gate"]["ok"] is True
     assert payload["gate"]["checks"]["dataset_pass_rate"] is True
     assert payload["gate"]["checks"]["supported_rate"] is True
+    if payload["gate"]["metrics"]["ranking_quality_metrics_available"]:
+        assert payload["gate"]["checks"]["recall_at_5"] is True
+        assert payload["gate"]["checks"]["ndcg_at_5"] is True
 
 
 @pytest.mark.django_db
@@ -716,6 +825,32 @@ def test_project_audio_transcription_wraps_openai_http_errors(monkeypatch, setti
             ),
             language="it",
         )
+
+
+@pytest.mark.django_db
+def test_pgvector_retrieval_skips_embedding_when_project_has_no_indexed_chunks(monkeypatch):
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.no-index-embedding@example.com",
+        password="devpass123",
+        workspace_name="Assistant No Index Embedding Workspace",
+    )
+    project, _task, _activity, _alert_post = create_project_fixture(profile)
+    source_documents, _current_version = build_project_source_snapshot(project)
+
+    def fail_embed(*_args, **_kwargs):
+        raise AssertionError("Sparse/local fallback should be used until pgvector chunks exist.")
+
+    monkeypatch.setattr("edilcloud.modules.assistant.services.assistant_rag_enabled", lambda: True)
+    monkeypatch.setattr("edilcloud.modules.assistant.services.pgvector_runtime_available", lambda: True)
+    monkeypatch.setattr("edilcloud.modules.assistant.services.embed_texts", fail_embed)
+
+    bundle = build_pgvector_retrieval_bundle(
+        project=project,
+        query="criticita aperte del progetto",
+        source_documents=source_documents,
+    )
+
+    assert bundle.provider != "pgvector"
 
 
 @pytest.mark.django_db

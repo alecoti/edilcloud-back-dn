@@ -125,7 +125,7 @@ def source_matches_context(source_document: Any, context: AssistantRetrievalCont
     activity_id = metadata.get("activity_id")
 
     if context.source_types and source_type not in set(context.source_types):
-        if source_type not in {"project", "team_directory"}:
+        if source_type not in {"project", "team_directory", "project_graph"}:
             return False
 
     if context.activity_id is not None:
@@ -133,12 +133,12 @@ def source_matches_context(source_document: Any, context: AssistantRetrievalCont
             return True
         if not context.strict_context and task_id == context.task_id:
             return True
-        return source_type in {"project"}
+        return source_type in {"project", "project_graph"}
 
     if context.task_id is not None:
         if task_id == context.task_id:
             return True
-        return source_type in {"project"}
+        return source_type in {"project", "project_graph"}
 
     return True
 

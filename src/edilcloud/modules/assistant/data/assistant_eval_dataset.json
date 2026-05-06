@@ -1,32 +1,229 @@
 [
-  {
-    "question": "quanti partecipanti ci sono nel progetto?",
-    "expected_intent": "team_count",
-    "expected_strategy": "deterministic_db",
-    "expected_target_length": "short"
-  },
-  {
-    "question": "quali sono le segnalazioni aperte?",
-    "expected_intent": "open_alerts",
-    "expected_strategy": "deterministic_db",
-    "expected_target_length": "medium"
-  },
-  {
-    "question": "cosa e successo oggi in cantiere?",
-    "expected_intent": "activity_by_date",
-    "expected_strategy": "deterministic_db",
-    "expected_target_length": "medium"
-  },
-  {
-    "question": "c'e un documento sul drenaggio lato nord?",
-    "expected_intent": "document_search",
-    "expected_strategy": "semantic_retrieval",
-    "expected_target_length": "long"
-  },
-  {
-    "question": "fammi una sintesi del progetto",
-    "expected_intent": "project_summary",
-    "expected_strategy": "hybrid_db_retrieval",
-    "expected_target_length": "long"
-  }
+    {
+        "question":  "quanti partecipanti ci sono nel progetto?",
+        "expected_intent":  "team_count",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "short",
+        "expected_answer_shape":  "direct"
+    },
+    {
+        "question":  "quali sono le segnalazioni aperte?",
+        "expected_intent":  "open_alerts",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief"
+    },
+    {
+        "question":  "cosa e successo oggi in cantiere?",
+        "expected_intent":  "activity_by_date",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "timeline"
+    },
+    {
+        "question":  "c\u0027e un documento sul drenaggio lato nord?",
+        "expected_intent":  "document_search",
+        "expected_strategy":  "semantic_retrieval",
+        "expected_target_length":  "long",
+        "expected_answer_shape":  "document_brief"
+    },
+    {
+        "question":  "fammi una sintesi del progetto",
+        "expected_intent":  "project_summary",
+        "expected_strategy":  "hybrid_db_retrieval",
+        "expected_target_length":  "long",
+        "expected_answer_shape":  "deep_report"
+    },
+    {
+        "question":  "quante aziende ci sono nel progetto?",
+        "expected_intent":  "company_count",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "short",
+        "expected_answer_shape":  "direct"
+    },
+    {
+        "question":  "quali aziende sono coinvolte?",
+        "expected_intent":  "company_list",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief"
+    },
+    {
+        "question":  "elenca i documenti del progetto",
+        "expected_intent":  "document_list",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "short",
+        "expected_answer_shape":  "direct"
+    },
+    {
+        "question":  "quali documenti parlano del foro cucina 2B?",
+        "expected_intent":  "document_search",
+        "expected_strategy":  "semantic_retrieval",
+        "expected_target_length":  "long",
+        "expected_answer_shape":  "document_brief"
+    },
+    {
+        "question":  "cosa blocca i collaudi?",
+        "expected_intent":  "open_alerts",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief"
+    },
+    {
+        "question":  "quali issue sono state risolte?",
+        "expected_intent":  "resolved_issues",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief"
+    },
+    {
+        "question":  "fammi una timeline degli ultimi giorni",
+        "expected_intent":  "timeline_summary",
+        "expected_strategy":  "hybrid_db_retrieval",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "timeline"
+    },
+    {
+        "question":  "mostrami le task aperte",
+        "expected_intent":  "task_list",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief"
+    },
+    {
+        "question":  "qual e lo stato della task ponteggi?",
+        "expected_intent":  "task_status",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief"
+    },
+    {
+        "question":  "dammi una panoramica breve del progetto",
+        "expected_intent":  "project_summary",
+        "expected_strategy":  "hybrid_db_retrieval",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "narrative"
+    },
+    {
+        "question":  "analizza il progetto nel dettaglio",
+        "expected_intent":  "generic_semantic",
+        "expected_strategy":  "semantic_retrieval",
+        "expected_target_length":  "long",
+        "expected_answer_shape":  "deep_report"
+    },
+    {
+        "question":  "chi lavora oggi?",
+        "expected_intent":  "activity_by_date",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "timeline"
+    },
+    {
+        "question":  "quali squadre sono in programma oggi?",
+        "expected_intent":  "activity_by_date",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "timeline"
+    },
+    {
+        "question":  "quante attivita ci sono oggi?",
+        "expected_intent":  "activity_by_date",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "timeline"
+    },
+    {
+        "question":  "ci sono criticita risolte?",
+        "expected_intent":  "resolved_issues",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief"
+    },
+    {
+        "question":  "quanti documenti ci sono?",
+        "expected_intent":  "document_list",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "short",
+        "expected_answer_shape":  "direct"
+    },
+    {
+        "question":  "fammi un riepilogo sintetico del cantiere",
+        "expected_intent":  "project_summary",
+        "expected_strategy":  "hybrid_db_retrieval",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "narrative",
+        "expected_source_types":  ["project_wiki", "project_graph", "project"]
+    },
+    {
+        "question":  "spiegami le criticita aperte",
+        "expected_intent":  "open_alerts",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief",
+        "expected_source_types":  ["project_wiki", "project_graph", "open_alerts_summary"]
+    },
+    {
+        "question":  "quali problemi restano aperti?",
+        "expected_intent":  "open_alerts",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief",
+        "expected_source_types":  ["project_wiki", "project_graph", "open_alerts_summary"]
+    },
+    {
+        "question":  "ci sono alert sul progetto?",
+        "expected_intent":  "open_alerts",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief",
+        "expected_source_types":  ["project_wiki", "project_graph", "open_alerts_summary"]
+    },
+    {
+        "question":  "elencami i documenti disponibili",
+        "expected_intent":  "document_list",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "short",
+        "expected_answer_shape":  "direct",
+        "expected_source_types":  ["project_wiki", "documents_catalog", "document"]
+    },
+    {
+        "question":  "cercami il verbale sugli ancoraggi",
+        "expected_intent":  "document_search",
+        "expected_strategy":  "semantic_retrieval",
+        "expected_target_length":  "long",
+        "expected_answer_shape":  "document_brief",
+        "expected_source_types":  ["project_wiki", "project_graph", "document"]
+    },
+    {
+        "question":  "quante task sono presenti?",
+        "expected_intent":  "task_count",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "short",
+        "expected_answer_shape":  "direct",
+        "expected_source_types":  ["task"]
+    },
+    {
+        "question":  "elencami le lavorazioni",
+        "expected_intent":  "task_list",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief",
+        "expected_source_types":  ["project_wiki", "project_graph", "task"]
+    },
+    {
+        "question":  "cosa e cambiato ieri?",
+        "expected_intent":  "activity_by_date",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "timeline",
+        "expected_source_types":  ["project_graph", "activity", "post"]
+    },
+    {
+        "question":  "quali persone partecipano al progetto?",
+        "expected_intent":  "team_list",
+        "expected_strategy":  "deterministic_db",
+        "expected_target_length":  "medium",
+        "expected_answer_shape":  "brief",
+        "expected_source_types":  ["project_wiki", "project_graph", "team_directory"]
+    }
 ]

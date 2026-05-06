@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-04-22T06:12:25.206618+00:00",
+  "generated_at": "2026-04-22T17:12:23.765531+00:00",
   "blueprint_relative_path": "demo-assets/demo-master/blueprints/v2026.04/editorial-project-blueprint.json",
   "document_root": "demo-assets/demo-master/v2026.04/documents",
   "drawing_root": "demo-assets/demo-master/v2026.04/drawings",
@@ -1093,12 +1093,42 @@
       "usages": [
         {
           "task_family": "logistics",
+          "thread_key": "logistics-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_1",
+          "brief": "Foto orizzontale del varco nord con recinzione provvisoria, ingresso pedonale separato, cartelli sicurezza e percorso mezzi leggibile."
+        },
+        {
+          "task_family": "logistics",
           "thread_key": "logistics-recinzioni-main",
           "activity_key": "logistics-recinzioni-varco-segnaletica",
           "comment_key": null,
           "placement": "post",
           "scope": "thread_root_post",
           "slot": "post_primary",
+          "brief": "Foto orizzontale del varco nord con recinzione provvisoria, ingresso pedonale separato, cartelli sicurezza e percorso mezzi leggibile."
+        },
+        {
+          "task_family": "logistics",
+          "thread_key": "logistics-baraccamenti-main",
+          "activity_key": "logistics-baraccamenti-quadri-linea-acqua",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto orizzontale del varco nord con recinzione provvisoria, ingresso pedonale separato, cartelli sicurezza e percorso mezzi leggibile."
+        },
+        {
+          "task_family": "logistics",
+          "thread_key": "logistics-psc-pos-main",
+          "activity_key": "logistics-psc-pos-briefing",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
           "brief": "Foto orizzontale del varco nord con recinzione provvisoria, ingresso pedonale separato, cartelli sicurezza e percorso mezzi leggibile."
         }
       ],
@@ -1145,6 +1175,16 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "interiors",
+          "thread_key": "interiors-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto realistica del bagno campione 2B quasi finito, rivestimenti, sanitari e dettagli di posa credibili, non patinati."
+        },
         {
           "task_family": "interiors",
           "thread_key": "interiors-bagno-main",
@@ -1201,6 +1241,16 @@
           "scope": "thread_root_post",
           "slot": "post_detail_fughe",
           "brief": "Dettaglio di fughe e tagli per mostrare il criterio che viene approvato."
+        },
+        {
+          "task_family": "finishes",
+          "thread_key": "finishes-rivestimenti-main",
+          "activity_key": "finishes-pavimenti-rivestimenti",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Dettaglio di fughe e tagli usato come riferimento per spiegare il criterio di posa."
         }
       ],
       "asset_stem": "bagno-campione-2b-dettaglio-fughe",
@@ -1223,10 +1273,40 @@
           "task_family": "interiors",
           "thread_key": "interiors-bagno-main",
           "activity_key": "interiors-bagno-campione-2b",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Dettaglio ravvicinato di sanitari e raccordi per dare concretezza al ruolo del bagno campione."
+        },
+        {
+          "task_family": "interiors",
+          "thread_key": "interiors-bagno-main",
+          "activity_key": "interiors-bagno-campione-2b",
           "comment_key": "interiors-bagno-main-c2",
           "placement": "comment",
           "scope": "thread_comment",
           "slot": "comment_sanitary_detail",
+          "brief": "Dettaglio ravvicinato di sanitari e raccordi per dare concretezza al ruolo del bagno campione."
+        },
+        {
+          "task_family": "interiors",
+          "thread_key": "interiors-bagno-approvazione-lotto",
+          "activity_key": "interiors-bagno-campione-2b",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Dettaglio ravvicinato di sanitari e raccordi per dare concretezza al ruolo del bagno campione."
+        },
+        {
+          "task_family": "finishes",
+          "thread_key": "finishes-porte-main",
+          "activity_key": "finishes-porte-sanitari-arredi",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
           "brief": "Dettaglio ravvicinato di sanitari e raccordi per dare concretezza al ruolo del bagno campione."
         }
       ],
@@ -1275,6 +1355,26 @@
       "usages": [
         {
           "task_family": "logistics",
+          "thread_key": "logistics-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Scena realistica di briefing di cantiere con persone in abbigliamento tecnico, tavolo improvvisato o ufficio cantiere, documenti aperti e DPI visibili."
+        },
+        {
+          "task_family": "logistics",
+          "thread_key": "logistics-recinzioni-main",
+          "activity_key": "logistics-recinzioni-varco-segnaletica",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Scena realistica di briefing di cantiere con persone in abbigliamento tecnico, tavolo improvvisato o ufficio cantiere, documenti aperti e DPI visibili."
+        },
+        {
+          "task_family": "logistics",
           "thread_key": "logistics-psc-pos-main",
           "activity_key": "logistics-psc-pos-briefing",
           "comment_key": null,
@@ -1300,6 +1400,16 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "finishes",
+          "thread_key": "finishes-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di campioni colore per parti comuni, pannelli o porzioni parete con luce naturale realistica e contesto di cantiere."
+        },
         {
           "task_family": "finishes",
           "thread_key": "finishes-tinte-main",
@@ -1336,6 +1446,16 @@
           "scope": "thread_root_post",
           "slot": "post_primary",
           "brief": "Foto di capisaldi e tracciamento iniziale con spray, picchetti, stazione totale o strumenti di rilievo, area di cantiere ancora pulita."
+        },
+        {
+          "task_family": "foundation",
+          "thread_key": "foundation-scavo-main",
+          "activity_key": "foundation-scavo-sbancamento",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di capisaldi e tracciamento iniziale con spray, picchetti, stazione totale o strumenti di rilievo, area di cantiere ancora pulita."
         }
       ],
       "asset_stem": "capisaldi-tracciamento-iniziale",
@@ -1354,6 +1474,26 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "mechanical",
+          "thread_key": "mechanical-colonne-main",
+          "activity_key": "mechanical-colonne-scarico",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di cavedio aperto con predisposizioni impiantistiche visibili, cartongesso ancora non chiuso e aspetto realistico."
+        },
+        {
+          "task_family": "interiors",
+          "thread_key": "interiors-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_1",
+          "brief": "Foto di cavedio aperto con predisposizioni impiantistiche visibili, cartongesso ancora non chiuso e aspetto realistico."
+        },
         {
           "task_family": "interiors",
           "thread_key": "interiors-cavedi-main",
@@ -1420,12 +1560,32 @@
       "usages": [
         {
           "task_family": "mechanical",
+          "thread_key": "mechanical-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_1",
+          "brief": "Foto della centrale termica in allestimento con dorsali principali e collettori, atmosfera reale di locale tecnico."
+        },
+        {
+          "task_family": "mechanical",
           "thread_key": "mechanical-centrale-main",
           "activity_key": "mechanical-centrale-termica",
           "comment_key": null,
           "placement": "post",
           "scope": "thread_root_post",
           "slot": "post_primary",
+          "brief": "Foto della centrale termica in allestimento con dorsali principali e collettori, atmosfera reale di locale tecnico."
+        },
+        {
+          "task_family": "handover",
+          "thread_key": "handover-asbuilt-main",
+          "activity_key": "handover-asbuilt-manuali-formazione",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
           "brief": "Foto della centrale termica in allestimento con dorsali principali e collettori, atmosfera reale di locale tecnico."
         }
       ],
@@ -1445,6 +1605,26 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "mechanical",
+          "thread_key": "mechanical-centrale-main",
+          "activity_key": "mechanical-centrale-termica",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Dettaglio degli attacchi o degli slot ancora vuoti citati nel piano di intervento."
+        },
+        {
+          "task_family": "mechanical",
+          "thread_key": "mechanical-valvole-issue",
+          "activity_key": "mechanical-centrale-termica",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Dettaglio degli attacchi o degli slot ancora vuoti citati nel piano di intervento."
+        },
         {
           "task_family": "mechanical",
           "thread_key": "mechanical-valvole-issue",
@@ -1481,6 +1661,16 @@
           "scope": "thread_root_post",
           "slot": "post_primary",
           "brief": "Foto di colonne di scarico nei bagni con prova di tenuta o predisposizione visibile, ambiente di cantiere reale."
+        },
+        {
+          "task_family": "interiors",
+          "thread_key": "interiors-cavedi-main",
+          "activity_key": "interiors-tramezzi-cavedi",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di colonne di scarico nei bagni con prova di tenuta o predisposizione visibile, ambiente di cantiere reale."
         }
       ],
       "asset_stem": "colonne-scarico-prova-tenuta",
@@ -1499,6 +1689,16 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "envelope",
+          "thread_key": "envelope-copertura-issue",
+          "activity_key": "envelope-impermeabilizzazione-copertura",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Foto di verifica finale o prova di tenuta sul nodo corretto."
+        },
         {
           "task_family": "envelope",
           "thread_key": "envelope-copertura-issue",
@@ -1530,6 +1730,16 @@
           "task_family": "envelope",
           "thread_key": "envelope-copertura-main",
           "activity_key": "envelope-impermeabilizzazione-copertura",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Dettaglio finale del nodo dopo la fascia aggiuntiva, agganciato alla risposta di aggiornamento."
+        },
+        {
+          "task_family": "envelope",
+          "thread_key": "envelope-copertura-main",
+          "activity_key": "envelope-impermeabilizzazione-copertura",
           "comment_key": "envelope-copertura-main-c3",
           "placement": "comment",
           "scope": "thread_comment",
@@ -1545,6 +1755,16 @@
           "scope": "thread_comment",
           "slot": "comment_resolution",
           "brief": "Foto del nodo corretto con fascia aggiuntiva e chiusura piu' leggibile."
+        },
+        {
+          "task_family": "envelope",
+          "thread_key": "envelope-pluviali-main",
+          "activity_key": "envelope-lattonerie-pluviali",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Dettaglio finale del nodo dopo la fascia aggiuntiva, agganciato alla risposta di aggiornamento."
         }
       ],
       "asset_stem": "copertura-risvolto-ovest",
@@ -1619,6 +1839,16 @@
       "usages": [
         {
           "task_family": "facade",
+          "thread_key": "facade-controtelai-main",
+          "activity_key": "facade-controtelai-davanzali-nastri",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Vista ambiente della cucina 2B per leggere il foro nel suo contesto reale."
+        },
+        {
+          "task_family": "facade",
           "thread_key": "facade-foro-2b-issue",
           "activity_key": "facade-controtelai-davanzali-nastri",
           "comment_key": null,
@@ -1679,6 +1909,16 @@
           "placement": "post",
           "scope": "thread_root_post",
           "slot": "post_primary",
+          "brief": "Foto tecnica del foro cucina 2B con traverso superiore e controtelaio, metro o riferimento quota visibile."
+        },
+        {
+          "task_family": "facade",
+          "thread_key": "facade-foro-2b-issue",
+          "activity_key": "facade-controtelai-davanzali-nastri",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
           "brief": "Foto tecnica del foro cucina 2B con traverso superiore e controtelaio, metro o riferimento quota visibile."
         }
       ],
@@ -1781,6 +2021,16 @@
       "usages": [
         {
           "task_family": "foundation",
+          "thread_key": "foundation-passaggi-main",
+          "activity_key": "foundation-magrone-ferri-passaggi",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Vista piu' ampia dell'area box 03-04 per capire dove cade l'interferenza dentro al fronte platea."
+        },
+        {
+          "task_family": "foundation",
           "thread_key": "foundation-box-03-04-issue",
           "activity_key": "foundation-magrone-ferri-passaggi",
           "comment_key": null,
@@ -1806,6 +2056,16 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "foundation",
+          "thread_key": "foundation-box-03-04-issue",
+          "activity_key": "foundation-magrone-ferri-passaggi",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Foto con metro o riferimento che renda leggibile lo scostamento citato nel commento."
+        },
         {
           "task_family": "foundation",
           "thread_key": "foundation-box-03-04-issue",
@@ -1842,6 +2102,16 @@
           "scope": "thread_comment",
           "slot": "comment_resolution",
           "brief": "Stesso punto dopo la correzione, passaggio liberato e ferri integrativi gia' in opera."
+        },
+        {
+          "task_family": "foundation",
+          "thread_key": "foundation-getto-main",
+          "activity_key": "foundation-getto-platea-setti",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Stesso punto dopo la correzione, passaggio liberato e ferri integrativi gia' in opera."
         }
       ],
       "asset_stem": "interferenza-passaggi-box-03-04-risolta",
@@ -1861,6 +2131,26 @@
       "error": null,
       "usages": [
         {
+          "task_family": "envelope",
+          "thread_key": "envelope-tamponamenti-main",
+          "activity_key": "envelope-tamponamenti-laterizio",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di mockup facciata sud-ovest con pannello campione, serramento installato, lattoneria e lettura materica realistica."
+        },
+        {
+          "task_family": "facade",
+          "thread_key": "facade-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_1",
+          "brief": "Foto di mockup facciata sud-ovest con pannello campione, serramento installato, lattoneria e lettura materica realistica."
+        },
+        {
           "task_family": "facade",
           "thread_key": "facade-mockup-main",
           "activity_key": "facade-rilievo-mockup",
@@ -1868,6 +2158,16 @@
           "placement": "post",
           "scope": "thread_root_post",
           "slot": "post_primary",
+          "brief": "Foto di mockup facciata sud-ovest con pannello campione, serramento installato, lattoneria e lettura materica realistica."
+        },
+        {
+          "task_family": "facade",
+          "thread_key": "facade-serramenti-main",
+          "activity_key": "facade-montaggio-serramenti",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
           "brief": "Foto di mockup facciata sud-ovest con pannello campione, serramento installato, lattoneria e lettura materica realistica."
         }
       ],
@@ -1906,6 +2206,16 @@
           "scope": "thread_comment",
           "slot": "comment_node_reference",
           "brief": "Dettaglio del nodo collegato alla risposta che parla di riferimento tecnico."
+        },
+        {
+          "task_family": "facade",
+          "thread_key": "facade-serramenti-lotto-b-sequencing",
+          "activity_key": "facade-montaggio-serramenti",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Dettaglio del nodo serramento-facciata-lattoneria usato per la validazione tecnica del mockup."
         }
       ],
       "asset_stem": "mockup-facciata-sud-ovest-dettaglio-nodo",
@@ -1962,6 +2272,36 @@
       "error": null,
       "usages": [
         {
+          "task_family": "mechanical",
+          "thread_key": "mechanical-vmc-main",
+          "activity_key": "mechanical-vmc-corridoi-antincendio",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto dell'interrato con passerelle elettriche e coordinamento con rete antincendio, vista tecnica ma realistica."
+        },
+        {
+          "task_family": "mechanical",
+          "thread_key": "mechanical-vmc-corridoio-check",
+          "activity_key": "mechanical-vmc-corridoi-antincendio",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto dell'interrato con passerelle elettriche e coordinamento con rete antincendio, vista tecnica ma realistica."
+        },
+        {
+          "task_family": "electrical",
+          "thread_key": "electrical-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_1",
+          "brief": "Foto dell'interrato con passerelle elettriche e coordinamento con rete antincendio, vista tecnica ma realistica."
+        },
+        {
           "task_family": "electrical",
           "thread_key": "electrical-passerelle-main",
           "activity_key": "electrical-cavidotti-passerelle-montanti",
@@ -2017,12 +2357,32 @@
       "usages": [
         {
           "task_family": "structures",
+          "thread_key": "structures-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_1",
+          "brief": "Foto di pilastri e solaio piano terra con casseri o struttura appena eseguita, vista reale di cantiere e cavedi visibili."
+        },
+        {
+          "task_family": "structures",
           "thread_key": "structures-pilastri-main",
           "activity_key": "structures-pilastri-solaio-terra",
           "comment_key": null,
           "placement": "post",
           "scope": "thread_root_post",
           "slot": "post_primary",
+          "brief": "Foto di pilastri e solaio piano terra con casseri o struttura appena eseguita, vista reale di cantiere e cavedi visibili."
+        },
+        {
+          "task_family": "structures",
+          "thread_key": "structures-solai-main",
+          "activity_key": "structures-solai-primo-secondo",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
           "brief": "Foto di pilastri e solaio piano terra con casseri o struttura appena eseguita, vista reale di cantiere e cavedi visibili."
         }
       ],
@@ -2042,6 +2402,16 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "foundation",
+          "thread_key": "foundation-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Vista dall'alto dei ferri di platea con passaggi impiantistici predisposti nei box 03-04, atmosfera reale di cantiere e dettaglio tecnico leggibile."
+        },
         {
           "task_family": "foundation",
           "thread_key": "foundation-passaggi-main",
@@ -2125,6 +2495,26 @@
       "usages": [
         {
           "task_family": "facade",
+          "thread_key": "facade-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di posa serramenti su livelli abitativi con operatori, telai installati e protezioni presenti, contesto realistico."
+        },
+        {
+          "task_family": "facade",
+          "thread_key": "facade-mockup-main",
+          "activity_key": "facade-rilievo-mockup",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Foto di posa serramenti su livelli abitativi con operatori, telai installati e protezioni presenti, contesto realistico."
+        },
+        {
+          "task_family": "facade",
           "thread_key": "facade-serramenti-main",
           "activity_key": "facade-montaggio-serramenti",
           "comment_key": null,
@@ -2197,6 +2587,16 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "handover",
+          "thread_key": "handover-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_1",
+          "brief": "Foto o scena realistica di area tecnica preparata per pre-collaudo con checklist, impianti parzialmente pronti e atmosfera di verifica."
+        },
         {
           "task_family": "handover",
           "thread_key": "handover-collaudi-main",
@@ -2280,6 +2680,26 @@
       "usages": [
         {
           "task_family": "handover",
+          "thread_key": "handover-collaudi-main",
+          "activity_key": "handover-collaudi-integrati",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Registro azioni o piano operativo aggiornato, collegato al commento che impone disciplina di chiusura."
+        },
+        {
+          "task_family": "handover",
+          "thread_key": "handover-prerequisiti-issue",
+          "activity_key": "handover-collaudi-integrati",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Registro azioni o piano operativo aggiornato, collegato al commento che impone disciplina di chiusura."
+        },
+        {
+          "task_family": "handover",
           "thread_key": "handover-prerequisiti-issue",
           "activity_key": "handover-collaudi-integrati",
           "comment_key": "handover-prerequisiti-issue-c4",
@@ -2307,12 +2727,42 @@
       "usages": [
         {
           "task_family": "finishes",
+          "thread_key": "finishes-tinte-main",
+          "activity_key": "finishes-tinteggiature-parti-comuni",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di alloggio campione in fase di pulizia tecnica e check finale, dettagli realistici di cantiere quasi concluso."
+        },
+        {
+          "task_family": "finishes",
           "thread_key": "finishes-pulizie-main",
           "activity_key": "finishes-pulizie-check-campione",
           "comment_key": null,
           "placement": "post",
           "scope": "thread_root_post",
           "slot": "post_primary",
+          "brief": "Foto di alloggio campione in fase di pulizia tecnica e check finale, dettagli realistici di cantiere quasi concluso."
+        },
+        {
+          "task_family": "handover",
+          "thread_key": "handover-punch-main",
+          "activity_key": "handover-punch-list",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di alloggio campione in fase di pulizia tecnica e check finale, dettagli realistici di cantiere quasi concluso."
+        },
+        {
+          "task_family": "handover",
+          "thread_key": "handover-punch-owner-grid",
+          "activity_key": "handover-punch-list",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
           "brief": "Foto di alloggio campione in fase di pulizia tecnica e check finale, dettagli realistici di cantiere quasi concluso."
         }
       ],
@@ -2332,6 +2782,46 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "electrical",
+          "thread_key": "electrical-monitor-hall-main",
+          "activity_key": "electrical-dati-videosorveglianza-accessi",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto realistica di sopralluogo in parti comuni con note di punch list, persone che osservano dettagli e cantiere quasi chiuso."
+        },
+        {
+          "task_family": "electrical",
+          "thread_key": "electrical-monitor-hall-decision",
+          "activity_key": "electrical-dati-videosorveglianza-accessi",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto realistica di sopralluogo in parti comuni con note di punch list, persone che osservano dettagli e cantiere quasi chiuso."
+        },
+        {
+          "task_family": "finishes",
+          "thread_key": "finishes-pulizie-main",
+          "activity_key": "finishes-pulizie-check-campione",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto realistica di sopralluogo in parti comuni con note di punch list, persone che osservano dettagli e cantiere quasi chiuso."
+        },
+        {
+          "task_family": "handover",
+          "thread_key": "handover-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto realistica di sopralluogo in parti comuni con note di punch list, persone che osservano dettagli e cantiere quasi chiuso."
+        },
         {
           "task_family": "handover",
           "thread_key": "handover-punch-main",
@@ -2371,6 +2861,16 @@
       "usages": [
         {
           "task_family": "electrical",
+          "thread_key": "electrical-q3-main",
+          "activity_key": "electrical-quadri-dorsali",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Immagine comparativa prima/dopo del quadro Q3 con linee speciali e morsettiere, stile realistico di cantiere."
+        },
+        {
+          "task_family": "electrical",
           "thread_key": "electrical-q3-issue",
           "activity_key": "electrical-quadri-dorsali",
           "comment_key": null,
@@ -2398,12 +2898,32 @@
       "usages": [
         {
           "task_family": "electrical",
+          "thread_key": "electrical-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto tecnica del quadro Q3 con morsettiere e linee speciali leggibili, cantiere reale e non showroom."
+        },
+        {
+          "task_family": "electrical",
           "thread_key": "electrical-q3-main",
           "activity_key": "electrical-quadri-dorsali",
           "comment_key": null,
           "placement": "post",
           "scope": "thread_root_post",
           "slot": "post_primary",
+          "brief": "Foto tecnica del quadro Q3 con morsettiere e linee speciali leggibili, cantiere reale e non showroom."
+        },
+        {
+          "task_family": "electrical",
+          "thread_key": "electrical-q3-issue",
+          "activity_key": "electrical-quadri-dorsali",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
           "brief": "Foto tecnica del quadro Q3 con morsettiere e linee speciali leggibili, cantiere reale e non showroom."
         }
       ],
@@ -2423,6 +2943,16 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "interiors",
+          "thread_key": "interiors-massetti-main",
+          "activity_key": "interiors-sottofondi-massetti",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Controllo quote con laser o strumento di livello per rafforzare il carattere misurato della segnalazione."
+        },
         {
           "task_family": "interiors",
           "thread_key": "interiors-massetti-issue",
@@ -2481,6 +3011,16 @@
           "task_family": "interiors",
           "thread_key": "interiors-massetti-issue",
           "activity_key": "interiors-sottofondi-massetti",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_3",
+          "brief": "Dettaglio di un riferimento di quota o picchetto che giustifica il controllo incrociato citato nel commento."
+        },
+        {
+          "task_family": "interiors",
+          "thread_key": "interiors-massetti-issue",
+          "activity_key": "interiors-sottofondi-massetti",
           "comment_key": "interiors-massetti-issue-c2",
           "placement": "comment",
           "scope": "thread_comment",
@@ -2533,6 +3073,16 @@
       "usages": [
         {
           "task_family": "envelope",
+          "thread_key": "envelope-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Vista piu' larga del bordo ovest per capire il rapporto tra nodo locale e fronte copertura."
+        },
+        {
+          "task_family": "envelope",
           "thread_key": "envelope-copertura-main",
           "activity_key": "envelope-impermeabilizzazione-copertura",
           "comment_key": null,
@@ -2570,6 +3120,16 @@
       "usages": [
         {
           "task_family": "finishes",
+          "thread_key": "finishes-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_1",
+          "brief": "Dettaglio fotografico di rivestimento bagno campione con tagli e fughe ben leggibili, posa reale e non perfetta da catalogo."
+        },
+        {
+          "task_family": "finishes",
           "thread_key": "finishes-rivestimenti-main",
           "activity_key": "finishes-pavimenti-rivestimenti",
           "comment_key": null,
@@ -2595,6 +3155,26 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "logistics",
+          "thread_key": "logistics-capisaldi-main",
+          "activity_key": "logistics-rilievo-capisaldi",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di scavo fronte nord con terreno smosso, mezzi di cantiere, bordo pulito e percorso camion evidente."
+        },
+        {
+          "task_family": "foundation",
+          "thread_key": "foundation-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_1",
+          "brief": "Foto di scavo fronte nord con terreno smosso, mezzi di cantiere, bordo pulito e percorso camion evidente."
+        },
         {
           "task_family": "foundation",
           "thread_key": "foundation-scavo-main",
@@ -2624,12 +3204,42 @@
       "usages": [
         {
           "task_family": "structures",
+          "thread_key": "structures-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di solaio con aperture tecniche e predisposizioni passaggi impianti gia' verificate, cantiere reale e non pulito artificialmente."
+        },
+        {
+          "task_family": "structures",
+          "thread_key": "structures-vani-main",
+          "activity_key": "structures-scale-vani-ascensore",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto di solaio con aperture tecniche e predisposizioni passaggi impianti gia' verificate, cantiere reale e non pulito artificialmente."
+        },
+        {
+          "task_family": "structures",
           "thread_key": "structures-solai-main",
           "activity_key": "structures-solai-primo-secondo",
           "comment_key": null,
           "placement": "post",
           "scope": "thread_root_post",
           "slot": "post_primary",
+          "brief": "Foto di solaio con aperture tecniche e predisposizioni passaggi impianti gia' verificate, cantiere reale e non pulito artificialmente."
+        },
+        {
+          "task_family": "structures",
+          "thread_key": "structures-copertura-main",
+          "activity_key": "structures-travi-copertura-cordoli",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
           "brief": "Foto di solaio con aperture tecniche e predisposizioni passaggi impianti gia' verificate, cantiere reale e non pulito artificialmente."
         }
       ],
@@ -2649,6 +3259,16 @@
       "status": "skipped_existing",
       "error": null,
       "usages": [
+        {
+          "task_family": "envelope",
+          "thread_key": "envelope-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_1",
+          "brief": "Foto di tamponamenti esterni in laterizio porizzato sul fronte scala, falsi telai visibili e atmosfera reale di cantiere."
+        },
         {
           "task_family": "envelope",
           "thread_key": "envelope-tamponamenti-main",
@@ -2705,6 +3325,16 @@
       "usages": [
         {
           "task_family": "structures",
+          "thread_key": "structures-pilastri-main",
+          "activity_key": "structures-pilastri-solaio-terra",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto tecnica di vano scala e vano ascensore con strutture in elevazione, misure o riferimenti visibili, atmosfera reale."
+        },
+        {
+          "task_family": "structures",
           "thread_key": "structures-vani-main",
           "activity_key": "structures-scale-vani-ascensore",
           "comment_key": null,
@@ -2732,6 +3362,16 @@
       "usages": [
         {
           "task_family": "mechanical",
+          "thread_key": "mechanical-task-coordination",
+          "activity_key": null,
+          "comment_key": null,
+          "placement": "post",
+          "scope": "task_thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto realistica di corridoio tecnico con canali VMC e staffaggi da coordinare con passerelle elettriche, soffitto ancora aperto."
+        },
+        {
+          "task_family": "mechanical",
           "thread_key": "mechanical-vmc-main",
           "activity_key": "mechanical-vmc-corridoi-antincendio",
           "comment_key": null,
@@ -2749,6 +3389,16 @@
           "scope": "thread_root_post",
           "slot": "post_primary",
           "brief": "Foto del corridoio nord con il punto specifico di interferenza preventiva tra staffaggi e passerelle."
+        },
+        {
+          "task_family": "electrical",
+          "thread_key": "electrical-passerelle-main",
+          "activity_key": "electrical-cavidotti-passerelle-montanti",
+          "comment_key": null,
+          "placement": "post",
+          "scope": "thread_root_post",
+          "slot": "post_gallery_2",
+          "brief": "Foto realistica di corridoio tecnico con canali VMC e staffaggi da coordinare con passerelle elettriche, soffitto ancora aperto."
         }
       ],
       "asset_stem": "vmc-corridoio-nord-staffaggi",

@@ -22,11 +22,14 @@ from tests.test_projects_api import create_project_fixture, create_workspace_pro
 def test_query_router_classifies_team_count_and_timeline_queries():
     team_route = classify_assistant_query("quanti partecipanti ci sono nel progetto?")
     timeline_route = classify_assistant_query("cosa e successo oggi in cantiere?")
+    work_today_route = classify_assistant_query("chi lavora oggi?")
 
     assert team_route.intent == "team_count"
     assert team_route.strategy == "deterministic_db"
     assert timeline_route.intent == "activity_by_date"
     assert timeline_route.temporal_scope == "today"
+    assert work_today_route.intent == "activity_by_date"
+    assert work_today_route.temporal_scope == "today"
 
 
 def test_answer_planner_uses_short_mode_for_count_queries():
@@ -35,6 +38,7 @@ def test_answer_planner_uses_short_mode_for_count_queries():
 
     assert plan.target_length == "short"
     assert plan.answer_mode == "fact_list"
+    assert plan.response_structure == "direct"
 
 
 def test_retrieval_context_uses_thread_context_for_follow_up_queries():
@@ -83,6 +87,9 @@ def test_retrieve_project_knowledge_uses_deterministic_facts_for_team_queries():
     assert bundle.provider == "deterministic_db"
     assert bundle.citations[0]["source_type"] == "team_directory"
     assert bundle.metrics["result_count"] >= 1
+    assert bundle.metrics["candidate_pool_count"] == len(source_documents)
+    assert bundle.metrics["context_scope"] == "project"
+    assert bundle.metrics["final_result_count"] == len(bundle.citations)
 
 
 def test_run_assistant_eval_command_reports_dataset_pass_rate():

@@ -6,6 +6,7 @@ import hashlib
 import html
 import json
 import logging
+import math
 import mimetypes
 from pathlib import Path
 import re
@@ -16,14 +17,17 @@ from uuid import NAMESPACE_URL, uuid5
 import httpx
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 from django.db import connection, transaction
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from pgvector.django import CosineDistance
 
 from edilcloud.modules.assistant.answer_planner import AssistantAnswerPlan, plan_assistant_answer
-from edilcloud.modules.assistant.evaluation_service import evaluate_answer_against_sources
+from edilcloud.modules.assistant.evaluation_service import (
+    evaluate_answer_against_sources,
+    evaluate_retrieval_ranking,
+)
 from edilcloud.modules.assistant.models import (
     AssistantCitationMode,
     AssistantSourceScope,
@@ -33,12 +37,20 @@ from edilcloud.modules.assistant.models import (
     AssistantTone,
     ProjectAssistantChunkMap,
     ProjectAssistantChunkSource,
+    ProjectAssistantGraphSnapshot,
     ProjectAssistantMessage,
     ProjectAssistantProjectSettings,
     ProjectAssistantState,
     ProjectAssistantThread,
     ProjectAssistantUsage,
     ProjectAssistantRunLog,
+    ProjectAssistantWikiPage,
+)
+from edilcloud.modules.assistant.graph_service import (
+    PROJECT_GRAPH_SCHEMA_VERSION,
+    ensure_project_graph_snapshot,
+    graph_snapshot_as_source_content,
+    rebuild_project_graph,
 )
 from edilcloud.modules.assistant.query_router import AssistantQueryRoute, classify_assistant_query
 from edilcloud.modules.assistant.read_models import AssistantStructuredFacts, build_structured_facts
@@ -47,6 +59,11 @@ from edilcloud.modules.assistant.retrieval_service import (
     derive_retrieval_context,
     filter_source_documents_for_context,
     summarize_thread_context_from_citations,
+)
+from edilcloud.modules.assistant.wiki_service import (
+    PROJECT_WIKI_SCHEMA_VERSION,
+    ensure_project_wiki_pages,
+    rebuild_project_wiki,
 )
 from edilcloud.modules.projects.models import (
     PostKind,
@@ -81,6 +98,20 @@ ALERT_QUERY_HINTS = (
     "sensibil",
 )
 RESOLVED_QUERY_HINTS = ("risolt", "chius", "closed")
+GRAPH_QUERY_HINTS = (
+    "assegn",
+    "blocca",
+    "blocc",
+    "colleg",
+    "coinvolt",
+    "dipend",
+    "impat",
+    "incide",
+    "relaz",
+    "risch",
+    "risolve",
+    "support",
+)
 TEAM_QUERY_HINTS = (
     "partecip",
     "membri",
@@ -91,6 +122,10 @@ TEAM_QUERY_HINTS = (
     "profili",
     "responsab",
     "chi sono",
+    "squadra",
+    "squadre",
+    "operatori",
+    "lavorano",
 )
 DOCUMENT_QUERY_HINTS = (
     "document",
@@ -106,6 +141,16 @@ DOCUMENT_QUERY_HINTS = (
     "tavol",
     "disegn",
     "scheda",
+)
+TIMELINE_QUERY_HINTS = (
+    "oggi",
+    "ieri",
+    "timeline",
+    "cronologia",
+    "quando",
+    "settimana",
+    "ultimi giorni",
+    "fasi",
 )
 TEXT_EXTRACTABLE_EXTENSIONS = {
     ".txt",
@@ -159,6 +204,9 @@ THREAD_AMBIGUOUS_TOKENS = {
     "quali",
     "quale",
 }
+BM25_K1 = 1.35
+BM25_B = 0.72
+RANK_FUSION_K = 60.0
 
 
 @dataclass(slots=True)
@@ -298,6 +346,14 @@ def is_team_like_query(query: str) -> bool:
 
 def is_document_like_query(query: str) -> bool:
     return query_has_any_hint(query, DOCUMENT_QUERY_HINTS)
+
+
+def is_timeline_like_query(query: str) -> bool:
+    return query_has_any_hint(query, TIMELINE_QUERY_HINTS)
+
+
+def is_graph_like_query(query: str) -> bool:
+    return query_has_any_hint(query, GRAPH_QUERY_HINTS)
 
 
 def first_sentence(value: str, limit: int = 120) -> str:
@@ -720,7 +776,7 @@ def assistant_vector_store_provider() -> str:
 
 
 def assistant_chunk_schema_version() -> str:
-    return "assistant-chunk-schema:v2"
+    return "assistant-chunk-schema:v3"
 
 
 def assistant_index_version(*, current_version: int, embedding_model: str | None = None, chunk_schema_version: str | None = None) -> str:
@@ -846,6 +902,107 @@ def derive_chunk_references(
     return page_references[:12], section_references[:4]
 
 
+def metadata_value_to_search_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (int, float, str)):
+        return compact_whitespace(str(value))
+    if hasattr(value, "isoformat"):
+        return compact_whitespace(str(value.isoformat()))
+    if isinstance(value, list):
+        return " ".join(filter(None, (metadata_value_to_search_text(item) for item in value)))
+    if isinstance(value, dict):
+        return " ".join(filter(None, (metadata_value_to_search_text(item) for item in value.values())))
+    return compact_whitespace(str(value))
+
+
+def metadata_search_text(metadata: dict[str, Any] | None) -> str:
+    if not isinstance(metadata, dict):
+        return ""
+    return compact_whitespace(" ".join(filter(None, (metadata_value_to_search_text(value) for value in metadata.values()))))
+
+
+def retrieval_tokens(value: str | None) -> list[str]:
+    return [token.lower() for token in QUERY_TOKEN_RE.findall(normalize_text(value).lower())]
+
+
+def unique_retrieval_tokens(value: str | None) -> list[str]:
+    return list(dict.fromkeys(retrieval_tokens(value)))
+
+
+def bm25_like_scores(*, query: str, documents: list[str]) -> list[float]:
+    query_tokens = unique_retrieval_tokens(query)
+    if not query_tokens or not documents:
+        return [0.0 for _document in documents]
+
+    tokenized_documents = [retrieval_tokens(document) for document in documents]
+    document_lengths = [len(tokens) for tokens in tokenized_documents]
+    average_length = sum(document_lengths) / max(len(document_lengths), 1)
+    if average_length <= 0:
+        return [0.0 for _document in documents]
+
+    document_frequencies: dict[str, int] = {}
+    for token in query_tokens:
+        document_frequencies[token] = sum(1 for tokens in tokenized_documents if token in set(tokens))
+
+    total_documents = len(tokenized_documents)
+    scores: list[float] = []
+    for tokens, document_length in zip(tokenized_documents, document_lengths):
+        if not tokens:
+            scores.append(0.0)
+            continue
+        term_counts: dict[str, int] = {}
+        for token in tokens:
+            if token in query_tokens:
+                term_counts[token] = term_counts.get(token, 0) + 1
+
+        score = 0.0
+        for token in query_tokens:
+            term_frequency = term_counts.get(token, 0)
+            if term_frequency <= 0:
+                continue
+            document_frequency = document_frequencies.get(token, 0)
+            idf = math.log(1.0 + ((total_documents - document_frequency + 0.5) / (document_frequency + 0.5)))
+            denominator = term_frequency + BM25_K1 * (
+                1.0 - BM25_B + BM25_B * (document_length / average_length)
+            )
+            score += idf * ((term_frequency * (BM25_K1 + 1.0)) / max(denominator, 0.0001))
+        scores.append(round(score, 4))
+    return scores
+
+
+def source_context_header(source_document: AssistantSourceDocument) -> str:
+    metadata = source_document.metadata if isinstance(source_document.metadata, dict) else {}
+    context_fields = [
+        ("Source", source_document.label),
+        ("Source type", source_document.source_type),
+        ("Source key", source_document.source_key),
+        ("Task", metadata.get("task_name") or metadata.get("task_id")),
+        ("Activity", metadata.get("activity_title") or metadata.get("activity_id")),
+        ("Company", metadata.get("company_name") or metadata.get("assigned_company") or metadata.get("workspace_name")),
+        ("File", source_document.file_name or metadata.get("file_name")),
+        ("Post kind", metadata.get("post_kind")),
+        ("Issue status", metadata.get("issue_status")),
+        ("Alert", "yes" if metadata.get("alert") is True else "no" if metadata.get("alert") is False else None),
+        ("Event at", metadata.get("event_at") or metadata.get("created_at") or metadata.get("updated_at")),
+    ]
+    lines = [
+        f"{label}: {truncate_text(metadata_value_to_search_text(value), 140)}"
+        for label, value in context_fields
+        if metadata_value_to_search_text(value)
+    ]
+    return "\n".join(lines[:10])
+
+
+def contextualize_chunk_text(chunk_text: str, source_document: AssistantSourceDocument) -> str:
+    header = source_context_header(source_document)
+    if not header:
+        return chunk_text
+    return f"{chunk_text}\n\nRetrieval context:\n{header}"
+
+
 def chunk_source_document(source_document: AssistantSourceDocument, *, project_id: int, scope: str) -> list[AssistantChunk]:
     raw_content = normalize_text(source_document.content).replace("\r\n", "\n")
     if not raw_content:
@@ -883,6 +1040,7 @@ def chunk_source_document(source_document: AssistantSourceDocument, *, project_i
     chunk_count = len(chunks)
     assistant_chunks: list[AssistantChunk] = []
     for index, chunk_text in enumerate(chunks):
+        contextual_chunk_text = contextualize_chunk_text(chunk_text, source_document)
         page_references, section_references = derive_chunk_references(
             chunk_text=chunk_text,
             source_document=source_document,
@@ -894,13 +1052,13 @@ def chunk_source_document(source_document: AssistantSourceDocument, *, project_i
                     scope=scope,
                     source_key=source_document.source_key,
                     chunk_index=index,
-                    content_hash=sha256_text(chunk_text),
+                    content_hash=sha256_text(contextual_chunk_text),
                 ),
                 source_key=source_document.source_key,
                 chunk_index=index,
                 chunk_count=chunk_count,
-                text=chunk_text,
-                content_hash=sha256_text(chunk_text),
+                text=contextual_chunk_text,
+                content_hash=sha256_text(contextual_chunk_text),
                 page_references=page_references,
                 section_references=section_references,
             )
@@ -1024,6 +1182,7 @@ def query_pgvector_project_chunks(
     scope: str = AssistantSourceScope.PROJECT,
     task_id: int | None = None,
     activity_id: int | None = None,
+    source_types: list[str] | None = None,
 ) -> list[ProjectAssistantChunkMap]:
     if not pgvector_runtime_available():
         return []
@@ -1031,10 +1190,14 @@ def query_pgvector_project_chunks(
         project_id=project_id,
         scope=scope,
     ).exclude(embedding__isnull=True)
+    if source_types:
+        allowed_source_types = set(source_types) | {"project", "team_directory", "project_graph"}
+        queryset = queryset.filter(source_type__in=allowed_source_types)
+    context_source_types = {"project", "team_directory", "project_graph"}
     if task_id is not None:
-        queryset = queryset.filter(task_id=task_id)
+        queryset = queryset.filter(Q(task_id=task_id) | Q(source_type__in=context_source_types))
     if activity_id is not None:
-        queryset = queryset.filter(activity_id=activity_id)
+        queryset = queryset.filter(Q(activity_id=activity_id) | Q(source_type__in=context_source_types))
     return list(
         queryset.annotate(distance=CosineDistance("embedding", query_vector)).order_by("distance", "chunk_index", "id")[
             :limit
@@ -1105,6 +1268,10 @@ def build_source_metadata(
                             normalized_values.append(normalized_item)
                 if normalized_values:
                     metadata[key] = normalized_values[:12]
+            elif isinstance(value, dict):
+                normalized = truncate_text(json_dumps(value), 500)
+                if normalized:
+                    metadata[key] = normalized
     return metadata
 
 
@@ -1223,6 +1390,22 @@ def build_project_source_snapshot(project: Project) -> tuple[list[AssistantSourc
         .filter(disabled=False)
         .order_by("profile__first_name", "profile__last_name", "id")
     )
+    wiki_pages = list(
+        ProjectAssistantWikiPage.objects.filter(
+            project=project,
+            is_stale=False,
+            schema_version=PROJECT_WIKI_SCHEMA_VERSION,
+        ).order_by("slug", "id")
+    )
+    graph_snapshot = (
+        ProjectAssistantGraphSnapshot.objects.filter(
+            project=project,
+            is_stale=False,
+            schema_version=PROJECT_GRAPH_SCHEMA_VERSION,
+        )
+        .order_by("-generated_at", "-id")
+        .first()
+    )
 
     source_documents: list[AssistantSourceDocument] = []
     timestamps = [project.updated_at]
@@ -1265,6 +1448,95 @@ def build_project_source_snapshot(project: Project) -> tuple[list[AssistantSourc
             updated_at=project.updated_at,
         )
     )
+
+    for page in wiki_pages:
+        page_updated_at = page.generated_at or page.updated_at or project.updated_at
+        timestamps.append(page_updated_at)
+        source_ref_keys = [
+            str(source_ref.get("source_key") or "")
+            for source_ref in list(page.source_refs or [])
+            if isinstance(source_ref, dict) and normalize_text(str(source_ref.get("source_key") or ""))
+        ][:24]
+        source_documents.append(
+            AssistantSourceDocument(
+                source_key=f"project_wiki:{project.id}:{page.slug}",
+                source_type="project_wiki",
+                label=f"Wiki: {page.title}",
+                custom_id=f"project.{project.id}.wiki.{page.slug}",
+                content="\n".join(
+                    [
+                        f"Project wiki page: {page.title}",
+                        f"Wiki slug: {page.slug}",
+                        f"Wiki page type: {page.page_type}",
+                        f"Summary: {page.summary or 'N/A'}",
+                        "",
+                        page.body_markdown,
+                        "",
+                        "Provenance source keys:",
+                        "\n".join(f"- {source_key}" for source_key in source_ref_keys)
+                        if source_ref_keys
+                        else "- N/A",
+                    ]
+                ),
+                metadata=build_source_metadata(
+                    project_id=project.id,
+                    source_key=f"project_wiki:{project.id}:{page.slug}",
+                    source_type="project_wiki",
+                    label=f"Wiki: {page.title}",
+                    extra={
+                        "wiki_slug": page.slug,
+                        "wiki_page_type": page.page_type,
+                        "wiki_schema_version": page.schema_version,
+                        "source_ref_keys": source_ref_keys,
+                        "source_ref_count": len(page.source_refs or []),
+                        "created_at": page.created_at,
+                        "updated_at": page.updated_at,
+                        "event_at": page_updated_at,
+                        "generated_at": page.generated_at,
+                    },
+                ),
+                updated_at=page_updated_at,
+            )
+        )
+
+    if graph_snapshot:
+        graph_updated_at = graph_snapshot.generated_at or graph_snapshot.updated_at or project.updated_at
+        timestamps.append(graph_updated_at)
+        graph_metadata = graph_snapshot.metadata if isinstance(graph_snapshot.metadata, dict) else {}
+        graph_source_ref_keys = [
+            str(source_ref.get("source_key") or "")
+            for source_ref in list(graph_snapshot.source_refs or [])
+            if isinstance(source_ref, dict) and normalize_text(str(source_ref.get("source_key") or ""))
+        ][:40]
+        source_documents.append(
+            AssistantSourceDocument(
+                source_key=f"project_graph:{project.id}",
+                source_type="project_graph",
+                label=f"Graph progetto: {project.name}",
+                custom_id=f"project.{project.id}.graph",
+                content=graph_snapshot_as_source_content(graph_snapshot),
+                metadata=build_source_metadata(
+                    project_id=project.id,
+                    source_key=f"project_graph:{project.id}",
+                    source_type="project_graph",
+                    label=f"Graph progetto: {project.name}",
+                    extra={
+                        "graph_schema_version": graph_snapshot.schema_version,
+                        "graph_node_count": int(graph_metadata.get("node_count") or len(graph_snapshot.nodes or [])),
+                        "graph_edge_count": int(graph_metadata.get("edge_count") or len(graph_snapshot.edges or [])),
+                        "graph_node_type_counts": graph_metadata.get("node_type_counts") or {},
+                        "graph_edge_type_counts": graph_metadata.get("edge_type_counts") or {},
+                        "source_ref_keys": graph_source_ref_keys,
+                        "source_ref_count": len(graph_snapshot.source_refs or []),
+                        "created_at": graph_snapshot.created_at,
+                        "updated_at": graph_snapshot.updated_at,
+                        "event_at": graph_updated_at,
+                        "generated_at": graph_snapshot.generated_at,
+                    },
+                ),
+                updated_at=graph_updated_at,
+            )
+        )
 
     if members:
         team_updated_at = max((member.updated_at for member in members), default=project.updated_at)
@@ -2226,6 +2498,8 @@ def index_project_assistant_state(
     state: ProjectAssistantState,
     force: bool = False,
 ) -> ProjectAssistantState:
+    rebuild_project_wiki(state.project, force=force)
+    rebuild_project_graph(state.project, force=force)
     source_documents, current_version = build_project_source_snapshot(state.project)
     update_assistant_state_snapshot(
         state=state,
@@ -2248,6 +2522,12 @@ def serialize_assistant_stats(
     token_budget: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     retrieval_provider = assistant_vector_store_provider() if (state.chunk_count or 0) > 0 else "local"
+    wiki_pages = ProjectAssistantWikiPage.objects.filter(project=state.project)
+    wiki_last_generated_at = (
+        wiki_pages.order_by("-generated_at").values_list("generated_at", flat=True).first()
+    )
+    graph_snapshot = ProjectAssistantGraphSnapshot.objects.filter(project=state.project).first()
+    graph_metadata = graph_snapshot.metadata if graph_snapshot and isinstance(graph_snapshot.metadata, dict) else {}
     return {
         "assistant_ready": True,
         "chat_model": state.chat_model or assistant_chat_model(),
@@ -2267,6 +2547,17 @@ def serialize_assistant_stats(
         "last_indexed_version": state.last_indexed_version,
         "source_count": state.source_count,
         "chunk_count": state.chunk_count,
+        "wiki_schema_version": PROJECT_WIKI_SCHEMA_VERSION,
+        "wiki_page_count": wiki_pages.count(),
+        "wiki_stale_page_count": wiki_pages.filter(is_stale=True).count(),
+        "wiki_last_generated_at": wiki_last_generated_at.isoformat() if wiki_last_generated_at else None,
+        "graph_schema_version": PROJECT_GRAPH_SCHEMA_VERSION,
+        "graph_node_count": int(graph_metadata.get("node_count") or len(graph_snapshot.nodes or []) if graph_snapshot else 0),
+        "graph_edge_count": int(graph_metadata.get("edge_count") or len(graph_snapshot.edges or []) if graph_snapshot else 0),
+        "graph_is_stale": bool(graph_snapshot.is_stale) if graph_snapshot else True,
+        "graph_last_generated_at": graph_snapshot.generated_at.isoformat()
+        if graph_snapshot and graph_snapshot.generated_at
+        else None,
         "last_indexed_at": state.last_indexed_at.isoformat() if state.last_indexed_at else None,
         "last_sync_error": state.last_sync_error,
         "token_budget": token_budget or {},
@@ -2424,8 +2715,9 @@ def snippet_for_query(content: str, query: str, limit: int = 240) -> str:
 
 def source_match_score(source_document: AssistantSourceDocument, query: str) -> float:
     normalized_query = normalize_text(query).lower()
-    haystack = f"{source_document.label}\n{source_document.content}".lower()
     metadata = source_document.metadata if isinstance(source_document.metadata, dict) else {}
+    metadata_text = metadata_search_text(metadata)
+    haystack = f"{source_document.label}\n{metadata_text}\n{source_document.content}".lower()
     score = 0.0
     if normalized_query and normalized_query in haystack:
         score += 12.0
@@ -2439,6 +2731,29 @@ def source_match_score(source_document: AssistantSourceDocument, query: str) -> 
 
     age_days = max(0.0, (timezone.now() - source_document.updated_at).total_seconds() / 86400.0)
     score += max(0.0, 1.2 - min(age_days / 90.0, 1.2))
+    if source_document.source_type == "project_wiki":
+        page_type = normalize_text(str(metadata.get("wiki_page_type") or ""))
+        score += 4.0
+        if is_alert_like_query(query) and page_type in {"open_issues", "risks"}:
+            score += 14.0
+        if is_document_like_query(query) and page_type == "documents":
+            score += 10.0
+        if is_team_like_query(query) and page_type in {"people", "companies"}:
+            score += 10.0
+        if is_timeline_like_query(query) and page_type in {"timeline", "tasks", "activities"}:
+            score += 10.0
+        if page_type == "overview":
+            score += 2.5
+    if source_document.source_type == "project_graph":
+        score += 5.0
+        if is_graph_like_query(query):
+            score += 16.0
+        if is_alert_like_query(query):
+            score += 7.0
+        if is_team_like_query(query):
+            score += 4.0
+        if is_document_like_query(query):
+            score += 3.0
     if source_document.source_type in {"post", "comment", "activity"}:
         score += 0.4
     if is_team_like_query(query):
@@ -2491,7 +2806,7 @@ def chunk_sparse_match_score(
     if not normalized_query:
         return 0.0
     metadata = source_document.metadata if isinstance(source_document.metadata, dict) else {}
-    haystack = f"{source_document.label}\n{metadata.get('file_name') or ''}\n{chunk_text}".lower()
+    haystack = f"{source_document.label}\n{metadata_search_text(metadata)}\n{chunk_text}".lower()
     score = 0.0
     if normalized_query in haystack:
         score += 18.0
@@ -2506,6 +2821,25 @@ def chunk_sparse_match_score(
                 score += 3.5
     if source_document.source_type in {"document", "post_attachment", "comment_attachment"}:
         score += 2.0
+    if source_document.source_type == "project_wiki":
+        page_type = normalize_text(str(metadata.get("wiki_page_type") or ""))
+        score += 2.0
+        if is_alert_like_query(query) and page_type in {"open_issues", "risks"}:
+            score += 9.0
+        if is_document_like_query(query) and page_type == "documents":
+            score += 7.0
+        if is_team_like_query(query) and page_type in {"people", "companies"}:
+            score += 7.0
+        if is_timeline_like_query(query) and page_type in {"timeline", "tasks", "activities"}:
+            score += 7.0
+    if source_document.source_type == "project_graph":
+        score += 3.0
+        if is_graph_like_query(query):
+            score += 11.0
+        if is_alert_like_query(query):
+            score += 5.0
+        if is_team_like_query(query):
+            score += 3.0
     if metadata.get("has_extracted_text") is True:
         score += 1.5
     if metadata.get("media_kind") == "pdf":
@@ -2519,9 +2853,17 @@ def build_sparse_retrieval_bundle(
     source_documents: list[AssistantSourceDocument],
 ) -> RetrievalBundle:
     started_at = time.perf_counter()
+    chunk_candidates: list[dict[str, Any]] = []
+    bm25_documents: list[str] = []
+    total_chunk_count = 0
+    scored_chunk_count = 0
     candidates: list[dict[str, Any]] = []
     for source_document in source_documents:
-        project_id = int(source_document.metadata.get("project_id") or 0) if isinstance(source_document.metadata, dict) else 0
+        project_id = (
+            int(source_document.metadata.get("project_id") or 0)
+            if isinstance(source_document.metadata, dict)
+            else 0
+        )
         chunks = chunk_source_document(
             source_document,
             project_id=project_id,
@@ -2539,27 +2881,58 @@ def build_sparse_retrieval_bundle(
                 )
             ]
         for chunk in chunks[:8]:
-            score = chunk_sparse_match_score(query=query, source_document=source_document, chunk_text=chunk.text)
-            if score <= 0:
-                continue
-            candidates.append(
+            total_chunk_count += 1
+            metadata = dict(source_document.metadata or {})
+            haystack = f"{source_document.label}\n{metadata_search_text(metadata)}\n{chunk.text}"
+            sparse_score = chunk_sparse_match_score(
+                query=query,
+                source_document=source_document,
+                chunk_text=chunk.text,
+            )
+            chunk_candidates.append(
                 {
-                    "source_key": source_document.source_key,
-                    "source_type": source_document.source_type,
-                    "label": source_document.label,
-                    "score": round(score, 2),
-                    "snippet": snippet_for_query(chunk.text, query) or snippet_for_query(source_document.content, query),
-                    "metadata": {
-                        **dict(source_document.metadata or {}),
-                        "chunk_index": chunk.chunk_index,
-                        "chunk_count": chunk.chunk_count,
-                        "page_reference": chunk.page_references[0] if chunk.page_references else None,
-                        "page_references": chunk.page_references[:12],
-                        "section_reference": chunk.section_references[0] if chunk.section_references else None,
-                        "section_references": chunk.section_references[:8],
-                    },
+                    "source_document": source_document,
+                    "chunk": chunk,
+                    "sparse_score": sparse_score,
+                    "haystack": haystack,
                 }
             )
+            bm25_documents.append(haystack)
+
+    bm25_scores = bm25_like_scores(query=query, documents=bm25_documents)
+    for candidate, bm25_score in zip(chunk_candidates, bm25_scores):
+        source_document = candidate["source_document"]
+        chunk = candidate["chunk"]
+        sparse_score = float(candidate["sparse_score"] or 0.0)
+        lexical_score = float(bm25_score or 0.0)
+        score = sparse_score + (lexical_score * 4.0)
+        if score <= 0:
+            continue
+        scored_chunk_count += 1
+        metadata = dict(source_document.metadata or {})
+        metadata.update(
+            {
+                "chunk_index": chunk.chunk_index,
+                "chunk_count": chunk.chunk_count,
+                "page_reference": chunk.page_references[0] if chunk.page_references else None,
+                "page_references": chunk.page_references[:12],
+                "section_reference": chunk.section_references[0] if chunk.section_references else None,
+                "section_references": chunk.section_references[:8],
+                "lexical_score": round(lexical_score, 4),
+                "sparse_score": round(sparse_score, 2),
+                "lexical_provider": "bm25_like",
+            }
+        )
+        candidates.append(
+            {
+                "source_key": source_document.source_key,
+                "source_type": source_document.source_type,
+                "label": source_document.label,
+                "score": round(score, 2),
+                "snippet": snippet_for_query(chunk.text, query) or snippet_for_query(source_document.content, query),
+                "metadata": metadata,
+            }
+        )
 
     deduplicated: dict[str, dict[str, Any]] = {}
     for candidate in candidates:
@@ -2592,6 +2965,10 @@ def build_sparse_retrieval_bundle(
                 "embedding_latency_ms": 0.0,
                 "fallback_used": False,
                 "sparse_only": True,
+                "lexical_provider": "bm25_like",
+                "lexical_document_count": total_chunk_count,
+                "lexical_candidate_count": scored_chunk_count,
+                "lexical_rank_fusion": "sparse_plus_bm25_like",
             },
             citations=citations,
         ),
@@ -2648,12 +3025,12 @@ def build_local_retrieval_bundle(
         ),
         metrics=enrich_retrieval_metrics(
             metrics={
-            "retrieval_latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
-            "embedding_latency_ms": 0.0,
-            "result_count": len(citations),
-            "source_types": [citation["source_type"] for citation in citations],
-            "zero_results": len(citations) == 0,
-            "fallback_used": True,
+                "retrieval_latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
+                "embedding_latency_ms": 0.0,
+                "result_count": len(citations),
+                "source_types": [citation["source_type"] for citation in citations],
+                "zero_results": len(citations) == 0,
+                "fallback_used": True,
             },
             citations=citations,
         ),
@@ -2667,6 +3044,8 @@ def build_structured_context_markdown(
     citations: list[dict[str, Any]],
 ) -> str:
     project_lines = [f"- {item}" for item in profile_static[:4]]
+    wiki_lines: list[str] = []
+    graph_lines: list[str] = []
     task_activity_lines: list[str] = []
     document_lines: list[str] = []
     post_lines: list[str] = []
@@ -2680,7 +3059,11 @@ def build_structured_context_markdown(
         snippet = truncate_text(str(citation.get("snippet") or "Evidenza disponibile senza estratto utile."), 240)
         metadata = citation.get("metadata") if isinstance(citation.get("metadata"), dict) else {}
         entry = f"- [{source_type}] {label}: {snippet}"
-        if source_type in {"task", "activity"}:
+        if source_type == "project_wiki":
+            wiki_lines.append(entry)
+        elif source_type == "project_graph":
+            graph_lines.append(entry)
+        elif source_type in {"task", "activity"}:
             task_activity_lines.append(entry)
         elif source_type in {"document", "documents_catalog", "post_attachment", "comment_attachment", "photo"}:
             document_lines.append(entry)
@@ -2696,6 +3079,8 @@ def build_structured_context_markdown(
             post_lines.append(entry)
 
     sections = [
+        ("## Wiki progetto", wiki_lines),
+        ("## Graph progetto", graph_lines),
         ("## Progetto", project_lines),
         ("## Task e attivita rilevanti", task_activity_lines),
         ("## Documenti", document_lines),
@@ -3134,9 +3519,19 @@ def citation_rank_score(citation: dict[str, Any], query: str) -> float:
         numeric_score += 1.8
     if isinstance(metadata, dict) and metadata.get("media_kind") in {"audio", "pdf", "image"}:
         numeric_score += 1.1
+    if citation.get("source_type") == "project_wiki":
+        numeric_score += 1.6
+    if citation.get("source_type") == "project_graph":
+        numeric_score += 1.4
+        if is_graph_like_query(query):
+            numeric_score += 1.8
     if citation.get("source_type") in {"post", "comment", "activity", "post_attachment", "comment_attachment"}:
         numeric_score += 0.5
     return round(numeric_score, 2)
+
+
+def reciprocal_rank_fusion_score(rank: int) -> float:
+    return 1.0 / (RANK_FUSION_K + max(rank, 1))
 
 
 def merge_ranked_citations(
@@ -3148,16 +3543,30 @@ def merge_ranked_citations(
 ) -> list[dict[str, Any]]:
     merged: dict[str, dict[str, Any]] = {}
     for provider, items in (("local", fallback_citations), (primary_provider, primary_citations)):
-        for item in items:
+        for rank, item in enumerate(items, start=1):
             source_key = normalize_text(str(item.get("source_key") or ""))
             if not source_key:
                 continue
             metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            nested_fusion = metadata.get("rank_fusion") if isinstance(metadata.get("rank_fusion"), dict) else {}
+            nested_providers = nested_fusion.get("providers") if isinstance(nested_fusion, dict) else []
+            provider_names = [
+                str(item)
+                for item in (nested_providers if isinstance(nested_providers, list) else [])
+                if normalize_text(str(item))
+            ]
+            if provider not in provider_names:
+                provider_names.append(provider)
+            base_score = citation_rank_score(item, query)
+            fusion_score = reciprocal_rank_fusion_score(rank)
             candidate = {
                 "source_key": source_key,
                 "source_type": str(item.get("source_type") or metadata.get("source_type") or "document"),
                 "label": str(item.get("label") or metadata.get("label") or source_key),
-                "score": citation_rank_score(item, query),
+                "score": round(base_score + (fusion_score * 80.0), 2),
+                "_base_score": base_score,
+                "_fusion_score": fusion_score,
+                "_providers": provider_names,
                 "snippet": normalize_text(str(item.get("snippet") or "")),
                 "metadata": dict(metadata),
                 "provider": provider,
@@ -3169,7 +3578,21 @@ def merge_ranked_citations(
             if len(candidate["snippet"]) > len(current.get("snippet") or ""):
                 current["snippet"] = candidate["snippet"]
             current["metadata"] = {**current.get("metadata", {}), **candidate["metadata"]}
-            current["score"] = max(float(current.get("score") or 0.0), float(candidate["score"]))
+            current["_base_score"] = max(
+                float(current.get("_base_score") or 0.0),
+                float(candidate["_base_score"]),
+            )
+            current["_fusion_score"] = float(current.get("_fusion_score") or 0.0) + float(
+                candidate["_fusion_score"]
+            )
+            current["_providers"] = list(
+                dict.fromkeys([*list(current.get("_providers") or []), *candidate["_providers"]])
+            )
+            current["score"] = round(
+                float(current.get("_base_score") or 0.0)
+                + (float(current.get("_fusion_score") or 0.0) * 80.0),
+                2,
+            )
             if provider == primary_provider or not current.get("provider"):
                 current["provider"] = provider
                 current["label"] = candidate["label"]
@@ -3180,18 +3603,28 @@ def merge_ranked_citations(
         key=lambda item: (float(item.get("score") or 0.0), item.get("provider") == primary_provider),
         reverse=True,
     )[: assistant_context_source_limit()]
-    return [
-        {
-            "index": index,
-            "source_key": item["source_key"],
-            "source_type": item["source_type"],
-            "label": item["label"],
-            "score": round(float(item.get("score") or 0.0), 2),
-            "snippet": item.get("snippet") or "Evidenza disponibile senza estratto utile.",
-            "metadata": item.get("metadata", {}),
+    results: list[dict[str, Any]] = []
+    for index, item in enumerate(ranked, start=1):
+        metadata = dict(item.get("metadata", {}))
+        providers = list(item.get("_providers") or [item.get("provider") or "local"])
+        metadata["rank_fusion"] = {
+            "method": "reciprocal_rank_fusion",
+            "score": round(float(item.get("_fusion_score") or 0.0), 4),
+            "providers": providers,
+            "base_score": round(float(item.get("_base_score") or item.get("score") or 0.0), 2),
         }
-        for index, item in enumerate(ranked, start=1)
-    ]
+        results.append(
+            {
+                "index": index,
+                "source_key": item["source_key"],
+                "source_type": item["source_type"],
+                "label": item["label"],
+                "score": round(float(item.get("score") or 0.0), 2),
+                "snippet": item.get("snippet") or "Evidenza disponibile senza estratto utile.",
+                "metadata": metadata,
+            }
+        )
+    return results
 
 
 def rerank_citations(
@@ -3221,6 +3654,36 @@ def rerank_citations(
             rerank_score += 2.1
         if route and route.intent in {"open_alerts", "resolved_issues"} and metadata.get("issue_status"):
             rerank_score += 2.0
+        if citation.get("source_type") == "project_wiki":
+            page_type = normalize_text(str(metadata.get("wiki_page_type") or ""))
+            if route and route.intent == "project_summary" and page_type == "overview":
+                rerank_score += 3.5
+            if route and route.intent in {"timeline_summary", "activity_by_date"} and page_type == "timeline":
+                rerank_score += 3.0
+            if route and route.intent in {"open_alerts", "resolved_issues"} and page_type in {
+                "open_issues",
+                "risks",
+            }:
+                rerank_score += 3.0
+            if route and route.intent in {"document_search", "document_list"} and page_type == "documents":
+                rerank_score += 2.8
+        if citation.get("source_type") == "project_graph":
+            if route and route.intent in {
+                "project_summary",
+                "company_list",
+                "team_list",
+                "task_list",
+                "task_status",
+                "activity_by_date",
+                "timeline_summary",
+                "open_alerts",
+                "resolved_issues",
+                "document_search",
+                "generic_semantic",
+            }:
+                rerank_score += 2.2
+            if is_graph_like_query(query):
+                rerank_score += 2.6
         reranked.append(
             {
                 **citation,
@@ -3254,7 +3717,35 @@ def enrich_retrieval_metrics(
     enriched["intent_source_type_mismatch"] = bool(source_types) and bool(expected_source_types) and topical_hits == 0
     enriched["noisy_results_only"] = bool(source_types) and bool(expected_source_types) and topical_hits == 0
     enriched["topical_hit_count"] = topical_hits
+    if route:
+        enriched.update(evaluate_retrieval_ranking(citations=citations, route=route))
     return enriched
+
+
+def apply_context_metrics(
+    bundle: RetrievalBundle,
+    *,
+    source_documents: list[AssistantSourceDocument],
+    contextual_source_documents: list[AssistantSourceDocument],
+    retrieval_context: AssistantRetrievalContext | None,
+    route: AssistantQueryRoute | None,
+) -> RetrievalBundle:
+    metrics = dict(bundle.metrics or {})
+    metrics.update(
+        {
+            "candidate_pool_count": len(source_documents),
+            "contextual_candidate_pool_count": len(contextual_source_documents),
+            "context_filter_applied": len(contextual_source_documents) != len(source_documents),
+            "context_scope": retrieval_context.context_scope if retrieval_context else "project",
+            "strict_context": bool(retrieval_context.strict_context) if retrieval_context else False,
+            "filtered_task_id": retrieval_context.task_id if retrieval_context else None,
+            "filtered_activity_id": retrieval_context.activity_id if retrieval_context else None,
+            "selected_source_types": list(route.selected_source_types) if route else [],
+            "final_result_count": len(bundle.citations),
+        }
+    )
+    bundle.metrics = metrics
+    return bundle
 
 
 def build_pgvector_retrieval_bundle(
@@ -3269,6 +3760,12 @@ def build_pgvector_retrieval_bundle(
     sparse_bundle = build_sparse_retrieval_bundle(query=query, source_documents=source_documents)
     if not assistant_rag_enabled() or not pgvector_runtime_available():
         return sparse_bundle if sparse_bundle.citations else local_bundle
+    has_indexed_chunks = ProjectAssistantChunkMap.objects.filter(
+        project=project,
+        scope=AssistantSourceScope.PROJECT,
+    ).exists()
+    if not has_indexed_chunks:
+        return sparse_bundle if sparse_bundle.citations else local_bundle
     embedding_started_at = time.perf_counter()
     query_vector = embed_texts([query])[0]
     embedding_latency_ms = round((time.perf_counter() - embedding_started_at) * 1000, 2)
@@ -3279,6 +3776,7 @@ def build_pgvector_retrieval_bundle(
         limit=max(assistant_retrieval_top_k(), assistant_context_source_limit() * 2),
         task_id=retrieval_context.task_id if retrieval_context else None,
         activity_id=retrieval_context.activity_id if retrieval_context else None,
+        source_types=retrieval_context.source_types if retrieval_context else None,
     )
     retrieval_latency_ms = round((time.perf_counter() - retrieval_started_at) * 1000, 2)
     citations = build_pgvector_citations(query=query, chunk_rows=chunk_rows)
@@ -3288,7 +3786,7 @@ def build_pgvector_retrieval_bundle(
             citation
             for citation in citations
             if citation["source_type"] in allowed_source_types
-            or citation["source_type"] in {"project", "team_directory"}
+            or citation["source_type"] in {"project", "team_directory", "project_graph"}
         ]
     if not citations:
         return sparse_bundle if sparse_bundle.citations else local_bundle
@@ -3321,11 +3819,11 @@ def build_pgvector_retrieval_bundle(
         ),
         metrics=enrich_retrieval_metrics(
             metrics={
-            "retrieval_latency_ms": retrieval_latency_ms,
-            "embedding_latency_ms": embedding_latency_ms,
-            "result_count": len(merged_citations),
-            "source_types": [citation["source_type"] for citation in merged_citations],
-            "zero_results": len(merged_citations) == 0,
+                "retrieval_latency_ms": retrieval_latency_ms,
+                "embedding_latency_ms": embedding_latency_ms,
+                "result_count": len(merged_citations),
+                "source_types": [citation["source_type"] for citation in merged_citations],
+                "zero_results": len(merged_citations) == 0,
                 "filtered_task_id": retrieval_context.task_id if retrieval_context else None,
                 "filtered_activity_id": retrieval_context.activity_id if retrieval_context else None,
                 "fallback_used": False,
@@ -3333,6 +3831,8 @@ def build_pgvector_retrieval_bundle(
                 "dense_result_count": len(citations),
                 "sparse_result_count": len(sparse_bundle.citations),
                 "hybrid_merge": True,
+                "rank_fusion": "reciprocal_rank_fusion",
+                "lexical_provider": "bm25_like",
             },
             citations=merged_citations,
             route=route,
@@ -3364,7 +3864,7 @@ def retrieve_project_knowledge(
             retrieval_context=retrieval_context,
         )
         source_types = [citation["source_type"] for citation in selected_citations]
-        return RetrievalBundle(
+        deterministic_bundle = RetrievalBundle(
             provider="deterministic_db",
             profile_static=local_bundle.profile_static,
             profile_dynamic=local_bundle.profile_dynamic,
@@ -3376,19 +3876,26 @@ def retrieve_project_knowledge(
             ),
             metrics=enrich_retrieval_metrics(
                 metrics={
-                "retrieval_latency_ms": 0.0,
-                "embedding_latency_ms": 0.0,
-                "result_count": len(selected_citations),
-                "source_types": source_types,
-                "zero_results": len(selected_citations) == 0,
-                "filtered_task_id": retrieval_context.task_id if retrieval_context else None,
-                "filtered_activity_id": retrieval_context.activity_id if retrieval_context else None,
-                "fallback_used": False,
-                "reranked": True,
+                    "retrieval_latency_ms": 0.0,
+                    "embedding_latency_ms": 0.0,
+                    "result_count": len(selected_citations),
+                    "source_types": source_types,
+                    "zero_results": len(selected_citations) == 0,
+                    "filtered_task_id": retrieval_context.task_id if retrieval_context else None,
+                    "filtered_activity_id": retrieval_context.activity_id if retrieval_context else None,
+                    "fallback_used": False,
+                    "reranked": True,
                 },
                 citations=selected_citations,
                 route=route,
             ),
+        )
+        return apply_context_metrics(
+            deterministic_bundle,
+            source_documents=source_documents,
+            contextual_source_documents=contextual_source_documents,
+            retrieval_context=retrieval_context,
+            route=route,
         )
 
     if not assistant_rag_enabled():
@@ -3397,14 +3904,27 @@ def retrieve_project_knowledge(
             citations=local_bundle.citations,
             route=route,
         )
-        return local_bundle
+        return apply_context_metrics(
+            local_bundle,
+            source_documents=source_documents,
+            contextual_source_documents=contextual_source_documents,
+            retrieval_context=retrieval_context,
+            route=route,
+        )
     try:
-        return build_pgvector_retrieval_bundle(
+        pgvector_bundle = build_pgvector_retrieval_bundle(
             project=project,
             query=query,
             source_documents=contextual_source_documents,
             route=route,
             retrieval_context=retrieval_context,
+        )
+        return apply_context_metrics(
+            pgvector_bundle,
+            source_documents=source_documents,
+            contextual_source_documents=contextual_source_documents,
+            retrieval_context=retrieval_context,
+            route=route,
         )
     except Exception:
         logger.exception("Assistant retrieval fallback to local for project %s", project.id)
@@ -3413,7 +3933,13 @@ def retrieve_project_knowledge(
             citations=local_bundle.citations,
             route=route,
         )
-        return local_bundle
+        return apply_context_metrics(
+            local_bundle,
+            source_documents=source_documents,
+            contextual_source_documents=contextual_source_documents,
+            retrieval_context=retrieval_context,
+            route=route,
+        )
 
 
 def build_thread_retrieval_query(
@@ -3475,19 +4001,19 @@ def build_tone_rules(tone: str) -> list[str]:
 def build_response_mode_rules(response_mode: str) -> list[str]:
     if response_mode == AssistantResponseMode.SINTESI:
         return [
-            "Format the answer as a compact operational synthesis with these sections: Sintesi operativa, Evidenze rilevanti, Criticita o punti aperti, Prossimi passi.",
+            "The user selected the operational synthesis format. Use clear sections only where they improve readability, prioritizing quadro, risks and next moves.",
         ]
     if response_mode == AssistantResponseMode.TIMELINE:
         return [
-            "Format the answer as a timeline whenever possible, ordered from most recent to oldest relevant event, and keep the sections: Timeline, Evidenze rilevanti, Prossimi passi.",
+            "The user selected the timeline format. Order events by time and anchor them to dates or timestamps from the evidence.",
         ]
     if response_mode == AssistantResponseMode.CHECKLIST:
         return [
-            "Format the answer as an actionable checklist with the sections: Checklist operativa, Evidenze rilevanti, Bloccanti, Azioni successive.",
+            "The user selected the checklist format. Prefer actionable bullets with owners, blockers and next actions when the evidence supports them.",
         ]
     if response_mode == AssistantResponseMode.DOCUMENTALE:
         return [
-            "Format the answer in a document-ready style with these sections: Risposta breve, Documenti rilevanti, Dettagli trovati, Cosa manca.",
+            "The user selected the document-ready format. Name the relevant documents and separate confirmed details from missing evidence.",
         ]
     return []
 
@@ -3584,14 +4110,14 @@ def build_response_style_rules(question: str, resolved_settings: AssistantResolv
     else:
         rules.extend(
             [
-                "Default to a rich answer, not a terse paragraph. A good default is a substantial answer with enough detail that a site manager can act on it immediately.",
-                "For broad project-status or summary questions, aim for a developed answer roughly in the 220 to 420 word range unless the available evidence is too limited.",
-                "For focused operational questions, still prefer 120 to 260 words over one-line answers when the evidence supports it.",
+                "Choose the natural amount of structure for the question: direct answer for simple questions, richer synthesis for broad questions.",
+                "Use short paragraphs, selective bullets, tables or timeline formatting only when they make the answer easier to act on.",
+                "For broad project-status or summary questions, provide enough context that a site manager can act without asking the same question again.",
             ]
         )
     if asks_for_status:
         rules.append(
-            "For status, recap or criticality questions, organize the answer with clear sections such as Sintesi operativa, Evidenze rilevanti, Criticita aperte, Prossimi passi."
+            "For status, recap or criticality questions, start with the practical answer and add sections only if there are multiple distinct themes."
         )
     if asks_for_documents:
         rules.append(
@@ -3657,9 +4183,9 @@ def build_assistant_prompt(
         )
     response_rules = [
         "Do not default to ultra-short answers. Unless the user explicitly asks for brevity, answer with a substantial, well-developed synthesis plus the operational details that matter.",
-        "Always organize the answer with explicit section headings instead of a single unbroken paragraph.",
-        "For general operational questions, default sections are: Sintesi operativa, Evidenze rilevanti, Criticita o punti sensibili, Prossimi passi.",
-        "For document-oriented questions, default sections are: Risposta breve, Documenti rilevanti, Dettagli trovati, Cosa manca.",
+        "Do not force a fixed section template. Pick the answer shape that best fits the question: direct, brief, narrative, timeline, table, checklist, deep report or document brief.",
+        "Use headings only when they improve scanning; do not add headings for simple answers.",
+        "For document-oriented questions, prefer a concise answer followed by the documents and missing evidence when useful.",
         "When the user asks for a count, give the total first, then list the items separately.",
         "When chronology matters, mention the relevant dates or timestamps from the evidence.",
         "If the current question is a follow-up, resolve references like 'quelle', 'aperte', 'e invece' using the current thread summary and recent chat.",
@@ -3672,8 +4198,8 @@ def build_assistant_prompt(
     if answer_plan is not None:
         planner_rules.extend(
             [
-                f"Follow the explicit answer plan: mode={answer_plan.answer_mode}, target_length={answer_plan.target_length}, structure={answer_plan.response_structure}, citation_density={answer_plan.citation_density}.",
-                f"Use these sections unless the question makes them irrelevant: {', '.join(answer_plan.answer_sections) or 'none'}.",
+                f"Use this answer plan as guidance, not a rigid template: mode={answer_plan.answer_mode}, target_length={answer_plan.target_length}, answer_shape={answer_plan.response_structure}, citation_density={answer_plan.citation_density}.",
+                f"Suggested sections, only if helpful or explicitly requested: {', '.join(answer_plan.answer_sections) or 'none'}.",
             ]
         )
     custom_instruction = normalize_text(resolved_settings.custom_instructions)
@@ -3789,8 +4315,23 @@ def build_deterministic_assistant_completion(prepared_run: AssistantPreparedRun)
             unique_notes.append(note)
         return "\n\n".join([headline, *unique_notes]).strip()
 
+    section_titles = plan.answer_sections or []
+    if not section_titles:
+        lines = list(sections[:14]) if sections else ["Nessun dato strutturato disponibile."]
+        if citations and plan.citation_density != "low":
+            lines.extend(
+                [
+                    "",
+                    "Fonti principali:",
+                    *(
+                        f"- {citation['label']}: {citation.get('snippet') or 'evidenza disponibile'}"
+                        for citation in citations[:3]
+                    ),
+                ]
+            )
+        return "\n".join(line for line in lines if line).strip()
+
     lines: list[str] = []
-    section_titles = plan.answer_sections or ["Risposta"]
     detail_lines = sections[1:]
     if section_titles:
         lines.append(f"{section_titles[0]}")
@@ -4260,27 +4801,23 @@ def prepare_project_assistant_run(
         project=project,
         profile=profile,
     )
-    source_documents, current_version = build_project_source_snapshot(project)
-    update_assistant_state_snapshot(state=state, current_version=current_version, source_count=len(source_documents))
-
     sync_error: str | None = None
-    if assistant_rag_enabled() and (force_sync or state.is_dirty or not state.last_indexed_version):
-        schedule_project_assistant_sync(state)
+    if force_sync and assistant_rag_enabled():
         try:
-            if force_sync or not state.last_indexed_version:
-                sync_project_assistant_sources(
-                    project=project,
-                    state=state,
-                    source_documents=source_documents,
-                    current_version=current_version,
-                    force=True,
-                )
+            index_project_assistant_state(state=state, force=True)
+            state.refresh_from_db()
         except Exception as exc:
             sync_error = str(exc)
             state.last_sync_error = sync_error
             state.is_dirty = True
             state.background_sync_scheduled = True
             state.save(update_fields=["last_sync_error", "is_dirty", "background_sync_scheduled"])
+
+    source_documents, current_version = build_project_source_snapshot(project)
+    update_assistant_state_snapshot(state=state, current_version=current_version, source_count=len(source_documents))
+
+    if assistant_rag_enabled() and state.is_dirty:
+        schedule_project_assistant_sync(state)
 
     recent_messages = list(
         thread.messages.select_related("author", "author__workspace", "author__user")
@@ -4685,17 +5222,6 @@ def refresh_project_assistant_state_for_read(
     state: ProjectAssistantState,
 ) -> ProjectAssistantState:
     state.chunk_count = count_project_assistant_chunks(state) or state.chunk_count
-    if not state.is_dirty and not state.background_sync_scheduled and state.current_version:
-        state.save(update_fields=["chunk_count"])
-        return state
-
-    source_documents, current_version = build_project_source_snapshot(state.project)
-    update_assistant_state_snapshot(
-        state=state,
-        current_version=current_version,
-        source_count=len(source_documents),
-    )
-    state.chunk_count = count_project_assistant_chunks(state) or state.chunk_count
     if assistant_rag_enabled() and state.is_dirty:
         schedule_project_assistant_sync(state)
     state.save(update_fields=["chunk_count"])
@@ -4931,20 +5457,6 @@ def get_project_drafting_context(
 
     if assistant_rag_enabled() and state.is_dirty:
         schedule_project_assistant_sync(state)
-        try:
-            if not state.last_indexed_version:
-                sync_project_assistant_sources(
-                    project=project,
-                    state=state,
-                    source_documents=source_documents,
-                    current_version=current_version,
-                    force=True,
-                )
-        except Exception as exc:
-            state.last_sync_error = str(exc)
-            state.is_dirty = True
-            state.background_sync_scheduled = True
-            state.save(update_fields=["last_sync_error", "is_dirty", "background_sync_scheduled"])
 
     contextual_sources = build_drafting_context_sources(
         project=project,

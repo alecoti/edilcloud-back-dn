@@ -15,7 +15,7 @@
     "total_threads": 55,
     "target_documents": 14,
     "document_post_usages": 20,
-    "target_images": 69,
+    "target_images": 134,
     "reply_images": 12,
     "target_audio_drafts": 55,
     "prompt_library_assets": 58,
@@ -1740,7 +1740,24 @@
               "post_summary_it": "Allego il cronoprogramma generale del lotto A per legare accessi, aree di servizio e sicurezza di avvio alla sequenza reale del cantiere: qui si vede perche' la logistica iniziale condiziona davvero tutte le prime lavorazioni."
             }
           ],
-          "image_requests": [],
+          "image_requests": [
+            {
+              "slot": "post_gallery_1",
+              "target_asset_stem": "accesso-pedonale-varco-nord",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "accesso-pedonale-varco-nord",
+              "brief": "Foto orizzontale del varco nord con recinzione provvisoria, ingresso pedonale separato, cartelli sicurezza e percorso mezzi leggibile."
+            },
+            {
+              "slot": "post_gallery_2",
+              "target_asset_stem": "briefing-pos-ingressi",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "briefing-pos-ingressi",
+              "brief": "Scena realistica di briefing di cantiere con persone in abbigliamento tecnico, tavolo improvvisato o ufficio cantiere, documenti aperti e DPI visibili."
+            }
+          ],
           "audio_requests": [
             {
               "slot": "post_audio_overview",
@@ -1807,6 +1824,14 @@
                     "placement": "post",
                     "prompt_ref": "accesso-pedonale-varco-nord",
                     "brief": "Foto orizzontale del varco nord con recinzione provvisoria, ingresso pedonale separato, cartelli sicurezza e percorso mezzi leggibile."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "briefing-pos-ingressi",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "briefing-pos-ingressi",
+                    "brief": "Scena realistica di briefing di cantiere con persone in abbigliamento tecnico, tavolo improvvisato o ufficio cantiere, documenti aperti e DPI visibili."
                   }
                 ],
                 "audio_requests": [
@@ -1874,6 +1899,14 @@
                     "placement": "post",
                     "prompt_ref": "baraccamenti-linea-acqua",
                     "brief": "Foto realistica di ufficio cantiere e spogliatoi provvisori sul lato nord, quadro elettrico da cantiere, linea acqua provvisoria e fondo ghiaioso."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "accesso-pedonale-varco-nord",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "accesso-pedonale-varco-nord",
+                    "brief": "Foto orizzontale del varco nord con recinzione provvisoria, ingresso pedonale separato, cartelli sicurezza e percorso mezzi leggibile."
                   }
                 ],
                 "audio_requests": [
@@ -1942,6 +1975,14 @@
                     "placement": "post",
                     "prompt_ref": "capisaldi-tracciamento-iniziale",
                     "brief": "Foto di capisaldi e tracciamento iniziale con spray, picchetti, stazione totale o strumenti di rilievo, area di cantiere ancora pulita."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "scavo-fronte-nord",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "scavo-fronte-nord",
+                    "brief": "Foto di scavo fronte nord con terreno smosso, mezzi di cantiere, bordo pulito e percorso camion evidente."
                   }
                 ],
                 "audio_requests": [
@@ -2011,6 +2052,14 @@
                     "placement": "post",
                     "prompt_ref": "briefing-pos-ingressi",
                     "brief": "Scena realistica di briefing di cantiere con persone in abbigliamento tecnico, tavolo improvvisato o ufficio cantiere, documenti aperti e DPI visibili."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "accesso-pedonale-varco-nord",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "accesso-pedonale-varco-nord",
+                    "brief": "Foto orizzontale del varco nord con recinzione provvisoria, ingresso pedonale separato, cartelli sicurezza e percorso mezzi leggibile."
                   }
                 ],
                 "audio_requests": [
@@ -2065,7 +2114,24 @@
               "pin-passaggi-box-03-04"
             ]
           },
-          "image_requests": [],
+          "image_requests": [
+            {
+              "slot": "post_gallery_1",
+              "target_asset_stem": "scavo-fronte-nord",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "scavo-fronte-nord",
+              "brief": "Foto di scavo fronte nord con terreno smosso, mezzi di cantiere, bordo pulito e percorso camion evidente."
+            },
+            {
+              "slot": "post_gallery_2",
+              "target_asset_stem": "platea-passaggi-box-03-04",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "platea-passaggi-box-03-04",
+              "brief": "Vista dall'alto dei ferri di platea con passaggi impiantistici predisposti nei box 03-04, atmosfera reale di cantiere e dettaglio tecnico leggibile."
+            }
+          ],
           "audio_requests": [
             {
               "slot": "post_audio_overview",
@@ -2131,6 +2197,14 @@
                     "placement": "post",
                     "prompt_ref": "scavo-fronte-nord",
                     "brief": "Foto di scavo fronte nord con terreno smosso, mezzi di cantiere, bordo pulito e percorso camion evidente."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "capisaldi-tracciamento-iniziale",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "capisaldi-tracciamento-iniziale",
+                    "brief": "Foto di capisaldi e tracciamento iniziale con spray, picchetti, stazione totale o strumenti di rilievo, area di cantiere ancora pulita."
                   }
                 ],
                 "audio_requests": [
@@ -2204,6 +2278,14 @@
                     "placement": "post",
                     "prompt_ref": "platea-passaggi-box-03-04",
                     "brief": "Vista dall'alto dei ferri di platea con passaggi impiantistici predisposti nei box 03-04, atmosfera reale di cantiere e dettaglio tecnico leggibile."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "interferenza-passaggi-box-03-04-ambiente",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "interferenza-passaggi-box-03-04-ambiente",
+                    "brief": "Vista piu' ampia dell'area box 03-04 per capire dove cade l'interferenza dentro al fronte platea."
                   }
                 ],
                 "audio_requests": [
@@ -2277,6 +2359,14 @@
                     "placement": "post",
                     "prompt_ref": "interferenza-passaggi-box-03-04",
                     "brief": "Dettaglio ravvicinato di armatura platea e manicotto scarico in interferenza, problema ben leggibile e credibile."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "interferenza-passaggi-box-03-04-misura",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "interferenza-passaggi-box-03-04-misura",
+                    "brief": "Foto con metro o riferimento che renda leggibile lo scostamento citato nel commento."
                   }
                 ],
                 "audio_requests": [
@@ -2382,6 +2472,14 @@
                     "placement": "post",
                     "prompt_ref": "getto-platea-maturazione",
                     "brief": "Foto realistica di getto platea in corso o appena concluso, calcestruzzo fresco, operatori e superficie ancora viva, non perfettamente pulita."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "interferenza-passaggi-box-03-04-risolta",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "interferenza-passaggi-box-03-04-risolta",
+                    "brief": "Stesso punto dopo la correzione, passaggio liberato e ferri integrativi gia' in opera."
                   }
                 ],
                 "audio_requests": [
@@ -2437,7 +2535,24 @@
               "pin-vano-ascensore-core"
             ]
           },
-          "image_requests": [],
+          "image_requests": [
+            {
+              "slot": "post_gallery_1",
+              "target_asset_stem": "pilastri-solaio-terra",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "pilastri-solaio-terra",
+              "brief": "Foto di pilastri e solaio piano terra con casseri o struttura appena eseguita, vista reale di cantiere e cavedi visibili."
+            },
+            {
+              "slot": "post_gallery_2",
+              "target_asset_stem": "solaio-piano-secondo-passaggi",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "solaio-piano-secondo-passaggi",
+              "brief": "Foto di solaio con aperture tecniche e predisposizioni passaggi impianti gia' verificate, cantiere reale e non pulito artificialmente."
+            }
+          ],
           "audio_requests": [
             {
               "slot": "post_audio_overview",
@@ -2502,6 +2617,14 @@
                     "placement": "post",
                     "prompt_ref": "pilastri-solaio-terra",
                     "brief": "Foto di pilastri e solaio piano terra con casseri o struttura appena eseguita, vista reale di cantiere e cavedi visibili."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "vano-scala-ascensore-controllo",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "vano-scala-ascensore-controllo",
+                    "brief": "Foto tecnica di vano scala e vano ascensore con strutture in elevazione, misure o riferimenti visibili, atmosfera reale."
                   }
                 ],
                 "audio_requests": [
@@ -2572,6 +2695,14 @@
                     "placement": "post",
                     "prompt_ref": "vano-scala-ascensore-controllo",
                     "brief": "Foto tecnica di vano scala e vano ascensore con strutture in elevazione, misure o riferimenti visibili, atmosfera reale."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "solaio-piano-secondo-passaggi",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "solaio-piano-secondo-passaggi",
+                    "brief": "Foto di solaio con aperture tecniche e predisposizioni passaggi impianti gia' verificate, cantiere reale e non pulito artificialmente."
                   }
                 ],
                 "audio_requests": [
@@ -2642,6 +2773,14 @@
                     "placement": "post",
                     "prompt_ref": "solaio-piano-secondo-passaggi",
                     "brief": "Foto di solaio con aperture tecniche e predisposizioni passaggi impianti gia' verificate, cantiere reale e non pulito artificialmente."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "pilastri-solaio-terra",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "pilastri-solaio-terra",
+                    "brief": "Foto di pilastri e solaio piano terra con casseri o struttura appena eseguita, vista reale di cantiere e cavedi visibili."
                   }
                 ],
                 "audio_requests": [
@@ -2713,6 +2852,14 @@
                     "placement": "post",
                     "prompt_ref": "cordoli-copertura-rilievo",
                     "brief": "Foto di cordoli e bordo copertura con riferimento al rilievo finale, vista reale di cantiere in quota."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "solaio-piano-secondo-passaggi",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "solaio-piano-secondo-passaggi",
+                    "brief": "Foto di solaio con aperture tecniche e predisposizioni passaggi impianti gia' verificate, cantiere reale e non pulito artificialmente."
                   }
                 ],
                 "audio_requests": [
@@ -2768,7 +2915,24 @@
               "pin-pluviali-corte"
             ]
           },
-          "image_requests": [],
+          "image_requests": [
+            {
+              "slot": "post_gallery_1",
+              "target_asset_stem": "tamponamenti-fronte-scala",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "tamponamenti-fronte-scala",
+              "brief": "Foto di tamponamenti esterni in laterizio porizzato sul fronte scala, falsi telai visibili e atmosfera reale di cantiere."
+            },
+            {
+              "slot": "post_gallery_2",
+              "target_asset_stem": "risvolto-ovest-lucernario-contesto",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "risvolto-ovest-lucernario-contesto",
+              "brief": "Vista piu' larga del bordo ovest per capire il rapporto tra nodo locale e fronte copertura."
+            }
+          ],
           "audio_requests": [
             {
               "slot": "post_audio_overview",
@@ -2835,6 +2999,14 @@
                     "placement": "post",
                     "prompt_ref": "tamponamenti-fronte-scala",
                     "brief": "Foto di tamponamenti esterni in laterizio porizzato sul fronte scala, falsi telai visibili e atmosfera reale di cantiere."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "mockup-facciata-sud-ovest",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "mockup-facciata-sud-ovest",
+                    "brief": "Foto di mockup facciata sud-ovest con pannello campione, serramento installato, lattoneria e lettura materica realistica."
                   }
                 ],
                 "audio_requests": [
@@ -2912,6 +3084,14 @@
                     "placement": "post",
                     "prompt_ref": "risvolto-ovest-lucernario-contesto",
                     "brief": "Vista piu' larga del bordo ovest per capire il rapporto tra nodo locale e fronte copertura."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "copertura-risvolto-ovest",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "copertura-risvolto-ovest",
+                    "brief": "Dettaglio finale del nodo dopo la fascia aggiuntiva, agganciato alla risposta di aggiornamento."
                   }
                 ],
                 "audio_requests": [
@@ -3000,6 +3180,14 @@
                     "placement": "post",
                     "prompt_ref": "risvolto-ovest-lucernario-contesto",
                     "brief": "Vista di insieme del bordo ovest per contestualizzare il nodo critico prima della correzione."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "copertura-ovest-prova-tenuta",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "copertura-ovest-prova-tenuta",
+                    "brief": "Foto di verifica finale o prova di tenuta sul nodo corretto."
                   }
                 ],
                 "audio_requests": [
@@ -3099,6 +3287,14 @@
                     "placement": "post",
                     "prompt_ref": "pluviali-corpo-scala-corte",
                     "brief": "Foto del raccordo pluviale lato corte su corpo scala, con lattoneria e contesto facciata ancora in lavorazione."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "copertura-risvolto-ovest",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "copertura-risvolto-ovest",
+                    "brief": "Dettaglio finale del nodo dopo la fascia aggiuntiva, agganciato alla risposta di aggiornamento."
                   }
                 ],
                 "audio_requests": [
@@ -3155,7 +3351,24 @@
               "pin-serramenti-lotto-b"
             ]
           },
-          "image_requests": [],
+          "image_requests": [
+            {
+              "slot": "post_gallery_1",
+              "target_asset_stem": "mockup-facciata-sud-ovest",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "mockup-facciata-sud-ovest",
+              "brief": "Foto di mockup facciata sud-ovest con pannello campione, serramento installato, lattoneria e lettura materica realistica."
+            },
+            {
+              "slot": "post_gallery_2",
+              "target_asset_stem": "posa-serramenti-lotto-a",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "posa-serramenti-lotto-a",
+              "brief": "Foto di posa serramenti su livelli abitativi con operatori, telai installati e protezioni presenti, contesto realistico."
+            }
+          ],
           "audio_requests": [
             {
               "slot": "post_audio_overview",
@@ -3229,6 +3442,14 @@
                     "placement": "post",
                     "prompt_ref": "mockup-facciata-sud-ovest-dettaglio-nodo",
                     "brief": "Dettaglio del nodo serramento-facciata-lattoneria usato per la validazione tecnica del mockup."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "posa-serramenti-lotto-a",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "posa-serramenti-lotto-a",
+                    "brief": "Foto di posa serramenti su livelli abitativi con operatori, telai installati e protezioni presenti, contesto realistico."
                   }
                 ],
                 "audio_requests": [
@@ -3313,6 +3534,14 @@
                     "placement": "post",
                     "prompt_ref": "foro-cucina-2b-misura",
                     "brief": "Foto tecnica del foro cucina 2B con traverso superiore e controtelaio, metro o riferimento quota visibile."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "foro-cucina-2b-ambiente",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "foro-cucina-2b-ambiente",
+                    "brief": "Vista ambiente della cucina 2B per leggere il foro nel suo contesto reale."
                   }
                 ],
                 "audio_requests": [
@@ -3386,6 +3615,14 @@
                     "placement": "post",
                     "prompt_ref": "foro-cucina-2b-ambiente",
                     "brief": "Vista ambiente della cucina 2B per leggere il foro nel suo contesto reale."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "foro-cucina-2b-misura",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "foro-cucina-2b-misura",
+                    "brief": "Foto tecnica del foro cucina 2B con traverso superiore e controtelaio, metro o riferimento quota visibile."
                   }
                 ],
                 "audio_requests": [
@@ -3480,6 +3717,14 @@
                     "placement": "post",
                     "prompt_ref": "posa-serramenti-lotto-a",
                     "brief": "Foto di posa serramenti su livelli abitativi con operatori, telai installati e protezioni presenti, contesto realistico."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "mockup-facciata-sud-ovest",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "mockup-facciata-sud-ovest",
+                    "brief": "Foto di mockup facciata sud-ovest con pannello campione, serramento installato, lattoneria e lettura materica realistica."
                   }
                 ],
                 "audio_requests": [
@@ -3535,6 +3780,14 @@
                     "placement": "post",
                     "prompt_ref": "posa-serramenti-lotto-a",
                     "brief": "Foto di posa serramenti per lotti, usata come riferimento visivo per spiegare la riprogrammazione del lotto B."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "mockup-facciata-sud-ovest-dettaglio-nodo",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "mockup-facciata-sud-ovest-dettaglio-nodo",
+                    "brief": "Dettaglio del nodo serramento-facciata-lattoneria usato per la validazione tecnica del mockup."
                   }
                 ],
                 "audio_requests": [
@@ -3601,7 +3854,24 @@
               "pin-vmc-corridoio-nord"
             ]
           },
-          "image_requests": [],
+          "image_requests": [
+            {
+              "slot": "post_gallery_1",
+              "target_asset_stem": "centrale-termica-precollaudo",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "centrale-termica-precollaudo",
+              "brief": "Foto della centrale termica in allestimento con dorsali principali e collettori, atmosfera reale di locale tecnico."
+            },
+            {
+              "slot": "post_gallery_2",
+              "target_asset_stem": "vmc-corridoio-nord-staffaggi",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "vmc-corridoio-nord-staffaggi",
+              "brief": "Foto realistica di corridoio tecnico con canali VMC e staffaggi da coordinare con passerelle elettriche, soffitto ancora aperto."
+            }
+          ],
           "audio_requests": [
             {
               "slot": "post_audio_overview",
@@ -3665,6 +3935,14 @@
                     "placement": "post",
                     "prompt_ref": "colonne-scarico-prova-tenuta",
                     "brief": "Foto di colonne di scarico nei bagni con prova di tenuta o predisposizione visibile, ambiente di cantiere reale."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "cavedi-foto-prima-chiusura",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "cavedi-foto-prima-chiusura",
+                    "brief": "Foto di cavedio aperto con predisposizioni impiantistiche visibili, cartongesso ancora non chiuso e aspetto realistico."
                   }
                 ],
                 "audio_requests": [
@@ -3749,6 +4027,14 @@
                     "placement": "post",
                     "prompt_ref": "centrale-termica-collettori-dettaglio",
                     "brief": "Dettaglio dei collettori e delle dorsali per dare piu' materia tecnica al post."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "centrale-termica-valvole-slot-vuoti",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "centrale-termica-valvole-slot-vuoti",
+                    "brief": "Dettaglio degli attacchi o degli slot ancora vuoti citati nel piano di intervento."
                   }
                 ],
                 "audio_requests": [
@@ -3822,6 +4108,14 @@
                     "placement": "post",
                     "prompt_ref": "centrale-termica-collettori-dettaglio",
                     "brief": "Dettaglio dei collettori e delle zone dove il pre-collaudo dipende dai componenti mancanti."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "centrale-termica-valvole-slot-vuoti",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "centrale-termica-valvole-slot-vuoti",
+                    "brief": "Dettaglio degli attacchi o degli slot ancora vuoti citati nel piano di intervento."
                   }
                 ],
                 "audio_requests": [
@@ -3926,6 +4220,14 @@
                     "placement": "post",
                     "prompt_ref": "vmc-corridoio-nord-staffaggi",
                     "brief": "Foto realistica di corridoio tecnico con canali VMC e staffaggi da coordinare con passerelle elettriche, soffitto ancora aperto."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "passerelle-interrato-antincendio",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "passerelle-interrato-antincendio",
+                    "brief": "Foto dell'interrato con passerelle elettriche e coordinamento con rete antincendio, vista tecnica ma realistica."
                   }
                 ],
                 "audio_requests": [
@@ -3993,6 +4295,14 @@
                     "placement": "post",
                     "prompt_ref": "vmc-corridoio-nord-staffaggi",
                     "brief": "Foto del corridoio nord con il punto specifico di interferenza preventiva tra staffaggi e passerelle."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "passerelle-interrato-antincendio",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "passerelle-interrato-antincendio",
+                    "brief": "Foto dell'interrato con passerelle elettriche e coordinamento con rete antincendio, vista tecnica ma realistica."
                   }
                 ],
                 "audio_requests": [
@@ -4059,7 +4369,24 @@
               "pin-monitor-hall"
             ]
           },
-          "image_requests": [],
+          "image_requests": [
+            {
+              "slot": "post_gallery_1",
+              "target_asset_stem": "passerelle-interrato-antincendio",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "passerelle-interrato-antincendio",
+              "brief": "Foto dell'interrato con passerelle elettriche e coordinamento con rete antincendio, vista tecnica ma realistica."
+            },
+            {
+              "slot": "post_gallery_2",
+              "target_asset_stem": "quadro-q3-linee-speciali",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "quadro-q3-linee-speciali",
+              "brief": "Foto tecnica del quadro Q3 con morsettiere e linee speciali leggibili, cantiere reale e non showroom."
+            }
+          ],
           "audio_requests": [
             {
               "slot": "post_audio_overview",
@@ -4124,6 +4451,14 @@
                     "placement": "post",
                     "prompt_ref": "passerelle-interrato-antincendio",
                     "brief": "Foto dell'interrato con passerelle elettriche e coordinamento con rete antincendio, vista tecnica ma realistica."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "vmc-corridoio-nord-staffaggi",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "vmc-corridoio-nord-staffaggi",
+                    "brief": "Foto realistica di corridoio tecnico con canali VMC e staffaggi da coordinare con passerelle elettriche, soffitto ancora aperto."
                   }
                 ],
                 "audio_requests": [
@@ -4193,6 +4528,14 @@
                     "placement": "post",
                     "prompt_ref": "quadro-q3-linee-speciali",
                     "brief": "Foto tecnica del quadro Q3 con morsettiere e linee speciali leggibili, cantiere reale e non showroom."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "q3-linee-speciali-prima-dopo",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "q3-linee-speciali-prima-dopo",
+                    "brief": "Immagine comparativa prima/dopo del quadro Q3 con linee speciali e morsettiere, stile realistico di cantiere."
                   }
                 ],
                 "audio_requests": [
@@ -4258,6 +4601,14 @@
                     "placement": "post",
                     "prompt_ref": "q3-linee-speciali-prima-dopo",
                     "brief": "Immagine comparativa prima/dopo del quadro Q3 con linee speciali e morsettiere, stile realistico di cantiere."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "quadro-q3-linee-speciali",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "quadro-q3-linee-speciali",
+                    "brief": "Foto tecnica del quadro Q3 con morsettiere e linee speciali leggibili, cantiere reale e non showroom."
                   }
                 ],
                 "audio_requests": [
@@ -4337,6 +4688,14 @@
                     "placement": "post",
                     "prompt_ref": "monitor-citofonico-hall",
                     "brief": "Foto della hall di ingresso ancora in cantiere con posizione proposta del monitor citofonico evidenziata in modo credibile."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "punch-list-parti-comuni-foto",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "punch-list-parti-comuni-foto",
+                    "brief": "Foto realistica di sopralluogo in parti comuni con note di punch list, persone che osservano dettagli e cantiere quasi chiuso."
                   }
                 ],
                 "audio_requests": [
@@ -4397,6 +4756,14 @@
                     "placement": "post",
                     "prompt_ref": "monitor-citofonico-hall",
                     "brief": "Vista della hall con la posizione finale proposta del monitor citofonico."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "punch-list-parti-comuni-foto",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "punch-list-parti-comuni-foto",
+                    "brief": "Foto realistica di sopralluogo in parti comuni con note di punch list, persone che osservano dettagli e cantiere quasi chiuso."
                   }
                 ],
                 "audio_requests": [
@@ -4465,7 +4832,24 @@
               "pin-cavedi-piano-tipo"
             ]
           },
-          "image_requests": [],
+          "image_requests": [
+            {
+              "slot": "post_gallery_1",
+              "target_asset_stem": "cavedi-foto-prima-chiusura",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "cavedi-foto-prima-chiusura",
+              "brief": "Foto di cavedio aperto con predisposizioni impiantistiche visibili, cartongesso ancora non chiuso e aspetto realistico."
+            },
+            {
+              "slot": "post_gallery_2",
+              "target_asset_stem": "bagno-campione-2b",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "bagno-campione-2b",
+              "brief": "Foto realistica del bagno campione 2B quasi finito, rivestimenti, sanitari e dettagli di posa credibili, non patinati."
+            }
+          ],
           "audio_requests": [
             {
               "slot": "post_audio_overview",
@@ -4532,6 +4916,14 @@
                     "placement": "post",
                     "prompt_ref": "cavedi-foto-prima-chiusura",
                     "brief": "Foto di cavedio aperto con predisposizioni impiantistiche visibili, cartongesso ancora non chiuso e aspetto realistico."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "colonne-scarico-prova-tenuta",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "colonne-scarico-prova-tenuta",
+                    "brief": "Foto di colonne di scarico nei bagni con prova di tenuta o predisposizione visibile, ambiente di cantiere reale."
                   }
                 ],
                 "audio_requests": [
@@ -4602,6 +4994,14 @@
                     "placement": "post",
                     "prompt_ref": "picchetti-quote-massetti",
                     "brief": "Foto di picchetti quota massetti in alloggio campione con riferimenti impianti e ambiente ancora grezzo."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "quote-massetti-1a-3c-laser",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "quote-massetti-1a-3c-laser",
+                    "brief": "Controllo quote con laser o strumento di livello per rafforzare il carattere misurato della segnalazione."
                   }
                 ],
                 "audio_requests": [
@@ -4676,6 +5076,14 @@
                     "placement": "post",
                     "prompt_ref": "quote-massetti-1a-3c-laser",
                     "brief": "Controllo quote con laser o strumento di livello per rafforzare il carattere misurato della segnalazione."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "quote-massetti-1a-dettaglio-picchetto",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "quote-massetti-1a-dettaglio-picchetto",
+                    "brief": "Dettaglio di un riferimento di quota o picchetto che giustifica il controllo incrociato citato nel commento."
                   }
                 ],
                 "audio_requests": [
@@ -4784,6 +5192,14 @@
                     "placement": "post",
                     "prompt_ref": "bagno-campione-2b-dettaglio-fughe",
                     "brief": "Dettaglio di fughe e tagli usato come riferimento per spiegare il criterio di posa."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "bagno-campione-2b-dettaglio-sanitari",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "bagno-campione-2b-dettaglio-sanitari",
+                    "brief": "Dettaglio ravvicinato di sanitari e raccordi per dare concretezza al ruolo del bagno campione."
                   }
                 ],
                 "audio_requests": [
@@ -4868,6 +5284,14 @@
                     "placement": "post",
                     "prompt_ref": "bagno-campione-2b-dettaglio-fughe",
                     "brief": "Dettaglio di fughe e tagli per mostrare il criterio che viene approvato."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "bagno-campione-2b-dettaglio-sanitari",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "bagno-campione-2b-dettaglio-sanitari",
+                    "brief": "Dettaglio ravvicinato di sanitari e raccordi per dare concretezza al ruolo del bagno campione."
                   }
                 ],
                 "audio_requests": [
@@ -4948,7 +5372,24 @@
               "pin-bagno-2b"
             ]
           },
-          "image_requests": [],
+          "image_requests": [
+            {
+              "slot": "post_gallery_1",
+              "target_asset_stem": "rivestimento-bagno-campione-tagli",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "rivestimento-bagno-campione-tagli",
+              "brief": "Dettaglio fotografico di rivestimento bagno campione con tagli e fughe ben leggibili, posa reale e non perfetta da catalogo."
+            },
+            {
+              "slot": "post_gallery_2",
+              "target_asset_stem": "campioni-tinte-parti-comuni",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "campioni-tinte-parti-comuni",
+              "brief": "Foto di campioni colore per parti comuni, pannelli o porzioni parete con luce naturale realistica e contesto di cantiere."
+            }
+          ],
           "audio_requests": [
             {
               "slot": "post_audio_overview",
@@ -5012,6 +5453,14 @@
                     "placement": "post",
                     "prompt_ref": "rivestimento-bagno-campione-tagli",
                     "brief": "Dettaglio fotografico di rivestimento bagno campione con tagli e fughe ben leggibili, posa reale e non perfetta da catalogo."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "bagno-campione-2b-dettaglio-fughe",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "bagno-campione-2b-dettaglio-fughe",
+                    "brief": "Dettaglio di fughe e tagli usato come riferimento per spiegare il criterio di posa."
                   }
                 ],
                 "audio_requests": [
@@ -5081,6 +5530,14 @@
                     "placement": "post",
                     "prompt_ref": "campioni-tinte-parti-comuni",
                     "brief": "Foto di campioni colore per parti comuni, pannelli o porzioni parete con luce naturale realistica e contesto di cantiere."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "pulizie-check-alloggi",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "pulizie-check-alloggi",
+                    "brief": "Foto di alloggio campione in fase di pulizia tecnica e check finale, dettagli realistici di cantiere quasi concluso."
                   }
                 ],
                 "audio_requests": [
@@ -5155,6 +5612,14 @@
                     "placement": "post",
                     "prompt_ref": "porte-sanitari-lotto-campione",
                     "brief": "Scena di materiali per porte e sanitari in preparazione o consegna, packaging reale e contesto di alloggio campione."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "bagno-campione-2b-dettaglio-sanitari",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "bagno-campione-2b-dettaglio-sanitari",
+                    "brief": "Dettaglio ravvicinato di sanitari e raccordi per dare concretezza al ruolo del bagno campione."
                   }
                 ],
                 "audio_requests": [
@@ -5222,6 +5687,14 @@
                     "placement": "post",
                     "prompt_ref": "pulizie-check-alloggi",
                     "brief": "Foto di alloggio campione in fase di pulizia tecnica e check finale, dettagli realistici di cantiere quasi concluso."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "punch-list-parti-comuni-foto",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "punch-list-parti-comuni-foto",
+                    "brief": "Foto realistica di sopralluogo in parti comuni con note di punch list, persone che osservano dettagli e cantiere quasi chiuso."
                   }
                 ],
                 "audio_requests": [
@@ -5280,7 +5753,24 @@
               "pin-punch-hall-parti-comuni"
             ]
           },
-          "image_requests": [],
+          "image_requests": [
+            {
+              "slot": "post_gallery_1",
+              "target_asset_stem": "precollaudo-vmc-antincendio-prerequisiti",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "precollaudo-vmc-antincendio-prerequisiti",
+              "brief": "Foto o scena realistica di area tecnica preparata per pre-collaudo con checklist, impianti parzialmente pronti e atmosfera di verifica."
+            },
+            {
+              "slot": "post_gallery_2",
+              "target_asset_stem": "punch-list-parti-comuni-foto",
+              "count": 1,
+              "placement": "post",
+              "prompt_ref": "punch-list-parti-comuni-foto",
+              "brief": "Foto realistica di sopralluogo in parti comuni con note di punch list, persone che osservano dettagli e cantiere quasi chiuso."
+            }
+          ],
           "audio_requests": [
             {
               "slot": "post_audio_overview",
@@ -5369,6 +5859,14 @@
                     "placement": "post",
                     "prompt_ref": "precollaudo-vmc-antincendio-checklist-tavolo",
                     "brief": "Piano di lavoro o checklist tecnica che faccia sentire la preparazione al collaudo come qualcosa di concreto."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "prerequisiti-vmc-antincendio-registro-azioni",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "prerequisiti-vmc-antincendio-registro-azioni",
+                    "brief": "Registro azioni o piano operativo aggiornato, collegato al commento che impone disciplina di chiusura."
                   }
                 ],
                 "audio_requests": [
@@ -5462,6 +5960,14 @@
                     "placement": "post",
                     "prompt_ref": "prerequisiti-vmc-antincendio-locale-tecnico",
                     "brief": "Vista di contesto del locale tecnico o del corridoio impianti con i punti ancora aperti."
+                  },
+                  {
+                    "slot": "post_gallery_3",
+                    "target_asset_stem": "prerequisiti-vmc-antincendio-registro-azioni",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "prerequisiti-vmc-antincendio-registro-azioni",
+                    "brief": "Registro azioni o piano operativo aggiornato, collegato al commento che impone disciplina di chiusura."
                   }
                 ],
                 "audio_requests": [
@@ -5563,6 +6069,14 @@
                     "placement": "post",
                     "prompt_ref": "punch-list-parti-comuni-foto",
                     "brief": "Foto realistica di sopralluogo in parti comuni con note di punch list, persone che osservano dettagli e cantiere quasi chiuso."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "pulizie-check-alloggi",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "pulizie-check-alloggi",
+                    "brief": "Foto di alloggio campione in fase di pulizia tecnica e check finale, dettagli realistici di cantiere quasi concluso."
                   }
                 ],
                 "audio_requests": [
@@ -5624,6 +6138,14 @@
                     "placement": "post",
                     "prompt_ref": "punch-list-parti-comuni-foto",
                     "brief": "Foto di sopralluogo punch list usata per il thread su owner e scadenze."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "pulizie-check-alloggi",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "pulizie-check-alloggi",
+                    "brief": "Foto di alloggio campione in fase di pulizia tecnica e check finale, dettagli realistici di cantiere quasi concluso."
                   }
                 ],
                 "audio_requests": [
@@ -5714,6 +6236,14 @@
                     "placement": "post",
                     "prompt_ref": "asbuilt-seriali-centrali",
                     "brief": "Scena realistica di documentazione tecnica, seriali apparecchiature e as-built in preparazione, non ufficio sterile ma contesto tecnico da cantiere avanzato."
+                  },
+                  {
+                    "slot": "post_gallery_2",
+                    "target_asset_stem": "centrale-termica-precollaudo",
+                    "count": 1,
+                    "placement": "post",
+                    "prompt_ref": "centrale-termica-precollaudo",
+                    "brief": "Foto della centrale termica in allestimento con dorsali principali e collettori, atmosfera reale di locale tecnico."
                   }
                 ],
                 "audio_requests": [

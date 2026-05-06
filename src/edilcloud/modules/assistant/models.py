@@ -30,6 +30,19 @@ class AssistantCitationMode(models.TextChoices):
     DETTAGLIATO = "dettagliato", "Dettagliato"
 
 
+class AssistantWikiPageType(models.TextChoices):
+    OVERVIEW = "overview", "Overview"
+    TIMELINE = "timeline", "Timeline"
+    OPEN_ISSUES = "open_issues", "Open issues"
+    DECISIONS = "decisions", "Decisions"
+    RISKS = "risks", "Risks"
+    DOCUMENTS = "documents", "Documents"
+    COMPANIES = "companies", "Companies"
+    PEOPLE = "people", "People"
+    TASKS = "tasks", "Tasks"
+    ACTIVITIES = "activities", "Activities"
+
+
 class ProjectAssistantState(TimestampedModel):
     project = models.OneToOneField(
         Project,
@@ -55,6 +68,75 @@ class ProjectAssistantState(TimestampedModel):
 
     def __str__(self) -> str:
         return f"Assistant state for project #{self.project_id}"
+
+
+class ProjectAssistantWikiPage(TimestampedModel):
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="assistant_wiki_pages",
+    )
+    page_type = models.CharField(
+        max_length=32,
+        choices=AssistantWikiPageType.choices,
+        default=AssistantWikiPageType.OVERVIEW,
+    )
+    slug = models.SlugField(max_length=80)
+    title = models.CharField(max_length=180)
+    body_markdown = models.TextField(blank=True)
+    summary = models.TextField(blank=True)
+    source_refs = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    content_hash = models.CharField(max_length=64, blank=True)
+    schema_version = models.CharField(max_length=64, blank=True)
+    generated_version = models.BigIntegerField(default=0)
+    generated_at = models.DateTimeField(null=True, blank=True)
+    is_stale = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ("project_id", "slug")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("project", "slug"),
+                name="unique_project_assistant_wiki_slug",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("project", "page_type")),
+            models.Index(fields=("project", "is_stale", "generated_at")),
+            models.Index(fields=("project", "schema_version")),
+        ]
+
+    def __str__(self) -> str:
+        return f"Wiki {self.slug} for project #{self.project_id}"
+
+
+class ProjectAssistantGraphSnapshot(TimestampedModel):
+    project = models.OneToOneField(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="assistant_graph_snapshot",
+    )
+    nodes = models.JSONField(default=list, blank=True)
+    edges = models.JSONField(default=list, blank=True)
+    summary_markdown = models.TextField(blank=True)
+    source_refs = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    content_hash = models.CharField(max_length=64, blank=True)
+    schema_version = models.CharField(max_length=64, blank=True)
+    generated_version = models.BigIntegerField(default=0)
+    generated_at = models.DateTimeField(null=True, blank=True)
+    is_stale = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ("project_id",)
+        indexes = [
+            models.Index(fields=("project", "is_stale", "generated_at")),
+            models.Index(fields=("project", "schema_version")),
+        ]
+
+    def __str__(self) -> str:
+        return f"Graph snapshot for project #{self.project_id}"
 
 
 class AssistantSourceScope(models.TextChoices):

@@ -46,11 +46,23 @@ class Command(BaseCommand):
             expected_intent = row.get("expected_intent")
             expected_strategy = row.get("expected_strategy")
             expected_target_length = row.get("expected_target_length")
+            expected_answer_shape = row.get("expected_answer_shape")
+            expected_source_types = [
+                str(source_type)
+                for source_type in list(row.get("expected_source_types") or [])
+                if str(source_type).strip()
+            ]
 
             checks = {
                 "intent": route.intent == expected_intent if expected_intent else True,
                 "strategy": route.strategy == expected_strategy if expected_strategy else True,
                 "target_length": plan.target_length == expected_target_length if expected_target_length else True,
+                "answer_shape": plan.response_structure == expected_answer_shape if expected_answer_shape else True,
+                "source_types": (
+                    set(expected_source_types).issubset(set(route.selected_source_types))
+                    if expected_source_types
+                    else True
+                ),
             }
             ok = all(checks.values())
             if ok:
@@ -59,7 +71,12 @@ class Command(BaseCommand):
                 {
                     "question": question,
                     "route": {"intent": route.intent, "strategy": route.strategy},
-                    "plan": {"target_length": plan.target_length, "answer_mode": plan.answer_mode},
+                    "selected_source_types": list(route.selected_source_types),
+                    "plan": {
+                        "target_length": plan.target_length,
+                        "answer_mode": plan.answer_mode,
+                        "answer_shape": plan.response_structure,
+                    },
                     "checks": checks,
                     "ok": ok,
                 }

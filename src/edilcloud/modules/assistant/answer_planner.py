@@ -89,45 +89,46 @@ def plan_assistant_answer(
 
     if route.intent in {"company_count", "team_count", "task_count", "document_list"}:
         target_length = "short" if not asks_detail else "medium"
-        answer_sections = ["Risposta breve", "Perimetro"]
+        answer_sections = []
         answer_mode = "fact_list"
         citation_density = "low"
-        response_structure = "compact"
+        response_structure = "direct" if not asks_detail else "brief"
     elif route.intent in {"company_list", "team_list", "task_list", "task_status", "open_alerts", "resolved_issues"}:
         target_length = "short" if asks_brevity else "medium"
-        answer_sections = ["Risposta breve", "Dettagli essenziali", "Note di perimetro"]
+        answer_sections = []
         answer_mode = "operational_list"
         citation_density = "medium"
-        response_structure = "sectioned"
+        response_structure = "brief"
     elif route.intent in {"activity_by_date", "timeline_summary"}:
         target_length = "medium"
-        answer_sections = ["Timeline", "Impatti", "Punti da verificare"]
+        answer_sections = []
         answer_mode = "timeline"
         citation_density = "high"
         response_structure = "timeline"
     elif route.intent in {"document_search"}:
         target_length = "medium" if asks_brevity else "long"
-        answer_sections = ["Risposta breve", "Documenti trovati", "Dettagli trovati", "Cosa manca"]
+        answer_sections = []
         answer_mode = "document_brief"
         citation_density = "high"
         response_structure = "document_brief"
     elif route.intent in {"project_summary", "generic_semantic"}:
         target_length = "long" if not asks_brevity else "medium"
-        answer_sections = ["Sintesi operativa", "Evidenze rilevanti", "Criticita aperte", "Prossimi passi"]
+        answer_sections = []
         answer_mode = "operational_summary"
         citation_density = "medium"
-        response_structure = "sectioned"
+        response_structure = "narrative" if asks_brevity else "deep_report"
     else:
         target_length = "medium"
-        answer_sections = ["Sintesi", "Evidenze", "Prossimi passi"]
+        answer_sections = []
         answer_mode = "operational_summary"
         citation_density = "medium"
-        response_structure = "sectioned"
+        response_structure = "narrative"
 
     if asks_brevity:
         reasoning.append("user_requested_brevity")
     if asks_detail:
         reasoning.append("user_requested_detail")
+    reasoning.append(f"answer_shape:{response_structure}")
 
     return AssistantAnswerPlan(
         target_length=target_length,

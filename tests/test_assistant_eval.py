@@ -1,11 +1,14 @@
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from pathlib import Path
 from uuid import UUID
 
 from edilcloud.modules.assistant.services import (
+    AssistantSourceDocument,
     AssistantResolvedSettings,
     RetrievalBundle,
+    assistant_chunk_schema_version,
     build_assistant_thread_title,
     build_chunk_point_id,
     build_file_hash,
@@ -16,12 +19,32 @@ from edilcloud.modules.assistant.services import (
     build_assistant_prompt,
     build_drafting_context_markdown,
     build_drafting_context_sources,
+    chunk_source_document,
     ensure_default_assistant_thread,
     extract_supported_file_content,
     extract_supported_file_text,
     merge_ranked_citations,
 )
 from edilcloud.modules.assistant.document_drafting import apply_guided_rapportino_interview
+from edilcloud.modules.assistant.evaluation_service import (
+    evaluate_answer_against_sources,
+    evaluate_retrieval_ranking,
+)
+from edilcloud.modules.assistant.graph_service import (
+    PROJECT_GRAPH_SCHEMA_VERSION,
+    ensure_project_graph_snapshot,
+    graph_edges_for_node,
+    rebuild_project_graph,
+)
+from edilcloud.modules.assistant.quality_reporting import build_quality_report
+from edilcloud.modules.assistant.query_router import classify_assistant_query
+from edilcloud.modules.assistant.models import ProjectAssistantGraphSnapshot, ProjectAssistantWikiPage
+from edilcloud.modules.assistant.wiki_service import (
+    PROJECT_WIKI_SCHEMA_VERSION,
+    ensure_project_wiki_pages,
+    export_project_wiki_markdown,
+    rebuild_project_wiki,
+)
 from edilcloud.modules.projects.models import (
     PostKind,
     ProjectDocument,
@@ -62,6 +85,430 @@ def test_build_chunk_point_id_returns_deterministic_uuid():
         chunk_index=3,
         content_hash="abc123",
     )
+
+
+def test_chunk_source_document_adds_contextual_metadata_to_chunks():
+    source_document = AssistantSourceDocument(
+        source_key="document:42",
+        source_type="document",
+        label="Verbale rilievo serramenti",
+        custom_id="project.1.document.42",
+        content="Il documento segnala una verifica tecnica sul vano.",
+        metadata={
+            "project_id": 1,
+            "task_id": 12,
+            "task_name": "Facciata e serramenti",
+            "file_name": "verbale-serramenti.pdf",
+            "company_name": "Serramenti Beta",
+        },
+        updated_at=timezone.now(),
+    )
+
+    chunks = chunk_source_document(
+        source_document,
+        project_id=1,
+        scope="project",
+    )
+
+    assert assistant_chunk_schema_version() == "assistant-chunk-schema:v3"
+    assert chunks
+    assert "Retrieval context:" in chunks[0].text
+    assert "Task: Facciata e serramenti" in chunks[0].text
+    assert "File: verbale-serramenti.pdf" in chunks[0].text
+
+
+def test_sparse_retrieval_uses_metadata_context_for_precise_matches():
+    source_document = AssistantSourceDocument(
+        source_key="document:77",
+        source_type="document",
+        label="Verbale tecnico",
+        custom_id="project.1.document.77",
+        content="Estratto operativo disponibile senza parole chiave specifiche.",
+        metadata={
+            "project_id": 1,
+            "task_id": 55,
+            "task_name": "Nodo serramento cucina 2B",
+            "file_name": "verbale-cucina-2b.pdf",
+            "company_name": "Serramenti Beta",
+        },
+        updated_at=timezone.now(),
+    )
+
+    bundle = build_sparse_retrieval_bundle(
+        query="serramento cucina 2B",
+        source_documents=[source_document],
+    )
+
+    assert bundle.citations
+    assert bundle.citations[0]["source_key"] == "document:77"
+    assert "Nodo serramento cucina 2B" in bundle.citations[0]["snippet"]
+    assert bundle.citations[0]["metadata"]["lexical_provider"] == "bm25_like"
+    assert bundle.metrics["lexical_provider"] == "bm25_like"
+
+
+def test_sparse_retrieval_promotes_repeated_precise_terms_with_bm25_like_score():
+    weak_source = AssistantSourceDocument(
+        source_key="document:10",
+        source_type="document",
+        label="Verbale generico",
+        custom_id="project.1.document.10",
+        content="Documento con note generiche sul sopralluogo.",
+        metadata={"project_id": 1, "file_name": "verbale-generico.pdf"},
+        updated_at=timezone.now(),
+    )
+    precise_source = AssistantSourceDocument(
+        source_key="document:11",
+        source_type="document",
+        label="Verbale nodo cucina",
+        custom_id="project.1.document.11",
+        content=(
+            "Il foro cucina 2B richiede verifica serramento. "
+            "La cucina 2B resta il nodo da correggere prima del collaudo."
+        ),
+        metadata={"project_id": 1, "file_name": "verbale-foro-cucina-2b.pdf"},
+        updated_at=timezone.now(),
+    )
+
+    bundle = build_sparse_retrieval_bundle(
+        query="foro cucina 2B serramento",
+        source_documents=[weak_source, precise_source],
+    )
+
+    assert bundle.citations[0]["source_key"] == "document:11"
+    assert bundle.citations[0]["metadata"]["lexical_score"] > 0
+    assert bundle.metrics["lexical_candidate_count"] >= 1
+    assert bundle.metrics["lexical_rank_fusion"] == "sparse_plus_bm25_like"
+
+
+@pytest.mark.django_db
+def test_project_wiki_rebuild_persists_db_pages_with_provenance_and_markdown_export(tmp_path):
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.eval.wiki@example.com",
+        password="devpass123",
+        workspace_name="Assistant Wiki Workspace",
+    )
+    project, task, _activity, alert_post = create_project_fixture(profile)
+
+    pages = rebuild_project_wiki(project)
+    overview = ProjectAssistantWikiPage.objects.get(project=project, slug="overview")
+
+    assert len(pages) == 10
+    assert overview.schema_version == PROJECT_WIKI_SCHEMA_VERSION
+    assert overview.is_stale is False
+    assert "Cantiere Aurora" in overview.body_markdown
+    assert any(source_ref["source_key"] == f"task:{task.id}" for source_ref in overview.source_refs)
+    assert any(source_ref["source_key"] == f"post:{alert_post.id}" for source_ref in overview.source_refs)
+
+    written_paths = export_project_wiki_markdown(project, output_dir=tmp_path)
+    exported_index = tmp_path / f"project-{project.id}" / "index.md"
+    exported_overview = tmp_path / f"project-{project.id}" / "overview.md"
+
+    assert exported_index in written_paths
+    assert exported_index.exists()
+    assert exported_overview.exists()
+    assert "DB primaria" in exported_index.read_text(encoding="utf-8")
+    assert "## Provenance" in exported_overview.read_text(encoding="utf-8")
+
+
+@pytest.mark.django_db(transaction=True)
+def test_project_wiki_feeds_source_snapshot_and_refreshes_when_project_changes():
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.eval.wiki-refresh@example.com",
+        password="devpass123",
+        workspace_name="Assistant Wiki Refresh Workspace",
+    )
+    project, task, activity, _alert_post = create_project_fixture(profile)
+    ensure_project_wiki_pages(project)
+
+    source_documents, _current_version = build_project_source_snapshot(project)
+    wiki_source = next(item for item in source_documents if item.source_type == "project_wiki")
+
+    assert wiki_source.source_key == f"project_wiki:{project.id}:activities"
+    assert wiki_source.metadata["wiki_schema_version"] == PROJECT_WIKI_SCHEMA_VERSION
+    assert "Project wiki page" in wiki_source.content
+
+    ProjectPost.objects.create(
+        project=project,
+        task=task,
+        activity=activity,
+        author=profile,
+        post_kind=PostKind.ISSUE,
+        text="Criticita nuova su accesso carrabile da coordinare.",
+        original_text="Criticita nuova su accesso carrabile da coordinare.",
+        source_language="it",
+        display_language="it",
+        alert=True,
+        is_public=False,
+    )
+
+    assert ProjectAssistantWikiPage.objects.filter(project=project, is_stale=True).exists()
+    refreshed_pages = ensure_project_wiki_pages(project)
+    open_issues = next(page for page in refreshed_pages if page.slug == "open-issues")
+
+    assert open_issues.is_stale is False
+    assert "accesso carrabile" in open_issues.body_markdown
+
+
+@pytest.mark.django_db
+def test_project_graph_rebuild_persists_domain_relations_for_project_entities():
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.eval.graph@example.com",
+        password="devpass123",
+        workspace_name="Assistant Graph Workspace",
+    )
+    project, task, activity, alert_post = create_project_fixture(profile)
+
+    snapshot = rebuild_project_graph(project)
+    node_ids = {node["id"] for node in snapshot.nodes}
+    task_id = f"task:{task.id}"
+    activity_id = f"activity:{activity.id}"
+    person_id = f"person:{profile.id}"
+    issue_id = f"issue:post:{alert_post.id}"
+
+    assert snapshot.schema_version == PROJECT_GRAPH_SCHEMA_VERSION
+    assert snapshot.is_stale is False
+    assert f"project:{project.id}" in node_ids
+    assert task_id in node_ids
+    assert activity_id in node_ids
+    assert person_id in node_ids
+    assert issue_id in node_ids
+    assert any(edge["source"] == task_id and edge["target"] == activity_id and edge["type"] == "has_activity" for edge in snapshot.edges)
+    assert any(edge["source"] == person_id and edge["target"] == activity_id and edge["type"] == "assigned_to" for edge in snapshot.edges)
+    assert any(edge["source"] == issue_id and edge["target"] == task_id and edge["type"] == "blocks" for edge in snapshot.edges)
+    assert graph_edges_for_node(snapshot, task_id, edge_type="blocks")
+    assert "Relazioni operative" in snapshot.summary_markdown
+
+
+@pytest.mark.django_db(transaction=True)
+def test_project_graph_feeds_source_snapshot_and_refreshes_when_project_changes():
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.eval.graph-refresh@example.com",
+        password="devpass123",
+        workspace_name="Assistant Graph Refresh Workspace",
+    )
+    project, task, activity, _alert_post = create_project_fixture(profile)
+    ensure_project_wiki_pages(project)
+    snapshot = ensure_project_graph_snapshot(project)
+
+    source_documents, _current_version = build_project_source_snapshot(project)
+    graph_source = next(item for item in source_documents if item.source_type == "project_graph")
+
+    assert graph_source.source_key == f"project_graph:{project.id}"
+    assert graph_source.metadata["graph_schema_version"] == PROJECT_GRAPH_SCHEMA_VERSION
+    assert graph_source.metadata["graph_node_count"] == len(snapshot.nodes)
+    assert "[blocks / blocca]" in graph_source.content
+    assert "Ponteggi" in graph_source.content
+
+    ProjectPost.objects.create(
+        project=project,
+        task=task,
+        activity=activity,
+        author=profile,
+        post_kind=PostKind.ISSUE,
+        text="Criticita nuova su accesso carrabile da coordinare.",
+        original_text="Criticita nuova su accesso carrabile da coordinare.",
+        source_language="it",
+        display_language="it",
+        alert=True,
+        is_public=False,
+    )
+
+    assert ProjectAssistantGraphSnapshot.objects.filter(project=project, is_stale=True).exists()
+    refreshed_snapshot = ensure_project_graph_snapshot(project)
+
+    assert refreshed_snapshot.is_stale is False
+    assert any("accesso carrabile" in str(node.get("label", "")).lower() for node in refreshed_snapshot.nodes)
+
+
+@pytest.mark.django_db
+def test_sparse_retrieval_can_use_project_graph_for_relationship_questions():
+    _user, _workspace, profile = create_workspace_profile(
+        email="assistant.eval.graph-retrieval@example.com",
+        password="devpass123",
+        workspace_name="Assistant Graph Retrieval Workspace",
+    )
+    project, _task, _activity, _alert_post = create_project_fixture(profile)
+    ensure_project_wiki_pages(project)
+    ensure_project_graph_snapshot(project)
+    source_documents, _current_version = build_project_source_snapshot(project)
+
+    bundle = build_sparse_retrieval_bundle(
+        query="cosa blocca la task ponteggi e quali relazioni lo spiegano?",
+        source_documents=source_documents,
+    )
+    graph_citation = next(
+        (citation for citation in bundle.citations if citation["source_type"] == "project_graph"),
+        None,
+    )
+
+    assert graph_citation is not None
+    assert graph_citation["metadata"]["graph_schema_version"] == PROJECT_GRAPH_SCHEMA_VERSION
+    assert graph_citation["metadata"]["lexical_provider"] == "bm25_like"
+    assert "blocca" in graph_citation["snippet"].lower() or "blocks" in graph_citation["snippet"].lower()
+
+
+def test_evaluate_answer_against_sources_scores_citation_support_per_source():
+    route = classify_assistant_query("c'e un documento sulla linea drenante lato nord?")
+
+    evaluation = evaluate_answer_against_sources(
+        answer=(
+            "Il verbale drenaggi dice che la linea drenante lato nord "
+            "va ricontrollata prima del collaudo."
+        ),
+        citations=[
+            {
+                "source_key": "document:44",
+                "source_type": "document",
+                "label": "Verbale coordinamento drenaggi",
+                "snippet": "Linea drenante lato nord da ricontrollare prima del collaudo.",
+                "metadata": {
+                    "file_name": "verbale-drenaggi.pdf",
+                    "page_reference": 1,
+                },
+            }
+        ],
+        route=route,
+    )
+
+    assert evaluation["unsupported_answer"] is False
+    assert evaluation["weak_evidence"] is False
+    assert evaluation["source_support_level"] == "strong"
+    assert evaluation["citation_support_rate"] == 1.0
+    assert evaluation["strong_source_count"] == 1
+    assert evaluation["citation_supports"][0]["source_key"] == "document:44"
+    assert evaluation["retrieval_recall_at_1"] > 0.0
+    assert evaluation["retrieval_ndcg_at_1"] == 1.0
+    assert evaluation["retrieval_mrr"] == 1.0
+
+
+def test_evaluate_answer_against_sources_flags_noisy_context():
+    route = classify_assistant_query("c'e un documento sulla linea drenante lato nord?")
+
+    evaluation = evaluate_answer_against_sources(
+        answer="La linea drenante lato nord va ricontrollata prima del collaudo.",
+        citations=[
+            {
+                "source_key": "project:1:team_directory",
+                "source_type": "team_directory",
+                "label": "Partecipanti progetto",
+                "snippet": "Totale partecipanti: 3. Capocantiere presente: Laura Ferretti.",
+                "metadata": {},
+            }
+        ],
+        route=route,
+    )
+
+    assert evaluation["unsupported_answer"] is True
+    assert evaluation["weak_evidence"] is True
+    assert evaluation["source_support_level"] == "weak"
+    assert evaluation["citation_support_rate"] == 0.0
+    assert evaluation["noisy_context_rate"] == 1.0
+    assert evaluation["metadata_only_source_count"] == 1
+    assert evaluation["retrieval_recall_at_5"] == 0.0
+    assert evaluation["retrieval_ndcg_at_5"] == 0.0
+    assert evaluation["retrieval_ranking_weak"] is True
+
+
+def test_evaluate_retrieval_ranking_scores_recall_ndcg_and_mrr():
+    route = classify_assistant_query("c'e un documento sulla linea drenante lato nord?")
+
+    ranking = evaluate_retrieval_ranking(
+        citations=[
+            {
+                "source_key": "team:1",
+                "source_type": "team_directory",
+                "label": "Team",
+                "snippet": "Squadra presente.",
+                "metadata": {},
+            },
+            {
+                "source_key": "document:44",
+                "source_type": "document",
+                "label": "Verbale drenaggi",
+                "snippet": "Linea drenante lato nord da ricontrollare.",
+                "metadata": {},
+            },
+            {
+                "source_key": "project_wiki:1:documents",
+                "source_type": "project_wiki",
+                "label": "Wiki documenti",
+                "snippet": "Documento tecnico sui drenaggi.",
+                "metadata": {},
+            },
+        ],
+        route=route,
+    )
+
+    assert ranking["retrieval_mrr"] == 0.5
+    assert ranking["retrieval_recall_at_1"] == 0.0
+    assert ranking["retrieval_recall_at_3"] > 0.0
+    assert ranking["retrieval_ndcg_at_3"] > ranking["retrieval_ndcg_at_1"]
+
+
+def test_build_quality_report_aggregates_context_quality_metrics():
+    report = build_quality_report(
+        [
+            {
+                "id": 1,
+                "intent": "document_search",
+                "assistant_output": "Risposta supportata.",
+                "evaluation": {
+                    "unsupported_answer": False,
+                    "topical_source_match": True,
+                    "answer_grounding_score": 0.42,
+                    "mismatch_rate": 0.0,
+                    "citation_support_rate": 1.0,
+                    "noisy_context_rate": 0.0,
+                    "best_source_support_score": 0.42,
+                    "weak_evidence": False,
+                    "source_support_level": "strong",
+                    "retrieval_recall_at_3": 1.0,
+                    "retrieval_recall_at_5": 1.0,
+                    "retrieval_ndcg_at_3": 1.0,
+                    "retrieval_ndcg_at_5": 1.0,
+                    "retrieval_mrr": 1.0,
+                    "retrieval_ranking_weak": False,
+                },
+            },
+            {
+                "id": 2,
+                "intent": "document_search",
+                "assistant_output": "Risposta con fonte debole.",
+                "evaluation": {
+                    "unsupported_answer": True,
+                    "topical_source_match": False,
+                    "answer_grounding_score": 0.01,
+                    "mismatch_rate": 1.0,
+                    "citation_support_rate": 0.0,
+                    "noisy_context_rate": 1.0,
+                    "best_source_support_score": 0.0,
+                    "weak_evidence": True,
+                    "source_support_level": "weak",
+                    "retrieval_recall_at_3": 0.0,
+                    "retrieval_recall_at_5": 0.0,
+                    "retrieval_ndcg_at_3": 0.0,
+                    "retrieval_ndcg_at_5": 0.0,
+                    "retrieval_mrr": 0.0,
+                    "retrieval_ranking_weak": True,
+                },
+            },
+        ]
+    )
+
+    bucket = report["success_rate_per_intent"]["document_search"]
+    assert report["has_context_quality_metrics"] is True
+    assert bucket["context_quality_count"] == 2
+    assert bucket["avg_citation_support"] == 0.5
+    assert bucket["avg_noisy_context"] == 0.5
+    assert bucket["weak_evidence_rate"] == 50.0
+    assert report["has_ranking_quality_metrics"] is True
+    assert bucket["ranking_quality_count"] == 2
+    assert bucket["avg_recall_at_5"] == 0.5
+    assert bucket["avg_ndcg_at_5"] == 0.5
+    assert bucket["avg_mrr"] == 0.5
+    assert bucket["weak_ranking_rate"] == 50.0
+    assert any(error == "weak_evidence" for error, _count in report["top_errors"])
+    assert any(error == "weak_retrieval_ranking" for error, _count in report["top_errors"])
 
 
 def test_build_file_hash_returns_empty_string_for_missing_file():
@@ -202,6 +649,8 @@ def test_merge_ranked_citations_prefers_grounded_file_backed_sources():
     assert merged[0]["label"] == "Verbale fondazioni fronte nord"
     assert "drenaggio lato nord" in merged[0]["snippet"]
     assert merged[0]["score"] >= merged[1]["score"]
+    assert merged[0]["metadata"]["rank_fusion"]["method"] == "reciprocal_rank_fusion"
+    assert "pgvector" in merged[0]["metadata"]["rank_fusion"]["providers"]
 
 
 @pytest.mark.django_db

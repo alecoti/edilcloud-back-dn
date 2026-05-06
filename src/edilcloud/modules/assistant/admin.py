@@ -3,10 +3,12 @@ from django.contrib import admin
 from edilcloud.modules.assistant.models import (
     ProjectAssistantChunkMap,
     ProjectAssistantChunkSource,
+    ProjectAssistantGraphSnapshot,
     ProjectAssistantMessage,
     ProjectAssistantState,
     ProjectAssistantThread,
     ProjectAssistantUsage,
+    ProjectAssistantWikiPage,
 )
 
 
@@ -49,6 +51,36 @@ class ProjectAssistantChunkMapAdmin(admin.ModelAdmin):
     list_display = ("project", "scope", "source_key", "source_type", "chunk_index", "file_name", "embedding_model")
     list_filter = ("scope", "source_type", "embedding_model")
     search_fields = ("project__name", "source_key", "point_id", "label", "file_name")
+
+
+@admin.register(ProjectAssistantWikiPage)
+class ProjectAssistantWikiPageAdmin(admin.ModelAdmin):
+    list_display = ("project", "slug", "page_type", "is_stale", "schema_version", "generated_at")
+    list_filter = ("page_type", "is_stale", "schema_version")
+    search_fields = ("project__name", "slug", "title", "body_markdown", "summary")
+    readonly_fields = ("content_hash", "generated_version", "generated_at", "created_at", "updated_at")
+
+
+@admin.register(ProjectAssistantGraphSnapshot)
+class ProjectAssistantGraphSnapshotAdmin(admin.ModelAdmin):
+    list_display = ("project", "is_stale", "schema_version", "generated_at", "node_count", "edge_count")
+    list_filter = ("is_stale", "schema_version")
+    search_fields = ("project__name", "summary_markdown")
+    readonly_fields = (
+        "content_hash",
+        "generated_version",
+        "generated_at",
+        "created_at",
+        "updated_at",
+        "node_count",
+        "edge_count",
+    )
+
+    def node_count(self, obj: ProjectAssistantGraphSnapshot) -> int:
+        return len(obj.nodes or [])
+
+    def edge_count(self, obj: ProjectAssistantGraphSnapshot) -> int:
+        return len(obj.edges or [])
 
 
 @admin.register(ProjectAssistantThread)

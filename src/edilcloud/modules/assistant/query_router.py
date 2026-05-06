@@ -12,6 +12,8 @@ COUNT_MARKERS = (
     "count",
 )
 LIST_MARKERS = (
+    "elenca",
+    "elencami",
     "elenco",
     "lista",
     "quali sono",
@@ -36,7 +38,11 @@ TEAM_MARKERS = (
     "partecipante",
     "persone",
     "profili",
+    "squadra",
+    "squadre",
+    "operatori",
     "chi lavora",
+    "lavorano",
     "chi e coinvolto",
 )
 TASK_MARKERS = ("task", "attivita di lavoro", "lavorazioni")
@@ -149,21 +155,21 @@ def detect_temporal_scope(question: str) -> str | None:
 
 def default_source_types_for_intent(intent: str) -> list[str]:
     mapping = {
-        "project_summary": ["project", "task", "activity", "post", "comment", "document"],
+        "project_summary": ["project_wiki", "project_graph", "project", "task", "activity", "post", "comment", "document"],
         "company_count": ["project", "team_directory", "task"],
-        "company_list": ["project", "team_directory", "task"],
+        "company_list": ["project_wiki", "project_graph", "project", "team_directory", "task"],
         "team_count": ["team_directory"],
-        "team_list": ["team_directory"],
+        "team_list": ["project_wiki", "project_graph", "team_directory"],
         "task_count": ["task"],
-        "task_list": ["task"],
-        "task_status": ["task", "activity", "post"],
-        "activity_by_date": ["activity", "post", "comment"],
-        "timeline_summary": ["activity", "post", "comment", "document", "photo"],
-        "open_alerts": ["open_alerts_summary", "post", "task", "activity"],
-        "resolved_issues": ["resolved_issues_summary", "post", "task", "activity"],
-        "document_list": ["documents_catalog", "document"],
-        "document_search": ["document", "documents_catalog", "post_attachment", "comment_attachment"],
-        "generic_semantic": ["document", "post", "comment", "post_attachment", "comment_attachment"],
+        "task_list": ["project_wiki", "project_graph", "task"],
+        "task_status": ["project_wiki", "project_graph", "task", "activity", "post"],
+        "activity_by_date": ["project_graph", "activity", "post", "comment"],
+        "timeline_summary": ["project_wiki", "project_graph", "activity", "post", "comment", "document", "photo"],
+        "open_alerts": ["project_wiki", "project_graph", "open_alerts_summary", "post", "task", "activity"],
+        "resolved_issues": ["project_wiki", "project_graph", "resolved_issues_summary", "post", "task", "activity"],
+        "document_list": ["project_wiki", "documents_catalog", "document"],
+        "document_search": ["project_wiki", "project_graph", "document", "documents_catalog", "post_attachment", "comment_attachment"],
+        "generic_semantic": ["project_wiki", "project_graph", "document", "post", "comment", "post_attachment", "comment_attachment"],
     }
     return list(mapping.get(intent, ["project", "document", "post", "comment"]))
 
@@ -219,6 +225,17 @@ def classify_assistant_query(question: str) -> AssistantQueryRoute:
             intent=intent,
             strategy="deterministic_db",
             selected_source_types=default_source_types_for_intent(intent),
+            temporal_scope=temporal_scope,
+            follow_up=follow_up,
+            reasoning=reasoning,
+        )
+
+    if mentions_team and temporal_scope in {"today", "yesterday", "rolling_days"}:
+        reasoning.append("query_team_temporal_activity")
+        return AssistantQueryRoute(
+            intent="activity_by_date",
+            strategy="deterministic_db",
+            selected_source_types=default_source_types_for_intent("activity_by_date"),
             temporal_scope=temporal_scope,
             follow_up=follow_up,
             reasoning=reasoning,
