@@ -27,6 +27,7 @@ services:
     volumes:
       - media_data:/app/media
       - staticfiles_data:/app/staticfiles
+      - test_center_artifacts:/app/.tmp/test-center
 
   assistant-worker:
     restart: unless-stopped
@@ -44,8 +45,27 @@ services:
       - media_data:/app/media
       - staticfiles_data:/app/staticfiles
 
+  loadtest-runner:
+    restart: "no"
+    profiles:
+      - tools
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: edilcloud.settings.prod
+      DEBUG: "false"
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/edilcloud_dn}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - test_center_artifacts:/app/.tmp/test-center
+    command:
+      - python
+      - scripts/run_locust_suite.py
+
 volumes:
   postgres_data:
   redis_data:
   media_data:
   staticfiles_data:
+  test_center_artifacts:

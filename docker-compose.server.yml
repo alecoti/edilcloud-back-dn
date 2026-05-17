@@ -73,6 +73,7 @@ services:
     volumes:
       - ./media:/app/media
       - ./staticfiles:/app/staticfiles
+      - ./.tmp/test-center:/app/.tmp/test-center
     command:
       - sh
       - -c
@@ -113,6 +114,7 @@ services:
     volumes:
       - ./media:/app/media
       - ./staticfiles:/app/staticfiles
+      - ./.tmp/test-center:/app/.tmp/test-center
     command:
       - sh
       - -c
@@ -179,3 +181,20 @@ services:
       - |
         python scripts/wait_for_services.py db:5432 redis:6379 &&
         exec python manage.py run_assistant_indexer --sleep-seconds ${ASSISTANT_INDEXER_POLL_SECONDS:-10} --batch-size ${ASSISTANT_INDEXER_BATCH_SIZE:-4}
+
+  loadtest-runner:
+    build:
+      context: .
+    profiles:
+      - tools
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: edilcloud.settings.prod
+      DEBUG: "false"
+    volumes:
+      - ./.tmp/test-center:/app/.tmp/test-center
+    command:
+      - python
+      - scripts/run_locust_suite.py

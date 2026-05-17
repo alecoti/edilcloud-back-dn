@@ -46,6 +46,30 @@ $env:EDILCLOUD_LOADTEST_PASSWORD="***"
   --fail-on-threshold
 ```
 
+## Esecuzione sul server di produzione
+
+In produzione il Test Center legge gli artefatti dalla cartella condivisa
+`.tmp/test-center/`. Il compose server espone un servizio one-shot
+`loadtest-runner` che usa la stessa immagine del backend ma non serve traffico
+web: esegue Locust, scrive gli artefatti condivisi e termina.
+
+```bash
+docker compose --env-file .env.production -f docker-compose.server.yml \
+  --profile tools run --rm loadtest-runner \
+  python scripts/run_locust_suite.py \
+  --host https://app.edilcloud.eu \
+  --profile read-heavy \
+  --users 5 \
+  --spawn-rate 1 \
+  --run-time 2m \
+  --project-id 26 \
+  --fail-on-threshold
+```
+
+Il volume condiviso e montato sia nel runner sia nei container `web-blue` e
+`web-green`, quindi il report diventa visibile al frontend Test Center appena il
+processo termina.
+
 ## Artefatti prodotti
 
 Il runner scrive una directory sotto `.tmp/test-center/loadtests/` con:

@@ -8,6 +8,7 @@ WORKDIR /app
 COPY pyproject.toml README.md /app/
 COPY demo-assets /app/demo-assets
 COPY docs /app/docs
+COPY loadtests /app/loadtests
 COPY src /app/src
 COPY scripts /app/scripts
 COPY manage.py /app/manage.py
