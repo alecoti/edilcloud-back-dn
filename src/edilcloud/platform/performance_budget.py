@@ -13,7 +13,7 @@ class PerformanceBudgetRule:
     path_pattern: str
     max_p95_ms: float
     max_error_ratio: float = 0.01
-    min_requests: int = 1
+    min_requests: int = 20
 
 
 DEV_PERFORMANCE_BUDGETS: tuple[PerformanceBudgetRule, ...] = (
@@ -146,6 +146,7 @@ def evaluate_runtime_summary(
                 "error_ratio": error_ratio,
                 "max_p95_ms": rule.max_p95_ms,
                 "max_error_ratio": rule.max_error_ratio,
+                "min_requests": rule.min_requests,
                 "status": status,
             }
         )

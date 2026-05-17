@@ -42,7 +42,7 @@ def _quality_issue(
     target: str | None = None,
 ) -> dict[str, Any] | None:
     status = str(report.get("status") or "no_data")
-    if status == "pass":
+    if status in {"pass", "no_data"}:
         return None
 
     commands = [
@@ -129,7 +129,7 @@ def _quality_issue(
 
 def _loadtest_issue(report: dict[str, Any]) -> dict[str, Any] | None:
     status = str(report.get("status") or "no_data")
-    if status == "pass":
+    if status in {"pass", "no_data"}:
         return None
 
     summary = report.get("summary", {})
@@ -219,6 +219,10 @@ def _runtime_budget_issues(performance: dict[str, Any]) -> list[dict[str, Any]]:
                     "Metodo {method}, pattern {pattern}.".format(
                         method=rule.get("method", "GET"),
                         pattern=rule.get("path_pattern", "-"),
+                    ),
+                    "Campione: {requests} richieste su minimo {min_requests}.".format(
+                        requests=rule.get("requests", 0),
+                        min_requests=rule.get("min_requests", 0),
                     ),
                 ],
                 "playbook": [

@@ -243,8 +243,16 @@ jobs:
 
           sync_demo_master() {
             local slot="$1"
-            echo "Syncing Demo Master on slot ${slot}..."
-            compose_cmd exec -T "$(slot_web_service "${slot}")" python manage.py reset_demo_master_project
+            local attempt=1
+            while [ "$attempt" -le 3 ]; do
+              echo "Syncing Demo Master on slot ${slot} (attempt ${attempt}/3)..."
+              if compose_cmd exec -T "$(slot_web_service "${slot}")" python manage.py reset_demo_master_project; then
+                return 0
+              fi
+              sleep $((attempt * 20))
+              attempt=$((attempt + 1))
+            done
+            return 1
           }
 
           slot_port() {

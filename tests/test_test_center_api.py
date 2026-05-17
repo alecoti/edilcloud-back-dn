@@ -448,6 +448,31 @@ def test_test_center_issues_classify_quality_and_loadtest_failures(settings, tmp
 
 
 @pytest.mark.django_db
+def test_test_center_issues_do_not_convert_missing_artifacts_to_quality_failures():
+    reset_metrics()
+    get_user_model().objects.create_superuser(
+        email="ops.no-data@example.com",
+        password="devpass123",
+        username="ops-no-data",
+    )
+    client = Client()
+    headers = auth_headers(client, email="ops.no-data@example.com", password="devpass123")
+
+    response = client.get("/api/v1/test-center/issues", **headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    issue_titles = [issue["title"] for issue in payload["issues"]]
+    assert "Ultimo load test non verde" not in issue_titles
+    assert "Backend quality suite non verde" not in issue_titles
+    assert "Frontend Next quality suite non verde" not in issue_titles
+    assert "Flutter android quality suite non verde" not in issue_titles
+    assert "Flutter iOS quality suite non verde" not in issue_titles
+    assert "Strumentazione incompleta: Frontend Next" in issue_titles
+    assert "Strumentazione incompleta: Flutter" in issue_titles
+
+
+@pytest.mark.django_db
 def test_test_center_actions_build_dry_run_remediation_registry(settings, tmp_path):
     artifact_dir = Path(tmp_path)
     write_quality_report(
