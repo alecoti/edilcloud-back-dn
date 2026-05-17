@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: EdilCloud
+    orgId: 1
+    folder: EdilCloud
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards

@@ -357,3 +357,71 @@ def metrics_summary() -> dict[str, object]:
         "uptime_seconds": round(time() - started_at, 2),
         "http": http_summary,
     }
+
+
+def prometheus_metrics() -> str:
+    snapshot = metrics_snapshot()
+    lines = [
+        "# HELP edilcloud_uptime_seconds Time since telemetry state initialization.",
+        "# TYPE edilcloud_uptime_seconds gauge",
+        f"edilcloud_uptime_seconds {snapshot['uptime_seconds']}",
+    ]
+
+    counters = snapshot.get("counters")
+    if isinstance(counters, dict):
+        lines.extend(
+            [
+                "# HELP edilcloud_counter_total Application counters recorded by EdilCloud.",
+                "# TYPE edilcloud_counter_total counter",
+            ]
+        )
+        for key, value in sorted(counters.items()):
+            name, labels = _parse_metric_key(str(key))
+            labels = {"name": name, **labels}
+            lines.append(
+                "edilcloud_counter_total{labels} {value}".format(
+                    labels=_prometheus_labels(labels),
+                    value=int(value),
+                )
+            )
+
+    timings = snapshot.get("timings")
+    if isinstance(timings, dict):
+        metric_specs = {
+            "count": ("edilcloud_timing_count", "counter"),
+            "sum_ms": ("edilcloud_timing_sum_milliseconds", "counter"),
+            "avg_ms": ("edilcloud_timing_avg_milliseconds", "gauge"),
+            "min_ms": ("edilcloud_timing_min_milliseconds", "gauge"),
+            "p95_ms": ("edilcloud_timing_p95_milliseconds", "gauge"),
+            "p99_ms": ("edilcloud_timing_p99_milliseconds", "gauge"),
+            "max_ms": ("edilcloud_timing_max_milliseconds", "gauge"),
+            "sample_size": ("edilcloud_timing_sample_size", "gauge"),
+        }
+        for metric_name, metric_type in metric_specs.values():
+            lines.extend(
+                [
+                    f"# HELP {metric_name} Application timing metric exported by EdilCloud.",
+                    f"# TYPE {metric_name} {metric_type}",
+                ]
+            )
+        for key, payload in sorted(timings.items()):
+            if not isinstance(payload, dict):
+                continue
+            name, labels = _parse_metric_key(str(key))
+            serialized_labels = _prometheus_labels({"name": name, **labels})
+            for field_name, (metric_name, _metric_type) in metric_specs.items():
+                lines.append(f"{metric_name}{serialized_labels} {payload.get(field_name, 0)}")
+
+    return "\n".join(lines) + "\n"
+
+
+def _prometheus_escape(value: object) -> str:
+    return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+def _prometheus_labels(labels: dict[str, object]) -> str:
+    serialized = ",".join(
+        f'{key}="{_prometheus_escape(value)}"'
+        for key, value in sorted(labels.items())
+    )
+    return "{" + serialized + "}"

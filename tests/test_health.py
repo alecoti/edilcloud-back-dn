@@ -74,6 +74,25 @@ def test_metrics_summary_reports_slowest_endpoints_and_totals():
 
 
 @pytest.mark.django_db
+def test_metrics_prometheus_exports_application_series():
+    reset_metrics()
+    client = Client()
+
+    assert client.get("/api/v1/health").status_code == 200
+
+    response = client.get("/api/v1/health/metrics/prometheus")
+
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("text/plain")
+    body = response.content.decode()
+    assert "edilcloud_uptime_seconds" in body
+    assert "edilcloud_counter_total{" in body
+    assert 'name="http.requests"' in body
+    assert "edilcloud_timing_p95_milliseconds{" in body
+    assert 'name="http.request.duration"' in body
+
+
+@pytest.mark.django_db
 def test_metrics_budget_reports_rules_and_status():
     reset_metrics()
     client = Client()

@@ -3,11 +3,17 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.cache import cache
+from django.http import HttpResponse
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from edilcloud.platform.performance_budget import evaluate_runtime_summary
-from edilcloud.platform.telemetry import metrics_snapshot, metrics_summary, reset_metrics
+from edilcloud.platform.telemetry import (
+    metrics_snapshot,
+    metrics_summary,
+    prometheus_metrics,
+    reset_metrics,
+)
 
 
 class HealthResponse(Schema):
@@ -97,6 +103,14 @@ def metrics_summary_view(request):
     return MetricsSummaryResponse(
         status="ok",
         summary=metrics_summary(),
+    )
+
+
+@router.get("/metrics/prometheus")
+def metrics_prometheus_view(request):
+    return HttpResponse(
+        prometheus_metrics(),
+        content_type="text/plain; version=0.0.4; charset=utf-8",
     )
 
 
