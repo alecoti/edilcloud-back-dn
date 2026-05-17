@@ -49,8 +49,7 @@ class MetricsResetResponse(Schema):
 router = Router(tags=["health"])
 
 
-@router.get("", response=HealthResponse)
-def healthcheck(request):
+def build_health_payload() -> dict[str, str]:
     timezone_name = getattr(settings, "TIME_ZONE", "UTC")
     now = datetime.now(ZoneInfo(timezone_name))
     cache_status = "ok"
@@ -63,21 +62,26 @@ def healthcheck(request):
         cache_status = "error"
 
     realtime_status = "ok" if getattr(settings, "CHANNEL_LAYERS", None) else "disabled"
-    return HealthResponse(
-        status="ok",
-        service="edilcloud-back-dn",
-        version=getattr(settings, "APP_VERSION", "0.1.0-dev"),
-        environment=getattr(settings, "APP_ENV", "local"),
-        timezone=timezone_name,
-        now=now.isoformat(),
-        cache=cache_status,
-        realtime=realtime_status,
-        log_format=getattr(settings, "LOG_FORMAT", "console"),
-        log_level=getattr(settings, "LOG_LEVEL", "INFO"),
-        sentry="configured" if getattr(settings, "SENTRY_DSN", "") else "disabled",
-        openai="configured" if getattr(settings, "OPENAI_API_KEY", "") else "disabled",
-        vector_store="pgvector" if getattr(settings, "OPENAI_API_KEY", "") else "disabled",
-    )
+    return {
+        "status": "ok",
+        "service": "edilcloud-back-dn",
+        "version": getattr(settings, "APP_VERSION", "0.1.0-dev"),
+        "environment": getattr(settings, "APP_ENV", "local"),
+        "timezone": timezone_name,
+        "now": now.isoformat(),
+        "cache": cache_status,
+        "realtime": realtime_status,
+        "log_format": getattr(settings, "LOG_FORMAT", "console"),
+        "log_level": getattr(settings, "LOG_LEVEL", "INFO"),
+        "sentry": "configured" if getattr(settings, "SENTRY_DSN", "") else "disabled",
+        "openai": "configured" if getattr(settings, "OPENAI_API_KEY", "") else "disabled",
+        "vector_store": "pgvector" if getattr(settings, "OPENAI_API_KEY", "") else "disabled",
+    }
+
+
+@router.get("", response=HealthResponse)
+def healthcheck(request):
+    return HealthResponse(**build_health_payload())
 
 
 @router.get("/metrics", response=MetricsResponse)

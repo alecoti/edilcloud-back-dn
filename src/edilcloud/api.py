@@ -17,6 +17,7 @@ from edilcloud.modules.projects.api import (
 from edilcloud.modules.search.api import router as search_router
 from edilcloud.modules.workspaces.api import companies_router, router as workspaces_router
 from edilcloud.platform.api.health import router as health_router
+from edilcloud.platform.api.test_center import router as test_center_router
 
 api = NinjaAPI(
     title="EdilCloud API",
@@ -25,6 +26,7 @@ api = NinjaAPI(
 )
 
 api.add_router("/health", health_router)
+api.add_router("/test-center", test_center_router)
 api.add_router("/auth", identity_router)
 api.add_router("/billing", billing_router)
 api.add_router("/workspaces", workspaces_router)
