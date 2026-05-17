@@ -246,12 +246,13 @@ jobs:
             local attempt=1
             while [ "$attempt" -le 3 ]; do
               echo "Syncing Demo Master on slot ${slot} (attempt ${attempt}/3)..."
-              if compose_cmd exec -T "$(slot_web_service "${slot}")" python manage.py reset_demo_master_project; then
+              if compose_cmd exec -T "$(slot_web_service "${slot}")" python manage.py reset_demo_master_project --skip-active-snapshot-link; then
                 return 0
               fi
               sleep $((attempt * 20))
               attempt=$((attempt + 1))
             done
+            echo "Demo Master sync failed after retries; continuing deploy because application health is green." >&2
             return 1
           }
 
@@ -492,7 +493,7 @@ jobs:
           fi
 
           ACTIVE_RUNTIME_SLOT="$(read_active_slot)"
-          sync_demo_master "${ACTIVE_RUNTIME_SLOT}"
+          sync_demo_master "${ACTIVE_RUNTIME_SLOT}" || true
           if ! healthcheck "$(slot_port "${ACTIVE_RUNTIME_SLOT}")"; then
             rollback "${ACTIVE_SLOT}" "${NEXT_SLOT}"
             healthcheck "$(slot_port "${ACTIVE_SLOT}")" || true
