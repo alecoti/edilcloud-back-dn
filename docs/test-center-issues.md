@@ -36,7 +36,7 @@ Ogni issue contiene:
 
 | Campo | Scopo |
 | --- | --- |
-| `id` | identificatore stabile derivato da sorgente, piattaforma e categoria |
+| `id` | identificatore stabile derivato da categoria, piattaforma e target logico |
 | `status` | stato operativo della issue, oggi sempre `open` |
 | `severity` | `critical`, `warning` o `info` |
 | `platform` | `backend`, `frontend-next`, `flutter` o altra piattaforma futura |
@@ -69,17 +69,38 @@ Il builder legge l'overview del Test Center e genera issue da:
 - quality suite backend/frontend/flutter non verde
 - piattaforme ancora in `pending_instrumentation`
 
+## Ciclo di vita
+
+Le issue correnti espongono ora anche `verification`, cioe l'ultima run del
+ledger associata allo stesso identificatore stabile. Questo permette di leggere:
+
+- quale tentativo ha verificato per ultimo la issue;
+- se l'ultima verifica e stata `pass`, `fail`, `planned` o `running`;
+- quale operazione e stata eseguita;
+- quale action ha prodotto la run.
+
+La risposta dell'endpoint include inoltre `recently_resolved`: issue che non
+sono piu presenti tra i segnali correnti e la cui ultima run collegata e `pass`.
+Questa lista non sostituisce ancora uno storico persistente completo, ma chiude
+il primo ciclo operativo:
+
+```text
+issue aperta -> action -> run -> nuova lettura segnali -> issue ancora aperta o risolta di recente
+```
+
+Perche questo funzioni nel tempo gli ID non dipendono piu dal singolo artifact o
+dal valore puntuale di p95: una quality issue frontend, una runtime rule o un
+profilo Locust mantengono la stessa identita logica attraverso piu report.
+
 ## Prossimo passo agentico
 
-Il prossimo blocco naturale e aggiungere un registro azioni, separato dalla
-generazione issue:
+Il prossimo blocco naturale e trasformare il ciclo di vita in stato persistente:
 
-1. selezione issue
-2. proposta azione
-3. dry-run o rerun test
-4. esecuzione controllata
-5. verifica post-azione
-6. marcatura issue come risolta o ancora aperta
+1. snapshot storico delle transizioni `open`, `verified`, `resolved`, `reopened`
+2. SLA di permanenza e aging delle issue
+3. trigger automatici solo per casi `candidate`
+4. confronto tra verifica passata e nuova evidenza
+5. escalation quando una issue resta aperta oltre soglia
 
 L'agente non deve modificare codice finche non ha:
 

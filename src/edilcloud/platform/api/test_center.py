@@ -67,6 +67,7 @@ class TestCenterIssuesResponse(Schema):
     status: str
     summary: dict[str, Any]
     issues: list[dict[str, Any]]
+    recently_resolved: list[dict[str, Any]]
 
 
 class TestCenterActionsResponse(Schema):

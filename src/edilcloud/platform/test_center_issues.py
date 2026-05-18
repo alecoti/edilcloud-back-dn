@@ -4,6 +4,7 @@ import hashlib
 from typing import Any
 
 from edilcloud.platform.test_center import build_test_center_overview
+from edilcloud.platform.test_center_run_ledger import load_action_run_history
 
 
 ISSUE_LIMIT = 100
@@ -91,7 +92,7 @@ def _quality_issue(
             ]
 
     return {
-        "id": _issue_id("quality", platform, target, report.get("id"), status),
+        "id": _issue_id("quality", platform, target),
         "status": "open",
         "severity": _severity_from_status(status),
         "platform": platform,
@@ -145,7 +146,7 @@ def _loadtest_issue(report: dict[str, Any]) -> dict[str, Any] | None:
         evidence.append(f"Artefatto: {report['source_path']}.")
 
     return {
-        "id": _issue_id("loadtest", report.get("id"), status),
+        "id": _issue_id("loadtest", report.get("profile") or "latest"),
         "status": "open",
         "severity": "critical" if status == "fail" else "info",
         "platform": "backend",
@@ -193,7 +194,7 @@ def _runtime_budget_issues(performance: dict[str, Any]) -> list[dict[str, Any]]:
         key = str(rule.get("key") or "runtime-budget")
         issues.append(
             {
-                "id": _issue_id("runtime-budget", key, rule.get("p95_ms")),
+                "id": _issue_id("runtime-budget", key),
                 "status": "open",
                 "severity": "critical",
                 "platform": "backend",
@@ -298,6 +299,87 @@ def _sort_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
+def _latest_runs_by_issue_id() -> dict[str, dict[str, Any]]:
+    history = load_action_run_history(limit=200)
+    latest: dict[str, dict[str, Any]] = {}
+    for run in history.get("runs", []):
+        if not isinstance(run, dict):
+            continue
+        issue_id = str(run.get("issue_id") or "")
+        if not issue_id or issue_id in latest:
+            continue
+        latest[issue_id] = run
+    return latest
+
+
+def _verification_from_run(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "run_id": run.get("id"),
+        "status": run.get("status"),
+        "operation": run.get("operation"),
+        "summary": run.get("summary"),
+        "finished_at": run.get("finished_at") or run.get("generated_at"),
+        "action_id": run.get("action_id"),
+    }
+
+
+def _resolved_title(run: dict[str, Any]) -> str:
+    platform = str(run.get("platform") or "piattaforma")
+    target = run.get("target")
+    category = str(run.get("category") or "issue")
+    if category == "quality":
+        return _quality_title(platform, str(target) if target else None)
+    if category == "performance":
+        return "Ultimo load test non verde"
+    if category == "runtime-budget":
+        return "Runtime budget rientrato dopo verifica"
+    if category == "instrumentation":
+        return f"Strumentazione collegata: {platform}"
+    return f"Issue risolta: {platform}"
+
+
+def _recently_resolved_issues(
+    current_issue_ids: set[str],
+    latest_runs: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    resolved: list[dict[str, Any]] = []
+    for issue_id, run in latest_runs.items():
+        if issue_id in current_issue_ids or run.get("status") != "pass":
+            continue
+        resolved.append(
+            {
+                "id": issue_id,
+                "status": "resolved",
+                "severity": "info",
+                "platform": str(run.get("platform") or "unknown"),
+                "target": run.get("target"),
+                "category": str(run.get("category") or "unknown"),
+                "title": _resolved_title(run),
+                "summary": str(run.get("summary") or "Verifica completata con esito pass."),
+                "resolved_at": run.get("finished_at") or run.get("generated_at"),
+                "verification": _verification_from_run(run),
+            }
+        )
+    return sorted(
+        resolved,
+        key=lambda item: str(item.get("resolved_at") or ""),
+        reverse=True,
+    )[:20]
+
+
+def _attach_latest_verification(
+    issues: list[dict[str, Any]],
+    latest_runs: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for issue in issues:
+        issue_copy = dict(issue)
+        run = latest_runs.get(str(issue.get("id") or ""))
+        issue_copy["verification"] = _verification_from_run(run) if run else None
+        enriched.append(issue_copy)
+    return enriched
+
+
 def build_test_center_issues() -> dict[str, Any]:
     overview = build_test_center_overview()
     issues: list[dict[str, Any]] = []
@@ -321,22 +403,30 @@ def build_test_center_issues() -> dict[str, Any]:
             issues.append(issue)
 
     sorted_issues = _sort_issues(issues)[:ISSUE_LIMIT]
+    latest_runs = _latest_runs_by_issue_id()
+    enriched_issues = _attach_latest_verification(sorted_issues, latest_runs)
+    recently_resolved = _recently_resolved_issues(
+        {str(issue.get("id") or "") for issue in sorted_issues},
+        latest_runs,
+    )
     return {
         "generated_at": overview["generated_at"],
-        "status": "ok" if not sorted_issues else "attention",
+        "status": "ok" if not enriched_issues else "attention",
         "summary": {
-            "total": len(sorted_issues),
-            "critical": sum(issue["severity"] == "critical" for issue in sorted_issues),
-            "warning": sum(issue["severity"] == "warning" for issue in sorted_issues),
-            "info": sum(issue["severity"] == "info" for issue in sorted_issues),
+            "total": len(enriched_issues),
+            "critical": sum(issue["severity"] == "critical" for issue in enriched_issues),
+            "warning": sum(issue["severity"] == "warning" for issue in enriched_issues),
+            "info": sum(issue["severity"] == "info" for issue in enriched_issues),
             "autofix_candidates": sum(
                 issue.get("automation", {}).get("state") == "candidate"
-                for issue in sorted_issues
+                for issue in enriched_issues
             ),
             "manual_review_required": sum(
                 issue.get("automation", {}).get("state") == "manual_review_required"
-                for issue in sorted_issues
+                for issue in enriched_issues
             ),
+            "recently_resolved": len(recently_resolved),
         },
-        "issues": sorted_issues,
+        "issues": enriched_issues,
+        "recently_resolved": recently_resolved,
     }

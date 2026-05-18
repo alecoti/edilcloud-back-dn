@@ -448,6 +448,125 @@ def test_test_center_issues_classify_quality_and_loadtest_failures(settings, tmp
 
 
 @pytest.mark.django_db
+def test_test_center_issues_keep_stable_ids_and_attach_latest_verification(settings, tmp_path):
+    artifact_dir = Path(tmp_path)
+    write_quality_report(
+        artifact_dir,
+        "frontend-a",
+        {
+            "engine": "quality-suite",
+            "status": "fail",
+            "generated_at": "2026-05-17T09:05:00Z",
+            "platform": "frontend-next",
+            "suite": "quality",
+            "summary": {"commands": 2, "passed": 1, "failed": 1, "skipped": 0},
+            "commands": [
+                {"key": "frontend-eslint", "label": "Frontend ESLint", "status": "pass"},
+                {"key": "frontend-build", "label": "Frontend build", "status": "fail"},
+            ],
+        },
+    )
+    write_action_run(
+        artifact_dir,
+        "frontend-fail-verification",
+        {
+            "status": "fail",
+            "mode": "dry_run",
+            "action_id": "action-frontend",
+            "issue_id": "2d00d516d361b8b6",
+            "operation": "rerun_quality_suite",
+            "platform": "frontend-next",
+            "category": "quality",
+            "generated_at": "2026-05-17T10:00:00Z",
+            "finished_at": "2026-05-17T10:00:08Z",
+            "summary": "Frontend quality ancora non verde.",
+        },
+    )
+    settings.TEST_CENTER_ARTIFACT_DIR = str(artifact_dir)
+    get_user_model().objects.create_superuser(
+        email="ops.lifecycle@example.com",
+        password="devpass123",
+        username="ops-lifecycle",
+    )
+    client = Client()
+    headers = auth_headers(client, email="ops.lifecycle@example.com", password="devpass123")
+
+    first_response = client.get("/api/v1/test-center/issues", **headers)
+    assert first_response.status_code == 200
+    first_issue = next(
+        issue
+        for issue in first_response.json()["issues"]
+        if issue["platform"] == "frontend-next" and issue["category"] == "quality"
+    )
+    assert first_issue["id"] == "2d00d516d361b8b6"
+    assert first_issue["verification"]["status"] == "fail"
+    assert first_issue["verification"]["summary"] == "Frontend quality ancora non verde."
+
+    write_quality_report(
+        artifact_dir,
+        "frontend-b",
+        {
+            "engine": "quality-suite",
+            "status": "fail",
+            "generated_at": "2026-05-17T11:05:00Z",
+            "platform": "frontend-next",
+            "suite": "quality",
+            "summary": {"commands": 2, "passed": 1, "failed": 1, "skipped": 0},
+            "commands": [
+                {"key": "frontend-eslint", "label": "Frontend ESLint", "status": "pass"},
+                {"key": "frontend-build", "label": "Frontend build", "status": "fail"},
+            ],
+        },
+    )
+    second_issue = next(
+        issue
+        for issue in client.get("/api/v1/test-center/issues", **headers).json()["issues"]
+        if issue["platform"] == "frontend-next" and issue["category"] == "quality"
+    )
+    assert second_issue["id"] == first_issue["id"]
+
+
+@pytest.mark.django_db
+def test_test_center_issues_expose_recently_resolved_after_pass_run(settings, tmp_path):
+    artifact_dir = Path(tmp_path)
+    write_action_run(
+        artifact_dir,
+        "frontend-pass-verification",
+        {
+            "status": "pass",
+            "mode": "dry_run",
+            "action_id": "action-frontend",
+            "issue_id": "2d00d516d361b8b6",
+            "operation": "rerun_quality_suite",
+            "platform": "frontend-next",
+            "category": "quality",
+            "generated_at": "2026-05-17T10:00:00Z",
+            "finished_at": "2026-05-17T10:00:08Z",
+            "summary": "Frontend quality tornata verde.",
+        },
+    )
+    settings.TEST_CENTER_ARTIFACT_DIR = str(artifact_dir)
+    get_user_model().objects.create_superuser(
+        email="ops.resolved@example.com",
+        password="devpass123",
+        username="ops-resolved",
+    )
+    client = Client()
+    headers = auth_headers(client, email="ops.resolved@example.com", password="devpass123")
+
+    response = client.get("/api/v1/test-center/issues", **headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["recently_resolved"] == 1
+    resolved = payload["recently_resolved"][0]
+    assert resolved["id"] == "2d00d516d361b8b6"
+    assert resolved["status"] == "resolved"
+    assert resolved["verification"]["status"] == "pass"
+    assert resolved["verification"]["operation"] == "rerun_quality_suite"
+
+
+@pytest.mark.django_db
 def test_test_center_issues_do_not_convert_missing_artifacts_to_quality_failures():
     reset_metrics()
     get_user_model().objects.create_superuser(
