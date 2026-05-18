@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 from typing import Any
 
@@ -139,14 +140,87 @@ def _validate_action(action: dict[str, Any], *, action_id: str, operation: str) 
         raise TestCenterActionRunError(f"Action {action_id} bloccata.")
 
 
-def _write_payload(action_id: str, operation: str, payload: dict[str, Any]) -> Path:
+def _write_payload(
+    action_id: str,
+    operation: str,
+    payload: dict[str, Any],
+    *,
+    state: str,
+) -> tuple[str, Path]:
     root = _artifact_root()
-    run_name = f"{_timestamp()}--{_slug(action_id)}--{_slug(operation)}--planned"
+    run_name = f"{_timestamp()}--{_slug(action_id)}--{_slug(operation)}--{_slug(state)}"
     run_dir = root / ".tmp" / "test-center" / "action-runs" / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = run_dir / "action-run.json"
     artifact_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    return artifact_path
+    return run_name, artifact_path
+
+
+def _base_payload(
+    *,
+    action: dict[str, Any],
+    action_id: str,
+    operation: str,
+    actor_id: str,
+    actor_label: str,
+    approved_by: str | None,
+    note: str,
+    command: list[str],
+    summary: str,
+    status: str,
+) -> dict[str, Any]:
+    source_issue = action.get("source_issue") if isinstance(action.get("source_issue"), dict) else {}
+    audit = action.get("audit") if isinstance(action.get("audit"), dict) else {}
+    evidence = [
+        f"Action state: {action.get('state')}",
+        f"Risk: {action.get('risk')}",
+        (
+            "Esecuzione avviata da API Test Center."
+            if status == "running"
+            else "Preparazione generata da API Test Center."
+        ),
+    ]
+    if note.strip():
+        evidence.append(f"Nota operatore: {note.strip()[:240]}")
+
+    return {
+        "status": status,
+        "mode": "dry_run",
+        "action_id": action_id,
+        "issue_id": str(action.get("issue_id") or source_issue.get("id") or "") or None,
+        "operation": operation,
+        "platform": str(action.get("platform") or "unknown"),
+        "target": action.get("target"),
+        "category": str(action.get("category") or "unknown"),
+        "generated_at": _utc_now(),
+        "started_at": _utc_now() if status == "running" else None,
+        "finished_at": None,
+        "duration_seconds": 0.0,
+        "actor": {
+            "kind": "superuser",
+            "id": actor_id,
+            "label": actor_label or actor_id,
+        },
+        "command": _command_text(command),
+        "cwd": str(Path(getattr(settings, "BASE_DIR", ".")).resolve()),
+        "returncode": None,
+        "summary": summary,
+        "stdout_tail": "",
+        "stderr_tail": "",
+        "artifacts": {},
+        "evidence": evidence,
+        "next_step": (
+            "Attendere il completamento del runner e leggere stdout/stderr dalla run."
+            if status == "running"
+            else "Eseguire l'operazione controllata solo dopo review delle evidenze e delle soglie."
+        ),
+        "audit": {
+            "will_modify_code": False,
+            "will_touch_production": False,
+            "approval_required": bool(audit.get("requires_operator_approval", True)),
+            "approved_by": approved_by or None,
+        },
+    }
 
 
 def prepare_action_run(
@@ -177,54 +251,153 @@ def prepare_action_run(
         loadtest_run_time=loadtest_run_time,
     )
 
-    source_issue = action.get("source_issue") if isinstance(action.get("source_issue"), dict) else {}
-    audit = action.get("audit") if isinstance(action.get("audit"), dict) else {}
-    evidence = [
-        f"Action state: {action.get('state')}",
-        f"Risk: {action.get('risk')}",
-        "Preparazione generata da API Test Center.",
-    ]
-    if note.strip():
-        evidence.append(f"Nota operatore: {note.strip()[:240]}")
-
-    payload = {
-        "status": "planned",
-        "mode": "dry_run",
-        "action_id": action_id,
-        "issue_id": str(action.get("issue_id") or source_issue.get("id") or "") or None,
-        "operation": operation,
-        "platform": str(action.get("platform") or "unknown"),
-        "target": action.get("target"),
-        "category": str(action.get("category") or "unknown"),
-        "generated_at": _utc_now(),
-        "started_at": None,
-        "finished_at": None,
-        "duration_seconds": 0.0,
-        "actor": {
-            "kind": "superuser",
-            "id": actor_id,
-            "label": actor_label or actor_id,
-        },
-        "command": _command_text(command),
-        "cwd": str(Path(getattr(settings, "BASE_DIR", ".")).resolve()),
-        "returncode": None,
-        "summary": summary,
-        "stdout_tail": "",
-        "stderr_tail": "",
-        "artifacts": {},
-        "evidence": evidence,
-        "next_step": (
-            "Eseguire l'operazione controllata solo dopo review delle evidenze e delle soglie."
-        ),
-        "audit": {
-            "will_modify_code": False,
-            "will_touch_production": False,
-            "approval_required": bool(audit.get("requires_operator_approval", True)),
-            "approved_by": approved_by or None,
-        },
-    }
-    artifact_path = _write_payload(action_id, operation, payload)
+    payload = _base_payload(
+        action=action,
+        action_id=action_id,
+        operation=operation,
+        actor_id=actor_id,
+        actor_label=actor_label,
+        approved_by=approved_by,
+        note=note,
+        command=command,
+        summary=summary,
+        status="planned",
+    )
+    _run_name, artifact_path = _write_payload(
+        action_id,
+        operation,
+        payload,
+        state="planned",
+    )
     run = load_action_run_from_path(artifact_path)
     if run is None:
         raise TestCenterActionRunError("Run preparata ma artifact non leggibile.")
+    return run
+
+
+def _validate_launch_approval(action: dict[str, Any], *, approved_by: str | None) -> None:
+    audit = action.get("audit") if isinstance(action.get("audit"), dict) else {}
+    if (bool(audit.get("requires_operator_approval")) or action.get("state") == "needs_human_review") and not approved_by:
+        raise TestCenterActionRunError("L'esecuzione richiede approvazione operatore.")
+
+
+def _runner_command(
+    *,
+    action_id: str,
+    operation: str,
+    actor_id: str,
+    actor_label: str,
+    approved_by: str | None,
+    run_name: str,
+    loadtest_profile: str,
+    loadtest_host: str,
+    loadtest_users: int,
+    loadtest_spawn_rate: float,
+    loadtest_run_time: str,
+) -> list[str]:
+    command = [
+        sys.executable,
+        "scripts/run_test_center_action.py",
+        "--action-id",
+        action_id,
+        "--operation",
+        operation,
+        "--actor-kind",
+        "superuser",
+        "--actor-id",
+        actor_id,
+        "--actor-label",
+        actor_label or actor_id,
+        "--run-name",
+        run_name,
+    ]
+    if approved_by:
+        command.extend(["--approved-by", approved_by])
+    if operation == "rerun_loadtest_suite":
+        command.extend(
+            [
+                "--loadtest-profile",
+                loadtest_profile,
+                "--loadtest-host",
+                loadtest_host,
+                "--loadtest-users",
+                str(loadtest_users),
+                "--loadtest-spawn-rate",
+                str(loadtest_spawn_rate),
+                "--loadtest-run-time",
+                loadtest_run_time,
+            ]
+        )
+    return command
+
+
+def launch_action_run(
+    *,
+    action_id: str,
+    operation: str,
+    actor_id: str,
+    actor_label: str,
+    approved_by: str | None = None,
+    note: str = "",
+    loadtest_profile: str = "read-heavy",
+    loadtest_host: str = "http://localhost:3000",
+    loadtest_users: int = 10,
+    loadtest_spawn_rate: float = 5.0,
+    loadtest_run_time: str = "2m",
+) -> dict[str, Any]:
+    action = build_test_center_action_detail(action_id)
+    if action is None:
+        raise TestCenterActionRunError(f"Azione Test Center non trovata: {action_id}.")
+    _validate_action(action, action_id=action_id, operation=operation)
+    _validate_launch_approval(action, approved_by=approved_by)
+    command, summary = _build_operation_plan(
+        action,
+        operation=operation,
+        loadtest_profile=loadtest_profile,
+        loadtest_host=loadtest_host,
+        loadtest_users=loadtest_users,
+        loadtest_spawn_rate=loadtest_spawn_rate,
+        loadtest_run_time=loadtest_run_time,
+    )
+    payload = _base_payload(
+        action=action,
+        action_id=action_id,
+        operation=operation,
+        actor_id=actor_id,
+        actor_label=actor_label,
+        approved_by=approved_by,
+        note=note,
+        command=command,
+        summary=f"{summary} Esecuzione avviata.",
+        status="running",
+    )
+    run_name, artifact_path = _write_payload(
+        action_id,
+        operation,
+        payload,
+        state="running",
+    )
+    runner_command = _runner_command(
+        action_id=action_id,
+        operation=operation,
+        actor_id=actor_id,
+        actor_label=actor_label,
+        approved_by=approved_by,
+        run_name=run_name,
+        loadtest_profile=loadtest_profile,
+        loadtest_host=loadtest_host,
+        loadtest_users=loadtest_users,
+        loadtest_spawn_rate=loadtest_spawn_rate,
+        loadtest_run_time=loadtest_run_time,
+    )
+    subprocess.Popen(
+        runner_command,
+        cwd=Path(getattr(settings, "BASE_DIR", ".")).resolve(),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    run = load_action_run_from_path(artifact_path)
+    if run is None:
+        raise TestCenterActionRunError("Run avviata ma artifact non leggibile.")
     return run

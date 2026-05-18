@@ -179,3 +179,17 @@ Per scrivere solo un run `planned`, senza subprocess:
   --operation rerun_quality_suite `
   --plan-only
 ```
+
+## Avvio asincrono via dashboard
+
+Quando il frontend usa `POST /api/v1/test-center/actions/{action_id}/runs/launch`:
+
+1. il backend crea subito una run `running`;
+2. lancia il wrapper controllato in background;
+3. il wrapper usa la stessa directory della run per sovrascrivere l'artifact
+   finale con esito, durata e log;
+4. il frontend puo aprire immediatamente il dettaglio run e ricaricarlo fino
+   alla conclusione.
+
+Questo evita richieste HTTP bloccate durante suite lunghe come Locust e mantiene
+un solo record auditabile per tutto il ciclo di esecuzione.

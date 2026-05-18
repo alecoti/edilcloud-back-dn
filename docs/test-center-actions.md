@@ -108,6 +108,30 @@ Guardrail:
 - rifiuta operazioni non presenti in `allowed_operations`
 - richiede `--approved-by` se la action e in `needs_human_review`
 
+## Avvio da frontend
+
+Le action possono ora essere gestite anche dalla dashboard:
+
+```text
+POST /api/v1/test-center/actions/{action_id}/runs/plan
+POST /api/v1/test-center/actions/{action_id}/runs/launch
+```
+
+- `plan` registra soltanto una run `planned`;
+- `launch` registra subito una run `running` e avvia in background il runner
+  controllato;
+- il runner scrive poi il risultato finale nella stessa run del ledger,
+  trasformandola in `pass` o `fail`.
+
+La pagina frontend di dettaglio action espone entrambe le scelte:
+
+- `Prepara dry-run`
+- `Avvia test`
+
+In questo modo il Test Center non e piu solo consultivo: il superuser puo
+rilanciare dal browser le operazioni whitelisted gia collegate alle issue,
+seguire l'esecuzione e leggere stdout/stderr senza entrare nel server.
+
 Per preparare un tentativo senza eseguire il comando:
 
 ```powershell

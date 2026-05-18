@@ -16,6 +16,7 @@ from edilcloud.platform.test_center_actions import (
 )
 from edilcloud.platform.test_center_action_runs import (
     TestCenterActionRunError,
+    launch_action_run,
     prepare_action_run,
 )
 from edilcloud.platform.test_center_artifacts import (
@@ -235,6 +236,37 @@ def prepare_test_center_action_run(
     actor_label = getattr(user, "email", "") or getattr(user, "username", "") or str(user.pk)
     try:
         return prepare_action_run(
+            action_id=action_id,
+            operation=payload.operation,
+            actor_id=str(user.pk),
+            actor_label=actor_label,
+            approved_by=payload.approved_by,
+            note=payload.note,
+            loadtest_profile=payload.loadtest_profile,
+            loadtest_host=payload.loadtest_host,
+            loadtest_users=payload.loadtest_users,
+            loadtest_spawn_rate=payload.loadtest_spawn_rate,
+            loadtest_run_time=payload.loadtest_run_time,
+        )
+    except TestCenterActionRunError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post(
+    "/actions/{action_id}/runs/launch",
+    response=TestCenterActionRunResponse,
+    auth=auth,
+)
+def launch_test_center_action_run(
+    request,
+    action_id: str,
+    payload: TestCenterPrepareActionRunRequest,
+):
+    require_superuser(request)
+    user = request.auth.user
+    actor_label = getattr(user, "email", "") or getattr(user, "username", "") or str(user.pk)
+    try:
+        return launch_action_run(
             action_id=action_id,
             operation=payload.operation,
             actor_id=str(user.pk),

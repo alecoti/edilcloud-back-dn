@@ -541,6 +541,81 @@ def test_test_center_actions_build_dry_run_remediation_registry(settings, tmp_pa
 
 
 @pytest.mark.django_db
+def test_test_center_action_run_launch_starts_background_execution(monkeypatch, settings, tmp_path):
+    artifact_dir = Path(tmp_path)
+    write_quality_report(
+        artifact_dir,
+        "frontend",
+        {
+            "engine": "quality-suite",
+            "status": "fail",
+            "generated_at": "2026-05-17T09:05:00Z",
+            "platform": "frontend-next",
+            "suite": "quality",
+            "summary": {"commands": 2, "passed": 1, "failed": 1, "skipped": 0},
+            "commands": [
+                {"key": "frontend-eslint", "label": "Frontend ESLint", "status": "pass"},
+                {
+                    "key": "frontend-build",
+                    "label": "Frontend build",
+                    "status": "fail",
+                    "command": "pnpm build",
+                    "stderr_tail": "Type error",
+                },
+            ],
+        },
+    )
+    settings.TEST_CENTER_ARTIFACT_DIR = str(artifact_dir)
+    settings.BASE_DIR = artifact_dir
+    get_user_model().objects.create_superuser(
+        email="ops.launch@example.com",
+        password="devpass123",
+        username="ops-launch",
+    )
+    client = Client()
+    headers = auth_headers(client, email="ops.launch@example.com", password="devpass123")
+    actions = client.get("/api/v1/test-center/actions", **headers).json()["actions"]
+    action = next(
+        item
+        for item in actions
+        if item["platform"] == "frontend-next" and item["category"] == "quality"
+    )
+    captured: dict = {}
+
+    class FakePopen:
+        def __init__(self, command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(
+        "edilcloud.platform.test_center_action_runs.subprocess.Popen",
+        FakePopen,
+    )
+
+    response = client.post(
+        f"/api/v1/test-center/actions/{action['id']}/runs/launch",
+        data=json.dumps(
+                {
+                    "operation": "rerun_quality_suite",
+                    "approved_by": "ops@example.com",
+                    "note": "lancio da frontend",
+                }
+        ),
+        content_type="application/json",
+        **headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "running"
+    assert payload["operation"] == "rerun_quality_suite"
+    assert payload["summary"].endswith("Esecuzione avviata.")
+    assert "scripts/run_test_center_action.py" in captured["command"]
+    assert "--run-name" in captured["command"]
+    assert captured["kwargs"]["cwd"] == artifact_dir.resolve()
+
+
+@pytest.mark.django_db
 def test_test_center_action_run_ledger_history_filter_and_detail(settings, tmp_path):
     artifact_dir = Path(tmp_path)
     write_action_run(
