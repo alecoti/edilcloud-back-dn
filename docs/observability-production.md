@@ -34,6 +34,14 @@ docker compose --env-file .env.production -f docker-compose.server.yml up -d \
   blackbox-exporter loki tempo alloy grafana
 ```
 
+Il deploy di produzione esegue automaticamente lo stesso avvio dopo il rilascio del backend e verifica che:
+
+- Prometheus risponda su `/-/ready`;
+- Grafana risponda su `/api/health`;
+- i volumi runtime siano preparati con owner coerenti per Prometheus, Loki, Tempo e Grafana.
+
+Questo evita che la piattaforma torni senza osservabilita dopo un deploy o che i container restino in restart loop per permessi errati sui bind mount.
+
 ## Prime viste disponibili
 
 - `EdilCloud Operations`: CPU, memoria, disco, health pubblica, p95 backend,
@@ -61,10 +69,11 @@ Le serie principali sono:
 ## Prossimi innesti
 
 1. Collegare OTLP del backend a Alloy per popolare Tempo.
-2. Aggiungere alert rule Prometheus/Grafana per:
+2. Pubblicare Grafana su un dominio dedicato dietro HTTPS, per esempio `grafana.edilcloud.eu`, lasciando Prometheus solo locale.
+3. Aggiungere alert rule Prometheus/Grafana per:
    - CPU, memoria e disco;
    - probe pubbliche fallite;
    - p95 route core;
    - error ratio HTTP;
    - database e Redis down.
-3. Inserire link Grafana dal Test Center per issue, route e finestre temporali.
+4. Inserire link Grafana dal Test Center per issue, route e finestre temporali.
