@@ -241,21 +241,6 @@ jobs:
             run_priv docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
           }
 
-          sync_demo_master() {
-            local slot="$1"
-            local attempt=1
-            while [ "$attempt" -le 3 ]; do
-              echo "Syncing Demo Master on slot ${slot} (attempt ${attempt}/3)..."
-              if compose_cmd exec -T "$(slot_web_service "${slot}")" python manage.py reset_demo_master_project --skip-active-snapshot-link; then
-                return 0
-              fi
-              sleep $((attempt * 20))
-              attempt=$((attempt + 1))
-            done
-            echo "Demo Master sync failed after retries; continuing deploy because application health is green." >&2
-            return 1
-          }
-
           slot_port() {
             case "$1" in
               blue) printf '%s\n' "${BACKEND_BLUE_PORT}" ;;
@@ -493,7 +478,6 @@ jobs:
           fi
 
           ACTIVE_RUNTIME_SLOT="$(read_active_slot)"
-          sync_demo_master "${ACTIVE_RUNTIME_SLOT}" || true
           if ! healthcheck "$(slot_port "${ACTIVE_RUNTIME_SLOT}")"; then
             rollback "${ACTIVE_SLOT}" "${NEXT_SLOT}"
             healthcheck "$(slot_port "${ACTIVE_SLOT}")" || true

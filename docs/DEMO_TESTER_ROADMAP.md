@@ -818,7 +818,7 @@ Completato:
 - corretto il payload snapshot del Demo Master, ora JSON-serializable anche con `date` e `datetime`;
 - creato il freeze point `v2026.04-freeze01` del demo corrente;
 - il Dockerfile backend include ora `demo-assets` e `docs`, cosi' il runtime production ha accesso agli asset/demo metadata necessari;
-- il deploy production backend esegue automaticamente `reset_demo_master_project` a fine rilascio, cosi' il Demo Master viene ricreato sul DB production in modo coerente al codice pushato.
+- il Demo Master resta rigenerabile tramite `reset_demo_master_project`, ma il deploy production backend non lo resetta automaticamente: la sincronizzazione del demo va eseguita con un flusso operativo dedicato, separato dal rilascio applicativo.
 
 Verifiche:
 
