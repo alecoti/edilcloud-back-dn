@@ -81,8 +81,7 @@ ledger associata allo stesso identificatore stabile. Questo permette di leggere:
 
 La risposta dell'endpoint include inoltre `recently_resolved`: issue che non
 sono piu presenti tra i segnali correnti e la cui ultima run collegata e `pass`.
-Questa lista non sostituisce ancora uno storico persistente completo, ma chiude
-il primo ciclo operativo:
+Questa lista chiude il primo ciclo operativo:
 
 ```text
 issue aperta -> action -> run -> nuova lettura segnali -> issue ancora aperta o risolta di recente
@@ -92,15 +91,52 @@ Perche questo funzioni nel tempo gli ID non dipendono piu dal singolo artifact o
 dal valore puntuale di p95: una quality issue frontend, una runtime rule o un
 profilo Locust mantengono la stessa identita logica attraverso piu report.
 
+## Memoria persistente
+
+Ogni lettura della coda issue produce ora uno snapshot semantico deduplicato in:
+
+```text
+.tmp/test-center/issues/<timestamp>--<signature>/issue-snapshot.json
+```
+
+La firma ignora il semplice timestamp e cambia solo se cambia davvero lo stato
+operativo: issue aperte, verifica collegata o issue recentemente risolte. In
+questo modo refresh ripetuti della dashboard non gonfiano lo storico.
+
+Gli snapshot espongono:
+
+- stato e summary della coda al momento della cattura;
+- issue aperte compatte;
+- issue recentemente risolte compatte;
+- transizioni derivate rispetto allo snapshot precedente:
+  - `opened`
+  - `verified`
+  - `resolved`
+  - `reopened`
+
+Lo storico si legge con:
+
+```text
+GET /api/v1/test-center/issues/history
+```
+
+e dalla route frontend:
+
+```text
+/dashboard/admin/test-center/issues/history
+```
+
+Questo rende possibile distinguere una issue che non e mai stata affrontata da
+una issue verificata, risolta e poi riaperta dal ritorno della stessa anomalia.
+
 ## Prossimo passo agentico
 
-Il prossimo blocco naturale e trasformare il ciclo di vita in stato persistente:
+Il prossimo blocco naturale e aggiungere policy sopra la memoria:
 
-1. snapshot storico delle transizioni `open`, `verified`, `resolved`, `reopened`
-2. SLA di permanenza e aging delle issue
-3. trigger automatici solo per casi `candidate`
-4. confronto tra verifica passata e nuova evidenza
-5. escalation quando una issue resta aperta oltre soglia
+1. SLA di permanenza e aging delle issue
+2. trigger automatici solo per casi `candidate`
+3. confronto tra verifica passata e nuova evidenza
+4. escalation quando una issue resta aperta oltre soglia
 
 L'agente non deve modificare codice finche non ha:
 

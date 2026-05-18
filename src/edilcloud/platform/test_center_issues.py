@@ -4,6 +4,7 @@ import hashlib
 from typing import Any
 
 from edilcloud.platform.test_center import build_test_center_overview
+from edilcloud.platform.test_center_issue_snapshots import record_issue_snapshot
 from edilcloud.platform.test_center_run_ledger import load_action_run_history
 
 
@@ -409,7 +410,7 @@ def build_test_center_issues() -> dict[str, Any]:
         {str(issue.get("id") or "") for issue in sorted_issues},
         latest_runs,
     )
-    return {
+    payload = {
         "generated_at": overview["generated_at"],
         "status": "ok" if not enriched_issues else "attention",
         "summary": {
@@ -430,3 +431,5 @@ def build_test_center_issues() -> dict[str, Any]:
         "issues": enriched_issues,
         "recently_resolved": recently_resolved,
     }
+    record_issue_snapshot(payload)
+    return payload

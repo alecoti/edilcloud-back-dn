@@ -35,6 +35,10 @@ def write_action_run(root: Path, run_name: str, payload: dict) -> None:
     )
 
 
+def issue_snapshot_files(root: Path) -> list[Path]:
+    return sorted(root.glob(".tmp/test-center/issues/**/*.json"))
+
+
 def auth_headers(client: Client, *, email: str, password: str) -> dict[str, str]:
     response = client.post(
         "/api/v1/auth/login",
@@ -564,6 +568,94 @@ def test_test_center_issues_expose_recently_resolved_after_pass_run(settings, tm
     assert resolved["status"] == "resolved"
     assert resolved["verification"]["status"] == "pass"
     assert resolved["verification"]["operation"] == "rerun_quality_suite"
+
+
+@pytest.mark.django_db
+def test_test_center_issue_history_records_deduped_snapshots_and_transitions(settings, tmp_path):
+    artifact_dir = Path(tmp_path)
+    write_quality_report(
+        artifact_dir,
+        "frontend-fail",
+        {
+            "engine": "quality-suite",
+            "status": "fail",
+            "generated_at": "2026-05-17T09:05:00Z",
+            "platform": "frontend-next",
+            "suite": "quality",
+            "summary": {"commands": 2, "passed": 1, "failed": 1, "skipped": 0},
+            "commands": [
+                {"key": "frontend-eslint", "label": "Frontend ESLint", "status": "pass"},
+                {"key": "frontend-build", "label": "Frontend build", "status": "fail"},
+            ],
+        },
+    )
+    settings.TEST_CENTER_ARTIFACT_DIR = str(artifact_dir)
+    get_user_model().objects.create_superuser(
+        email="ops.issue.history@example.com",
+        password="devpass123",
+        username="ops-issue-history",
+    )
+    client = Client()
+    headers = auth_headers(
+        client,
+        email="ops.issue.history@example.com",
+        password="devpass123",
+    )
+
+    first_response = client.get("/api/v1/test-center/issues", **headers)
+    assert first_response.status_code == 200
+    first_history = client.get("/api/v1/test-center/issues/history", **headers).json()
+    assert first_history["count"] == 1
+    assert first_history["snapshots"][0]["changes"]["opened"]
+    assert len(issue_snapshot_files(artifact_dir)) == 1
+
+    duplicate_response = client.get("/api/v1/test-center/issues", **headers)
+    assert duplicate_response.status_code == 200
+    assert len(issue_snapshot_files(artifact_dir)) == 1
+
+    write_action_run(
+        artifact_dir,
+        "frontend-pass-verification",
+        {
+            "status": "pass",
+            "mode": "dry_run",
+            "action_id": "action-frontend",
+            "issue_id": "2d00d516d361b8b6",
+            "operation": "rerun_quality_suite",
+            "platform": "frontend-next",
+            "category": "quality",
+            "generated_at": "2026-05-17T10:00:00Z",
+            "finished_at": "2026-05-17T10:00:08Z",
+            "summary": "Frontend quality verde.",
+        },
+    )
+    write_quality_report(
+        artifact_dir,
+        "frontend-pass",
+        {
+            "engine": "quality-suite",
+            "status": "pass",
+            "generated_at": "2026-05-17T10:05:00Z",
+            "platform": "frontend-next",
+            "suite": "quality",
+            "summary": {"commands": 2, "passed": 2, "failed": 0, "skipped": 0},
+            "commands": [
+                {"key": "frontend-eslint", "label": "Frontend ESLint", "status": "pass"},
+                {"key": "frontend-build", "label": "Frontend build", "status": "pass"},
+            ],
+        },
+    )
+
+    second_response = client.get("/api/v1/test-center/issues", **headers)
+    assert second_response.status_code == 200
+    history_response = client.get("/api/v1/test-center/issues/history", **headers)
+
+    assert history_response.status_code == 200
+    history = history_response.json()
+    assert history["count"] == 2
+    latest = history["snapshots"][0]
+    assert latest["changes"]["resolved"][0]["id"] == "2d00d516d361b8b6"
+    assert latest["recently_resolved"][0]["verification"]["status"] == "pass"
 
 
 @pytest.mark.django_db

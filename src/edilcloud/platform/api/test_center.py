@@ -32,6 +32,7 @@ from edilcloud.platform.test_center_artifacts import (
     load_quality_report_by_id,
 )
 from edilcloud.platform.test_center_issues import build_test_center_issues
+from edilcloud.platform.test_center_issue_snapshots import load_issue_snapshot_history
 from edilcloud.platform.test_center_run_ledger import (
     load_action_run_by_id,
     load_action_run_history,
@@ -68,6 +69,13 @@ class TestCenterIssuesResponse(Schema):
     summary: dict[str, Any]
     issues: list[dict[str, Any]]
     recently_resolved: list[dict[str, Any]]
+
+
+class TestCenterIssueSnapshotHistoryResponse(Schema):
+    generated_at: str
+    status: str
+    count: int
+    snapshots: list[dict[str, Any]]
 
 
 class TestCenterActionsResponse(Schema):
@@ -243,6 +251,16 @@ def get_test_center_overview(request):
 def get_test_center_issues(request):
     require_superuser(request)
     return build_test_center_issues()
+
+
+@router.get(
+    "/issues/history",
+    response=TestCenterIssueSnapshotHistoryResponse,
+    auth=auth,
+)
+def get_test_center_issue_history(request, limit: int = 25):
+    require_superuser(request)
+    return load_issue_snapshot_history(limit=limit)
 
 
 @router.get("/actions", response=TestCenterActionsResponse, auth=auth)
