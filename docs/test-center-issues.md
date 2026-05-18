@@ -48,6 +48,7 @@ Ogni issue contiene:
 | `playbook` | sequenza di passi da seguire |
 | `suggested_commands` | comandi sicuri da rilanciare manualmente |
 | `automation` | stato e limiti per futura esecuzione automatica |
+| `lifecycle` | aging, ricorrenza e stato SLA derivati dallo storico |
 
 ## Stati di automazione
 
@@ -129,14 +130,38 @@ e dalla route frontend:
 Questo rende possibile distinguere una issue che non e mai stata affrontata da
 una issue verificata, risolta e poi riaperta dal ritorno della stessa anomalia.
 
+## Aging e SLA
+
+Le issue aperte espongono ora anche `lifecycle`:
+
+| Campo | Scopo |
+| --- | --- |
+| `first_seen_at` | prima comparsa nota nello storico |
+| `last_seen_at` | ultima comparsa nota |
+| `age_hours` | eta corrente della issue |
+| `seen_in_snapshots` | quante fotografie la contengono |
+| `reopen_count` | quante volte e stata riaperta |
+| `sla_hours` | soglia operativa assegnata |
+| `sla_state` | `within_sla`, `breached` o `unknown` |
+| `escalation_state` | `due` quando la issue supera SLA |
+
+Soglie iniziali:
+
+- `critical`: 4 ore
+- `warning`: 24 ore
+- `info`: 72 ore
+
+La summary dell'endpoint include `sla_breached`, cosi il centro operativo puo
+evidenziare subito i casi che non sono solo aperti, ma anche troppo vecchi per
+restare silenziosi.
+
 ## Prossimo passo agentico
 
 Il prossimo blocco naturale e aggiungere policy sopra la memoria:
 
-1. SLA di permanenza e aging delle issue
-2. trigger automatici solo per casi `candidate`
-3. confronto tra verifica passata e nuova evidenza
-4. escalation quando una issue resta aperta oltre soglia
+1. trigger automatici solo per casi `candidate`
+2. confronto tra verifica passata e nuova evidenza
+3. escalation notificabile quando una issue supera SLA
 
 L'agente non deve modificare codice finche non ha:
 

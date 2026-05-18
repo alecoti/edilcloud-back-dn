@@ -297,3 +297,41 @@ def load_issue_snapshot_history(*, limit: int = 25) -> dict[str, Any]:
         "count": len(snapshots),
         "snapshots": snapshots,
     }
+
+
+def build_issue_lifecycle_index(*, limit: int = 200) -> dict[str, dict[str, Any]]:
+    history = load_issue_snapshot_history(limit=limit)
+    snapshots = list(reversed(history["snapshots"]))
+    lifecycle: dict[str, dict[str, Any]] = {}
+    for snapshot in snapshots:
+        generated_at = snapshot.get("generated_at")
+        for issue in snapshot.get("issues", []):
+            if not isinstance(issue, dict) or not issue.get("id"):
+                continue
+            issue_id = str(issue["id"])
+            current = lifecycle.setdefault(
+                issue_id,
+                {
+                    "first_seen_at": generated_at,
+                    "last_seen_at": generated_at,
+                    "seen_in_snapshots": 0,
+                    "reopen_count": 0,
+                },
+            )
+            current["last_seen_at"] = generated_at
+            current["seen_in_snapshots"] += 1
+        for issue in snapshot.get("changes", {}).get("reopened", []):
+            if not isinstance(issue, dict) or not issue.get("id"):
+                continue
+            issue_id = str(issue["id"])
+            current = lifecycle.setdefault(
+                issue_id,
+                {
+                    "first_seen_at": generated_at,
+                    "last_seen_at": generated_at,
+                    "seen_in_snapshots": 0,
+                    "reopen_count": 0,
+                },
+            )
+            current["reopen_count"] += 1
+    return lifecycle

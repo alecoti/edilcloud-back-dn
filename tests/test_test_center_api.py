@@ -449,6 +449,9 @@ def test_test_center_issues_classify_quality_and_loadtest_failures(settings, tmp
     assert frontend_issue["severity"] == "critical"
     assert frontend_issue["suggested_commands"] == ["pnpm build"]
     assert any("Frontend build" in item for item in frontend_issue["evidence"])
+    assert frontend_issue["lifecycle"]["sla_hours"] == 4.0
+    assert frontend_issue["lifecycle"]["sla_state"] in {"within_sla", "breached"}
+    assert "sla_breached" in payload["summary"]
 
 
 @pytest.mark.django_db

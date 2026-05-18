@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from typing import Any
 
 from edilcloud.platform.test_center import build_test_center_overview
-from edilcloud.platform.test_center_issue_snapshots import record_issue_snapshot
+from edilcloud.platform.test_center_issue_snapshots import (
+    build_issue_lifecycle_index,
+    record_issue_snapshot,
+)
 from edilcloud.platform.test_center_run_ledger import load_action_run_history
 
 
 ISSUE_LIMIT = 100
+ISSUE_SLA_HOURS = {
+    "critical": 4.0,
+    "warning": 24.0,
+    "info": 72.0,
+}
 
 
 def _issue_id(*parts: object) -> str:
@@ -381,6 +390,65 @@ def _attach_latest_verification(
     return enriched
 
 
+def _parse_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _lifecycle_payload(
+    issue: dict[str, Any],
+    lifecycle_index: dict[str, dict[str, Any]],
+    *,
+    now: datetime,
+    fallback_timestamp: str,
+) -> dict[str, Any]:
+    metadata = lifecycle_index.get(str(issue.get("id") or ""), {})
+    first_seen_at = metadata.get("first_seen_at") or issue.get("detected_at") or fallback_timestamp
+    first_seen = _parse_timestamp(first_seen_at)
+    age_hours = round((now - first_seen).total_seconds() / 3600, 2) if first_seen else None
+    sla_hours = ISSUE_SLA_HOURS.get(str(issue.get("severity") or "info"), 72.0)
+    if age_hours is None:
+        sla_state = "unknown"
+    elif age_hours > sla_hours:
+        sla_state = "breached"
+    else:
+        sla_state = "within_sla"
+    return {
+        "first_seen_at": first_seen_at,
+        "last_seen_at": metadata.get("last_seen_at") or fallback_timestamp,
+        "age_hours": age_hours,
+        "seen_in_snapshots": int(metadata.get("seen_in_snapshots") or 0),
+        "reopen_count": int(metadata.get("reopen_count") or 0),
+        "sla_hours": sla_hours,
+        "sla_state": sla_state,
+        "escalation_state": "due" if sla_state == "breached" else "none",
+    }
+
+
+def _attach_lifecycle_metadata(
+    issues: list[dict[str, Any]],
+    *,
+    generated_at: str,
+) -> list[dict[str, Any]]:
+    lifecycle_index = build_issue_lifecycle_index()
+    now = _parse_timestamp(generated_at) or datetime.now(UTC)
+    enriched: list[dict[str, Any]] = []
+    for issue in issues:
+        issue_copy = dict(issue)
+        issue_copy["lifecycle"] = _lifecycle_payload(
+            issue_copy,
+            lifecycle_index,
+            now=now,
+            fallback_timestamp=generated_at,
+        )
+        enriched.append(issue_copy)
+    return enriched
+
+
 def build_test_center_issues() -> dict[str, Any]:
     overview = build_test_center_overview()
     issues: list[dict[str, Any]] = []
@@ -406,6 +474,10 @@ def build_test_center_issues() -> dict[str, Any]:
     sorted_issues = _sort_issues(issues)[:ISSUE_LIMIT]
     latest_runs = _latest_runs_by_issue_id()
     enriched_issues = _attach_latest_verification(sorted_issues, latest_runs)
+    enriched_issues = _attach_lifecycle_metadata(
+        enriched_issues,
+        generated_at=overview["generated_at"],
+    )
     recently_resolved = _recently_resolved_issues(
         {str(issue.get("id") or "") for issue in sorted_issues},
         latest_runs,
@@ -424,6 +496,10 @@ def build_test_center_issues() -> dict[str, Any]:
             ),
             "manual_review_required": sum(
                 issue.get("automation", {}).get("state") == "manual_review_required"
+                for issue in enriched_issues
+            ),
+            "sla_breached": sum(
+                issue.get("lifecycle", {}).get("sla_state") == "breached"
                 for issue in enriched_issues
             ),
             "recently_resolved": len(recently_resolved),
