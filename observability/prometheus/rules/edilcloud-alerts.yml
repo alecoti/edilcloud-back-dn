@@ -1,0 +1,98 @@
+groups:
+  - name: edilcloud.infrastructure
+    rules:
+      - alert: EdilCloudTargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+          scope: infrastructure
+        annotations:
+          summary: "Target Prometheus non raggiungibile"
+          description: "{{ $labels.job }} / {{ $labels.instance }} risulta down da almeno 2 minuti."
+
+      - alert: EdilCloudPublicProbeDown
+        expr: probe_success == 0
+        for: 2m
+        labels:
+          severity: critical
+          scope: public-availability
+        annotations:
+          summary: "Probe pubblica non verde"
+          description: "{{ $labels.instance }} non risponde correttamente da almeno 2 minuti."
+
+      - alert: EdilCloudHostCpuHigh
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+          scope: host
+        annotations:
+          summary: "CPU host alta"
+          description: "CPU busy oltre 85% su {{ $labels.instance }} da almeno 10 minuti."
+
+      - alert: EdilCloudHostMemoryHigh
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 10m
+        labels:
+          severity: warning
+          scope: host
+        annotations:
+          summary: "Memoria host alta"
+          description: "Memoria usata oltre 90% su {{ $labels.instance }} da almeno 10 minuti."
+
+      - alert: EdilCloudRootDiskLow
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 10m
+        labels:
+          severity: critical
+          scope: host
+        annotations:
+          summary: "Spazio disco root basso"
+          description: "Spazio libero sotto 15% su {{ $labels.instance }} da almeno 10 minuti."
+
+  - name: edilcloud.application
+    rules:
+      - alert: EdilCloudBackendP95High
+        expr: edilcloud_timing_p95_milliseconds{name="http.request.duration"} > 1500
+        for: 5m
+        labels:
+          severity: warning
+          scope: backend
+        annotations:
+          summary: "p95 backend oltre budget"
+          description: "{{ $labels.method }} {{ $labels.path }} supera 1500 ms da almeno 5 minuti."
+
+      - alert: EdilCloudBackendErrorRatioHigh
+        expr: |
+          sum(increase(edilcloud_counter_total{name="http.requests",status=~"5.."}[5m]))
+          /
+          clamp_min(sum(increase(edilcloud_counter_total{name="http.requests"}[5m])), 1)
+          > 0.02
+        for: 5m
+        labels:
+          severity: critical
+          scope: backend
+        annotations:
+          summary: "Error ratio backend alto"
+          description: "Le risposte 5xx superano il 2% negli ultimi 5 minuti."
+
+      - alert: EdilCloudPostgresExporterDown
+        expr: up{job="postgres-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          scope: datastore
+        annotations:
+          summary: "Exporter PostgreSQL non raggiungibile"
+          description: "Prometheus non riesce a leggere postgres-exporter da almeno 2 minuti."
+
+      - alert: EdilCloudRedisExporterDown
+        expr: up{job="redis-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          scope: datastore
+        annotations:
+          summary: "Exporter Redis non raggiungibile"
+          description: "Prometheus non riesce a leggere redis-exporter da almeno 2 minuti."

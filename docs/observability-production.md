@@ -66,14 +66,24 @@ Le serie principali sono:
 - `edilcloud_timing_p99_milliseconds`
 - `edilcloud_timing_max_milliseconds`
 
+## Alert Prometheus disponibili
+
+Le regole in `observability/prometheus/rules/edilcloud-alerts.yml` coprono gia:
+
+- target Prometheus down;
+- probe pubbliche backend/frontend fallite;
+- CPU host alta;
+- memoria host alta;
+- spazio disco root basso;
+- p95 backend oltre budget;
+- error ratio 5xx backend alto;
+- exporter PostgreSQL e Redis non raggiungibili.
+
+Gli alert sono gia visibili nella sezione `Alerts` di Prometheus. Per inviare notifiche fuori dalla piattaforma serve aggiungere il passaggio successivo con Alertmanager o provisioning Grafana Alerting e relativi contact point.
+
 ## Prossimi innesti
 
 1. Collegare OTLP del backend a Alloy per popolare Tempo.
 2. Pubblicare Grafana su un dominio dedicato dietro HTTPS, per esempio `grafana.edilcloud.eu`, lasciando Prometheus solo locale.
-3. Aggiungere alert rule Prometheus/Grafana per:
-   - CPU, memoria e disco;
-   - probe pubbliche fallite;
-   - p95 route core;
-   - error ratio HTTP;
-   - database e Redis down.
+3. Collegare Alertmanager o Grafana Alerting con contact point reali.
 4. Inserire link Grafana dal Test Center per issue, route e finestre temporali.
