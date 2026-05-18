@@ -67,3 +67,51 @@ La dashboard mostra il report piu recente per ogni superficie:
 
 Nel dettaglio piattaforma mostra anche `stdout` e `stderr` finali di ogni
 comando, cosi l'indagine parte dalla UI senza entrare nel server.
+
+## Catalogo lanciabile da frontend
+
+Il Test Center espone anche:
+
+```text
+GET /api/v1/test-center/catalog
+POST /api/v1/test-center/catalog/{suite_id}/runs/launch
+```
+
+Le suite locali partono direttamente dal backend production:
+
+- `backend-quality`
+- `locust-auth-burst`
+- `locust-read-heavy`
+- `locust-mixed-crud`
+
+Le suite remote usano runner dedicati GitHub Actions:
+
+- `frontend-next-quality`
+- `flutter-android-quality`
+- `flutter-ios-quality`
+
+Per abilitare il dispatch remoto servono:
+
+- `TEST_CENTER_GITHUB_TOKEN`
+- `TEST_CENTER_INGEST_TOKEN`
+
+La stessa `TEST_CENTER_INGEST_TOKEN` va salvata come secret GitHub nei repository
+`edilcloud-next` ed `edilcloud-flutter`, cosi i workflow remoti possono
+autenticare l'upload dei report senza ricevere token sensibili come input visibili.
+
+I workflow remoti inviano il report normalizzato a:
+
+```text
+POST /api/v1/test-center/ingest/quality
+```
+
+con header:
+
+```text
+X-Test-Center-Ingest-Token
+X-Test-Center-Run-Name
+```
+
+In questo modo la dashboard mostra un solo catalogo operativo, ma ogni suite gira
+nel contesto tecnico corretto: backend e Locust sul server backend, Next su Node
+runner, Flutter Android su Linux e Flutter iOS su macOS.

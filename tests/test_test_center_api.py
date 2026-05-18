@@ -975,3 +975,97 @@ def test_test_center_platform_detail_supports_backend_and_rejects_unknown_platfo
 
     missing_response = client.get("/api/v1/test-center/platforms/unknown", **headers)
     assert missing_response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_test_center_catalog_exposes_launchable_local_suites():
+    get_user_model().objects.create_superuser(
+        email="ops.catalog@example.com",
+        password="devpass123",
+        username="ops-catalog",
+    )
+    client = Client()
+    headers = auth_headers(client, email="ops.catalog@example.com", password="devpass123")
+
+    response = client.get("/api/v1/test-center/catalog", **headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["total"] >= 7
+    suites = {suite["id"]: suite for suite in payload["suites"]}
+    assert suites["backend-quality"]["launchable"] is True
+    assert suites["locust-read-heavy"]["launchable"] is True
+    assert suites["frontend-next-quality"]["launchable"] is False
+
+
+@pytest.mark.django_db
+def test_test_center_catalog_launch_starts_local_runner(monkeypatch, settings, tmp_path):
+    settings.TEST_CENTER_ARTIFACT_DIR = str(tmp_path)
+    settings.BASE_DIR = tmp_path
+    get_user_model().objects.create_superuser(
+        email="ops.catalog.launch@example.com",
+        password="devpass123",
+        username="ops-catalog-launch",
+    )
+    client = Client()
+    headers = auth_headers(
+        client,
+        email="ops.catalog.launch@example.com",
+        password="devpass123",
+    )
+    captured: dict = {}
+
+    class FakePopen:
+        def __init__(self, command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(
+        "edilcloud.platform.test_center_catalog.subprocess.Popen",
+        FakePopen,
+    )
+
+    response = client.post(
+        "/api/v1/test-center/catalog/backend-quality/runs/launch",
+        data=json.dumps({}),
+        content_type="application/json",
+        **headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "running"
+    assert payload["action_id"] == "catalog:backend-quality"
+    assert "scripts/run_test_center_suite.py" in captured["command"]
+
+
+@pytest.mark.django_db
+def test_test_center_ingest_quality_report_accepts_shared_token(settings, tmp_path):
+    settings.TEST_CENTER_ARTIFACT_DIR = str(tmp_path)
+    settings.TEST_CENTER_INGEST_TOKEN = "shared-token"
+    client = Client()
+
+    response = client.post(
+        "/api/v1/test-center/ingest/quality",
+        data=json.dumps(
+            {
+                "engine": "quality-suite",
+                "status": "pass",
+                "generated_at": "2026-05-18T09:00:00Z",
+                "platform": "frontend-next",
+                "target": None,
+                "suite": "quality",
+                "summary": {"commands": 2, "passed": 2, "failed": 0, "skipped": 0},
+                "commands": [],
+                "focus": [],
+            }
+        ),
+        content_type="application/json",
+        HTTP_X_TEST_CENTER_INGEST_TOKEN="shared-token",
+        HTTP_X_TEST_CENTER_RUN_NAME="frontend-remote-run",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "accepted"
+    assert Path(payload["source_path"]).exists()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.conf import settings
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
@@ -18,6 +19,11 @@ from edilcloud.platform.test_center_action_runs import (
     TestCenterActionRunError,
     launch_action_run,
     prepare_action_run,
+)
+from edilcloud.platform.test_center_catalog import (
+    build_test_center_catalog,
+    ingest_quality_report,
+    launch_catalog_suite,
 )
 from edilcloud.platform.test_center_artifacts import (
     load_loadtest_history,
@@ -143,6 +149,38 @@ class TestCenterLoadtestHistoryResponse(Schema):
     status: str
     count: int
     reports: list[dict[str, Any]]
+
+
+class TestCenterCatalogResponse(Schema):
+    generated_at: str
+    status: str
+    summary: dict[str, Any]
+    suites: list[dict[str, Any]]
+
+
+class TestCenterLaunchCatalogSuiteRequest(Schema):
+    approved_by: str | None = None
+    loadtest_host: str = "http://localhost:3000"
+    loadtest_users: int = 10
+    loadtest_spawn_rate: float = 5.0
+    loadtest_run_time: str = "2m"
+
+
+class TestCenterIngestResponse(Schema):
+    status: str
+    source_path: str
+
+
+class TestCenterQualityIngestRequest(Schema):
+    engine: str
+    status: str
+    generated_at: str | None = None
+    platform: str
+    target: str | None = None
+    suite: str
+    summary: dict[str, Any]
+    commands: list[dict[str, Any]]
+    focus: list[str] = []
 
 
 class TestCenterLoadtestReportResponse(Schema):
@@ -307,6 +345,56 @@ def get_test_center_action_run(request, run_id: str):
 def get_test_center_loadtests(request):
     require_superuser(request)
     return load_loadtest_history()
+
+
+@router.get("/catalog", response=TestCenterCatalogResponse, auth=auth)
+def get_test_center_catalog(request):
+    require_superuser(request)
+    return build_test_center_catalog()
+
+
+@router.post(
+    "/catalog/{suite_id}/runs/launch",
+    response=TestCenterActionRunResponse,
+    auth=auth,
+)
+def launch_test_center_catalog_suite(
+    request,
+    suite_id: str,
+    payload: TestCenterLaunchCatalogSuiteRequest,
+):
+    require_superuser(request)
+    user = request.auth.user
+    actor_label = getattr(user, "email", "") or getattr(user, "username", "") or str(user.pk)
+    try:
+        return launch_catalog_suite(
+            suite_id=suite_id,
+            actor_id=str(user.pk),
+            actor_label=actor_label,
+            approved_by=payload.approved_by,
+            loadtest_host=payload.loadtest_host,
+            loadtest_users=payload.loadtest_users,
+            loadtest_spawn_rate=payload.loadtest_spawn_rate,
+            loadtest_run_time=payload.loadtest_run_time,
+        )
+    except TestCenterActionRunError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/ingest/quality", response=TestCenterIngestResponse)
+def ingest_test_center_quality_report(request, payload: TestCenterQualityIngestRequest):
+    configured = str(getattr(settings, "TEST_CENTER_INGEST_TOKEN", "") or "")
+    provided = request.headers.get("X-Test-Center-Ingest-Token", "")
+    if not configured or provided != configured:
+        raise HttpError(403, "Token ingest Test Center non valido.")
+    try:
+        artifact_path = ingest_quality_report(
+            payload.dict(),
+            run_name=request.headers.get("X-Test-Center-Run-Name") or None,
+        )
+    except TestCenterActionRunError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return {"status": "accepted", "source_path": str(artifact_path)}
 
 
 @router.get("/loadtests/{run_id}", response=TestCenterLoadtestReportResponse, auth=auth)
