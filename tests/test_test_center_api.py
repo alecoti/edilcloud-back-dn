@@ -723,6 +723,59 @@ def test_test_center_agent_queue_classifies_candidate_and_guardrails(settings, t
 
 
 @pytest.mark.django_db
+def test_test_center_agent_cycle_plan_applies_limits_and_cooldown(settings, tmp_path):
+    artifact_dir = Path(tmp_path)
+    write_quality_report(
+        artifact_dir,
+        "frontend-warning",
+        {
+            "engine": "quality-suite",
+            "status": "warning",
+            "generated_at": "2026-05-17T11:00:00Z",
+            "platform": "frontend-next",
+            "suite": "quality",
+            "summary": {"commands": 2, "passed": 1, "failed": 0, "skipped": 1},
+            "commands": [
+                {
+                    "key": "frontend-build",
+                    "label": "Frontend build",
+                    "status": "skipped",
+                    "command": "pnpm build",
+                }
+            ],
+        },
+    )
+    settings.TEST_CENTER_ARTIFACT_DIR = str(artifact_dir)
+    get_user_model().objects.create_superuser(
+        email="ops.agent.cycle@example.com",
+        password="devpass123",
+        username="ops-agent-cycle",
+    )
+    client = Client()
+    headers = auth_headers(
+        client,
+        email="ops.agent.cycle@example.com",
+        password="devpass123",
+    )
+
+    response = client.get(
+        "/api/v1/test-center/agent/cycle/plan?max_total=1&cooldown_hours=0",
+        **headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "plan_only"
+    assert payload["limits"]["max_total"] == 1
+    assert payload["summary"]["selected"] <= 1
+    if payload["selected"]:
+        selected = payload["selected"][0]
+        assert selected["state"] == "selected"
+        assert selected["operation"] == "rerun_quality_suite"
+        assert selected["guardrails"]["will_modify_code"] is False
+
+
+@pytest.mark.django_db
 def test_test_center_issues_do_not_convert_missing_artifacts_to_quality_failures():
     reset_metrics()
     get_user_model().objects.create_superuser(

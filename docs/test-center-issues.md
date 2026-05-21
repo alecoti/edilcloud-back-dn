@@ -180,10 +180,29 @@ priorita o permessi.
 
 Il prossimo blocco naturale e aggiungere esecuzione controllata sopra la coda:
 
-1. job schedulato che legge solo `auto_dry_run_candidate`;
-2. rate limit per piattaforma e categoria;
-3. confronto tra verifica passata e nuova evidenza;
-4. notifica/assegnazione quando una issue supera SLA.
+Il primo endpoint del ciclo e:
+
+```text
+GET /api/v1/test-center/agent/cycle/plan
+```
+
+e lo script operativo e:
+
+```text
+python scripts/run_test_center_agent_cycle.py --record
+```
+
+Il planner legge solo item `auto_dry_run_candidate`, applica rate limit per
+totale, piattaforma e categoria, rispetta un cooldown sulle ultime run collegate
+alla stessa issue e produce un piano `plan_only`. Non lancia processi e non
+modifica codice: registra al massimo un artifact del piano in
+`.tmp/test-center/agent-cycles`.
+
+Restano da aggiungere:
+
+1. esecuzione controllata dei soli item selezionati;
+2. confronto tra verifica passata e nuova evidenza;
+3. notifica/assegnazione quando una issue supera SLA.
 
 L'agente non deve modificare codice finche non ha:
 

@@ -16,6 +16,9 @@ from edilcloud.platform.test_center_actions import (
     build_test_center_actions,
 )
 from edilcloud.platform.test_center_agent_queue import build_test_center_agent_queue
+from edilcloud.platform.test_center_agent_cycle import (
+    build_test_center_agent_cycle_plan,
+)
 from edilcloud.platform.test_center_action_runs import (
     TestCenterActionRunError,
     launch_action_run,
@@ -92,6 +95,16 @@ class TestCenterAgentQueueResponse(Schema):
     mode: str
     summary: dict[str, Any]
     items: list[dict[str, Any]]
+
+
+class TestCenterAgentCyclePlanResponse(Schema):
+    generated_at: str
+    status: str
+    mode: str
+    limits: dict[str, Any]
+    summary: dict[str, Any]
+    selected: list[dict[str, Any]]
+    skipped: list[dict[str, Any]]
 
 
 class TestCenterActionResponse(Schema):
@@ -282,6 +295,23 @@ def get_test_center_actions(request):
 def get_test_center_agent_queue(request):
     require_superuser(request)
     return build_test_center_agent_queue()
+
+
+@router.get("/agent/cycle/plan", response=TestCenterAgentCyclePlanResponse, auth=auth)
+def get_test_center_agent_cycle_plan(
+    request,
+    max_total: int = 3,
+    max_per_platform: int = 1,
+    max_per_category: int = 2,
+    cooldown_hours: float = 1.0,
+):
+    require_superuser(request)
+    return build_test_center_agent_cycle_plan(
+        max_total=max_total,
+        max_per_platform=max_per_platform,
+        max_per_category=max_per_category,
+        cooldown_hours=cooldown_hours,
+    )
 
 
 @router.get("/actions/{action_id}", response=TestCenterActionResponse, auth=auth)
