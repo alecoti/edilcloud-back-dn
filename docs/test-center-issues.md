@@ -155,13 +155,35 @@ La summary dell'endpoint include `sla_breached`, cosi il centro operativo puo
 evidenziare subito i casi che non sono solo aperti, ma anche troppo vecchi per
 restare silenziosi.
 
+## Agent queue
+
+Il Test Center espone anche una coda decisionale per il futuro agente:
+
+```text
+GET /api/v1/test-center/agent/queue
+```
+
+La coda non applica correzioni: classifica le issue aperte in modo eseguibile e
+leggibile:
+
+- `auto_dry_run_candidate`: si puo rilanciare una verifica sicura in dry-run;
+- `human_review_required`: serve revisione prima di qualunque modifica;
+- `blocked`: manca un prerequisito;
+- `escalation_due`: la issue ha superato SLA e va portata in priorita.
+
+Ogni item contiene `issue_id`, `action_id`, `next_operation`, `priority`,
+`guardrails`, `lifecycle` e l'ultima `verification`. Per ora la modalita resta
+`dry_run_only`: l'agente futuro potra partire da questa coda senza inventarsi
+priorita o permessi.
+
 ## Prossimo passo agentico
 
-Il prossimo blocco naturale e aggiungere policy sopra la memoria:
+Il prossimo blocco naturale e aggiungere esecuzione controllata sopra la coda:
 
-1. trigger automatici solo per casi `candidate`
-2. confronto tra verifica passata e nuova evidenza
-3. escalation notificabile quando una issue supera SLA
+1. job schedulato che legge solo `auto_dry_run_candidate`;
+2. rate limit per piattaforma e categoria;
+3. confronto tra verifica passata e nuova evidenza;
+4. notifica/assegnazione quando una issue supera SLA.
 
 L'agente non deve modificare codice finche non ha:
 

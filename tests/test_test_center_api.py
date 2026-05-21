@@ -662,6 +662,67 @@ def test_test_center_issue_history_records_deduped_snapshots_and_transitions(set
 
 
 @pytest.mark.django_db
+def test_test_center_agent_queue_classifies_candidate_and_guardrails(settings, tmp_path):
+    artifact_dir = Path(tmp_path)
+    write_quality_report(
+        artifact_dir,
+        "frontend-warning",
+        {
+            "engine": "quality-suite",
+            "status": "warning",
+            "generated_at": "2026-05-17T11:00:00Z",
+            "platform": "frontend-next",
+            "suite": "quality",
+            "summary": {"commands": 2, "passed": 1, "failed": 0, "skipped": 1},
+            "commands": [
+                {
+                    "key": "frontend-eslint",
+                    "label": "Frontend ESLint",
+                    "status": "pass",
+                    "command": "pnpm exec eslint",
+                },
+                {
+                    "key": "frontend-build",
+                    "label": "Frontend build",
+                    "status": "skipped",
+                    "command": "pnpm build",
+                },
+            ],
+        },
+    )
+    settings.TEST_CENTER_ARTIFACT_DIR = str(artifact_dir)
+    get_user_model().objects.create_superuser(
+        email="ops.agent.queue@example.com",
+        password="devpass123",
+        username="ops-agent-queue",
+    )
+    client = Client()
+    headers = auth_headers(
+        client,
+        email="ops.agent.queue@example.com",
+        password="devpass123",
+    )
+
+    response = client.get("/api/v1/test-center/agent/queue", **headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "dry_run_only"
+    frontend_item = next(
+        item
+        for item in payload["items"]
+        if item["platform"] == "frontend-next" and item["category"] == "quality"
+    )
+    assert frontend_item["state"] in {
+        "auto_dry_run_candidate",
+        "escalation_due",
+    }
+    assert frontend_item["next_operation"] == "rerun_quality_suite"
+    assert frontend_item["guardrails"]["will_modify_code"] is False
+    assert frontend_item["guardrails"]["will_touch_production"] is False
+
+
+@pytest.mark.django_db
 def test_test_center_issues_do_not_convert_missing_artifacts_to_quality_failures():
     reset_metrics()
     get_user_model().objects.create_superuser(

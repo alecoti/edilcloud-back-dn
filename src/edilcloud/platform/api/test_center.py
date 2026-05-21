@@ -15,6 +15,7 @@ from edilcloud.platform.test_center_actions import (
     build_test_center_action_detail,
     build_test_center_actions,
 )
+from edilcloud.platform.test_center_agent_queue import build_test_center_agent_queue
 from edilcloud.platform.test_center_action_runs import (
     TestCenterActionRunError,
     launch_action_run,
@@ -83,6 +84,14 @@ class TestCenterActionsResponse(Schema):
     status: str
     summary: dict[str, Any]
     actions: list[dict[str, Any]]
+
+
+class TestCenterAgentQueueResponse(Schema):
+    generated_at: str
+    status: str
+    mode: str
+    summary: dict[str, Any]
+    items: list[dict[str, Any]]
 
 
 class TestCenterActionResponse(Schema):
@@ -267,6 +276,12 @@ def get_test_center_issue_history(request, limit: int = 25):
 def get_test_center_actions(request):
     require_superuser(request)
     return build_test_center_actions()
+
+
+@router.get("/agent/queue", response=TestCenterAgentQueueResponse, auth=auth)
+def get_test_center_agent_queue(request):
+    require_superuser(request)
+    return build_test_center_agent_queue()
 
 
 @router.get("/actions/{action_id}", response=TestCenterActionResponse, auth=auth)
