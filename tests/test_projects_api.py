@@ -1508,6 +1508,72 @@ def test_project_task_activity_post_and_comment_mutations_work_end_to_end():
 
 
 @pytest.mark.django_db
+def test_phase_posts_support_limit_offset_pagination():
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.phase-posts-pagination@example.com",
+        password="devpass123",
+    )
+    project, task, activity, _alert_post = create_project_fixture(profile)
+    ProjectPost.objects.filter(project=project).delete()
+    headers = auth_headers(
+        client,
+        email="projects.phase-posts-pagination@example.com",
+        password="devpass123",
+    )
+
+    base_time = timezone.now() - timedelta(hours=1)
+    created_posts: list[ProjectPost] = []
+    activity_posts: list[ProjectPost] = []
+    for index in range(16):
+        is_activity_post = index % 2 == 1
+        post = ProjectPost.objects.create(
+            project=project,
+            task=task,
+            activity=activity if is_activity_post else None,
+            author=profile,
+            post_kind=PostKind.WORK_PROGRESS,
+            text=f"Post paginato {index:02d}",
+            original_text=f"Post paginato {index:02d}",
+            source_language="it",
+            display_language="it",
+        )
+        timestamp = base_time + timedelta(minutes=index)
+        ProjectPost.objects.filter(id=post.id).update(
+            published_date=timestamp,
+            updated_at=timestamp,
+        )
+        post.published_date = timestamp
+        post.updated_at = timestamp
+        created_posts.append(post)
+        if is_activity_post:
+            activity_posts.append(post)
+
+    expected_phase_ids = [post.id for post in reversed(created_posts)]
+    first_page = client.get(
+        f"/api/v1/tasks/{task.id}/posts?include_activities=true&limit=10&offset=0",
+        **headers,
+    )
+    second_page = client.get(
+        f"/api/v1/tasks/{task.id}/posts?include_activities=true&limit=10&offset=10",
+        **headers,
+    )
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert [item["id"] for item in first_page.json()] == expected_phase_ids[:10]
+    assert [item["id"] for item in second_page.json()] == expected_phase_ids[10:]
+
+    expected_activity_ids = [post.id for post in reversed(activity_posts)]
+    activity_page = client.get(
+        f"/api/v1/activities/{activity.id}/posts?limit=5&offset=2",
+        **headers,
+    )
+    assert activity_page.status_code == 200
+    assert [item["id"] for item in activity_page.json()] == expected_activity_ids[2:7]
+
+
+@pytest.mark.django_db
 def test_project_post_and_comment_creates_are_idempotent_by_client_mutation_id():
     client = Client()
     _user, _workspace, profile = create_workspace_profile(

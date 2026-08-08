@@ -925,12 +925,21 @@ def create_activity_endpoint(request, task_id: int, payload: CreateTaskActivityR
 
 
 @tasks_router.get("/{task_id}/posts", response=list[dict[str, Any]], auth=auth)
-def get_task_posts_endpoint(request, task_id: int):
+def get_task_posts_endpoint(
+    request,
+    task_id: int,
+    include_activities: bool = False,
+    limit: int | None = None,
+    offset: int = 0,
+):
     try:
         profile = current_profile(request)
         return list_posts_for_task(
             profile=profile,
             task_id=task_id,
+            include_activities=include_activities,
+            limit=limit,
+            offset=offset,
             target_language=request_locale(request),
         )
     except ValueError as exc:
@@ -976,12 +985,19 @@ def update_activity_endpoint(request, activity_id: int, payload: UpdateTaskActiv
 
 
 @activities_router.get("/{activity_id}/posts", response=list[dict[str, Any]], auth=auth)
-def get_activity_posts_endpoint(request, activity_id: int):
+def get_activity_posts_endpoint(
+    request,
+    activity_id: int,
+    limit: int | None = None,
+    offset: int = 0,
+):
     try:
         profile = current_profile(request)
         return list_posts_for_activity(
             profile=profile,
             activity_id=activity_id,
+            limit=limit,
+            offset=offset,
             target_language=request_locale(request),
         )
     except ValueError as exc:

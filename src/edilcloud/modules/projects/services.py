@@ -3640,8 +3640,22 @@ def get_project_overview(
     }
 
 
+def _paginate_posts_queryset(queryset, *, limit: int | None = None, offset: int = 0):
+    if limit is None:
+        return queryset
+    safe_limit = min(max(int(limit or 1), 1), 250)
+    safe_offset = max(int(offset or 0), 0)
+    return queryset[safe_offset : safe_offset + safe_limit]
+
+
 def list_posts_for_task(
-    *, profile: Profile, task_id: int, target_language: str | None = None
+    *,
+    profile: Profile,
+    task_id: int,
+    include_activities: bool = False,
+    limit: int | None = None,
+    offset: int = 0,
+    target_language: str | None = None,
 ) -> list[dict]:
     task = ProjectTask.objects.select_related("project").filter(id=task_id).first()
     if task is None:
@@ -3649,10 +3663,17 @@ def list_posts_for_task(
     project, membership, members = get_project_with_team_context(
         profile=profile, project_id=task.project_id
     )
+    post_filter = Q(task=task)
+    if not include_activities:
+        post_filter &= Q(activity__isnull=True)
     posts = list(
-        project_posts_queryset()
-        .filter(task=task, activity__isnull=True)
-        .order_by("-published_date", "-id")
+        _paginate_posts_queryset(
+            annotate_posts_with_feed_activity(project_posts_queryset())
+            .filter(post_filter)
+            .order_by("-effective_last_activity_at", "-id"),
+            limit=limit,
+            offset=offset,
+        )
     )
     company_colors_by_workspace_id = project_company_colors_for_context(
         project=project, members=members
@@ -3672,6 +3693,7 @@ def list_posts_for_task(
             post=post,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            effective_last_activity_at=getattr(post, "effective_last_activity_at", None),
             translation_by_post_id=post_translation_map,
             translation_by_comment_id=comment_translation_map,
         )
@@ -3680,7 +3702,12 @@ def list_posts_for_task(
 
 
 def list_posts_for_activity(
-    *, profile: Profile, activity_id: int, target_language: str | None = None
+    *,
+    profile: Profile,
+    activity_id: int,
+    limit: int | None = None,
+    offset: int = 0,
+    target_language: str | None = None,
 ) -> list[dict]:
     activity = (
         ProjectActivity.objects.select_related("task", "task__project")
@@ -3694,7 +3721,13 @@ def list_posts_for_activity(
         project_id=activity.task.project_id,
     )
     posts = list(
-        project_posts_queryset().filter(activity=activity).order_by("-published_date", "-id")
+        _paginate_posts_queryset(
+            annotate_posts_with_feed_activity(project_posts_queryset())
+            .filter(activity=activity)
+            .order_by("-effective_last_activity_at", "-id"),
+            limit=limit,
+            offset=offset,
+        )
     )
     company_colors_by_workspace_id = project_company_colors_for_context(
         project=project, members=members
@@ -3714,6 +3747,7 @@ def list_posts_for_activity(
             post=post,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            effective_last_activity_at=getattr(post, "effective_last_activity_at", None),
             translation_by_post_id=post_translation_map,
             translation_by_comment_id=comment_translation_map,
         )
