@@ -411,6 +411,8 @@ def revoke_auth_session(auth_session: AuthTokenSession, *, reason: str = "revoke
     auth_session.revoked_at = django_timezone.now()
     auth_session.revoke_reason = reason[:64]
     auth_session.save(update_fields=["revoked_at", "revoke_reason", "updated_at"])
+    increment_counter("auth.session.revoked", reason=auth_session.revoke_reason)
+    logger.info("auth.session.revoked", extra={"event": "auth.session.revoked", "user_id": auth_session.user_id, "reason": auth_session.revoke_reason})
 
 
 def revoke_user_auth_sessions(user, *, reason: str) -> int:
@@ -432,6 +434,7 @@ def build_auth_payload(
     profile_id: int | None = None,
     auth_session: AuthTokenSession | None = None,
     orig_iat: int | None = None,
+    rotate: bool = True,
 ) -> dict:
     now = issued_at or datetime.now(timezone.utc)
     issued_at_ts = unix_timestamp(now)
@@ -442,29 +445,40 @@ def build_auth_payload(
     auth_context = build_user_auth_context(user, profile_id=profile_id)
     client_ip, user_agent = get_request_metadata()
     session = auth_session or AuthTokenSession(user=user)
-    access_jti = generate_token_id()
-    refresh_jti = generate_token_id()
-    session.current_access_jti = access_jti
-    session.current_refresh_jti = refresh_jti
-    session.current_profile_id = auth_context["extra"]["profile"]["id"] if auth_context.get("extra", {}).get("profile") else profile_id
-    session.expires_at = now + timedelta(seconds=settings.AUTH_REFRESH_TOKEN_TTL_SECONDS)
-    session.last_seen_at = now
-    session.last_refreshed_at = now
-    if client_ip:
-        session.created_ip = session.created_ip or client_ip
-        session.last_ip = client_ip
-    if user_agent:
-        session.user_agent = user_agent
-    session.save()
+    if rotate:
+        recent = [entry for entry in session.recent_refresh_jtis if entry["until"] > issued_at_ts]
+        if session.current_refresh_jti:
+            recent.append({"jti": session.current_refresh_jti, "until": issued_at_ts + settings.AUTH_REFRESH_RETRY_GRACE_SECONDS})
+        # Persist identifiers, not bearer credentials. Row locking makes retries
+        # idempotent across workers and tabs, not just within one Next process.
+        session.recent_refresh_jtis = recent[-64:]
+        session.current_access_jti = generate_token_id()
+        session.current_refresh_jti = generate_token_id()
+        session.current_profile_id = auth_context["main_profile"]
+        absolute_start = min(original_issued_at, unix_timestamp(session.created_at)) if session.pk else original_issued_at
+        session.expires_at = datetime.fromtimestamp(
+            min(issued_at_ts + settings.AUTH_REFRESH_TOKEN_TTL_SECONDS, absolute_start + settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS),
+            tz=timezone.utc,
+        )
+        session.last_seen_at = now
+        session.last_refreshed_at = now
+        if client_ip:
+            session.created_ip = session.created_ip or client_ip
+            session.last_ip = client_ip
+        if user_agent:
+            session.user_agent = user_agent
+        session.save()
+
+    exp = min(exp, unix_timestamp(session.expires_at))
 
     refresh_payload = {
         "sub": str(user.id),
         "sid": str(session.session_token),
-        "rti": refresh_jti,
+        "rti": session.current_refresh_jti,
         "type": "refresh",
         "orig_iat": original_issued_at,
         "iat": issued_at_ts,
-        "exp": issued_at_ts + settings.AUTH_REFRESH_TOKEN_TTL_SECONDS,
+        "exp": unix_timestamp(session.expires_at),
         "iss": settings.AUTH_TOKEN_ISSUER,
         "aud": settings.AUTH_REFRESH_TOKEN_AUDIENCE,
     }
@@ -472,7 +486,7 @@ def build_auth_payload(
     return {
         "sub": str(user.id),
         "sid": str(session.session_token),
-        "jti": access_jti,
+        "jti": session.current_access_jti,
         "type": "access",
         "email": user.email,
         "username": user.username,
@@ -503,7 +517,7 @@ def encode_refresh_token(payload: dict) -> str:
 
 
 def decode_refresh_token(token: str, *, verify_exp: bool = True) -> dict:
-    options = {"verify_exp": verify_exp}
+    options = {"verify_exp": verify_exp, "require": ["exp", "iat", "sub", "sid", "rti", "type", "orig_iat"]}
     return jwt.decode(
         token,
         settings.SECRET_KEY,
@@ -523,14 +537,20 @@ def validate_access_token_session(payload: dict) -> AuthTokenSession:
     if not session_id or not access_jti:
         raise jwt.InvalidTokenError("Sessione non valida.")
 
+    try:
+        uuid.UUID(str(session_id))
+    except (ValueError, TypeError) as exc:
+        raise jwt.InvalidTokenError(GENERIC_SESSION_ERROR) from exc
     session = (
         AuthTokenSession.objects.select_related("user")
         .filter(session_token=session_id)
         .first()
     )
-    if session is None or not session.is_active:
+    if session is None or not session.is_active or not session.user.is_active:
         raise jwt.InvalidTokenError(GENERIC_SESSION_ERROR)
-    if session.current_access_jti != access_jti:
+    # Renewals do not invalidate signed, unexpired requests already in flight.
+    # A workspace switch does: an old token cannot authorize the previous scope.
+    if session.current_profile_id != payload.get("main_profile"):
         raise jwt.InvalidTokenError(GENERIC_SESSION_ERROR)
     if str(session.user_id) != str(payload.get("sub")):
         raise jwt.InvalidTokenError(GENERIC_SESSION_ERROR)
@@ -550,7 +570,7 @@ def validate_access_token_session(payload: dict) -> AuthTokenSession:
 
 
 def decode_access_token(token: str, *, verify_exp: bool = True) -> dict:
-    options = {"verify_exp": verify_exp}
+    options = {"verify_exp": verify_exp, "require": ["exp", "iat", "sub", "sid", "jti", "type", "main_profile"]}
     payload = jwt.decode(
         token,
         settings.SECRET_KEY,
@@ -563,24 +583,32 @@ def decode_access_token(token: str, *, verify_exp: bool = True) -> dict:
     return payload
 
 
-def resolve_refresh_session(refresh_token: str, *, verify_exp: bool = True) -> tuple[AuthTokenSession, dict]:
+def resolve_refresh_session(refresh_token: str, *, verify_exp: bool = True, lock: bool = False) -> tuple[AuthTokenSession, dict]:
     payload = decode_refresh_token(refresh_token, verify_exp=verify_exp)
     if payload.get("type") != "refresh":
         raise jwt.InvalidTokenError(GENERIC_SESSION_ERROR)
 
     session_id = payload.get("sid")
     refresh_jti = payload.get("rti")
-    session = (
-        AuthTokenSession.objects.select_related("user")
-        .filter(session_token=session_id)
-        .first()
-    )
+    try:
+        uuid.UUID(str(session_id))
+    except (ValueError, TypeError) as exc:
+        raise jwt.InvalidTokenError(GENERIC_SESSION_ERROR) from exc
+    sessions = AuthTokenSession.objects.select_related("user")
+    if lock:
+        sessions = sessions.select_for_update(of=("self",))
+    session = sessions.filter(session_token=session_id).first()
     if session is None or not session.is_active:
         raise jwt.InvalidTokenError(GENERIC_SESSION_ERROR)
     if str(session.user_id) != str(payload.get("sub")):
         revoke_auth_session(session, reason="session_subject_mismatch")
         raise jwt.InvalidTokenError(GENERIC_SESSION_ERROR)
-    if session.current_refresh_jti != refresh_jti:
+    now_ts = unix_timestamp(django_timezone.now())
+    retry_allowed = any(
+        entry["until"] > now_ts and secrets.compare_digest(entry["jti"], str(refresh_jti))
+        for entry in session.recent_refresh_jtis
+    )
+    if not secrets.compare_digest(session.current_refresh_jti, str(refresh_jti)) and not retry_allowed:
         revoke_auth_session(session, reason="refresh_replay_detected")
         raise jwt.InvalidTokenError(GENERIC_SESSION_ERROR)
     return session, payload
@@ -829,48 +857,44 @@ def verify_user_token(token: str) -> dict:
 
 
 def refresh_user_token(refresh_token: str, profile_id: int | None = None) -> dict:
-    auth_session, payload = resolve_refresh_session(refresh_token)
-    user = auth_session.user
-    if not user.is_active:
-        revoke_auth_session(auth_session, reason="inactive_user")
-        raise ValueError(GENERIC_SESSION_ERROR)
-
-    increment_counter("auth.refresh.succeeded")
-    logger.info(
-        "auth.refresh.succeeded",
-        extra={
-            "event": "auth.refresh.succeeded",
-            "user_id": user.id,
-            "session_id": str(auth_session.session_token),
-        },
-    )
-    return issue_authenticated_response(
-        user,
-        profile_id=profile_id or auth_session.current_profile_id,
-        auth_session=auth_session,
-        orig_iat=payload.get("orig_iat"),
-    )
+    failure = None
+    with transaction.atomic():
+        try:
+            auth_session, payload = resolve_refresh_session(refresh_token, lock=True)
+            user = auth_session.user
+            if not user.is_active:
+                revoke_auth_session(auth_session, reason="inactive_user")
+                raise jwt.InvalidTokenError(GENERIC_SESSION_ERROR)
+            selected_profile = profile_id or auth_session.current_profile_id
+            duplicate = payload["rti"] != auth_session.current_refresh_jti
+            rotate = not duplicate or selected_profile != auth_session.current_profile_id
+            result = authenticated_response_from_payload(build_auth_payload(
+                user,
+                profile_id=selected_profile,
+                auth_session=auth_session,
+                orig_iat=payload["orig_iat"],
+                issued_at=None if rotate else auth_session.last_refreshed_at,
+                rotate=rotate,
+            ))
+        except jwt.InvalidTokenError as exc:
+            # Commit security revocations before propagating the rejection.
+            failure = exc
+    if failure is not None:
+        increment_counter("auth.refresh.failed", reason="invalid_session")
+        raise failure
+    increment_counter("auth.refresh.succeeded", duplicate=str(duplicate).lower())
+    return result
 
 
 def logout_user(*, refresh_token: str) -> dict:
-    try:
-        auth_session, _payload = resolve_refresh_session(refresh_token, verify_exp=False)
-    except jwt.InvalidTokenError:
-        return {
-            "status": "ok",
-            "detail": "Logout eseguito.",
-        }
-
-    revoke_auth_session(auth_session, reason="logout")
-    increment_counter("auth.logout.succeeded")
-    logger.info(
-        "auth.logout.succeeded",
-        extra={
-            "event": "auth.logout.succeeded",
-            "user_id": auth_session.user_id,
-            "session_id": str(auth_session.session_token),
-        },
-    )
+    with transaction.atomic():
+        try:
+            auth_session, _payload = resolve_refresh_session(refresh_token, verify_exp=False, lock=True)
+        except jwt.InvalidTokenError:
+            pass
+        else:
+            revoke_auth_session(auth_session, reason="logout")
+            increment_counter("auth.logout.succeeded")
     return {
         "status": "ok",
         "detail": "Logout eseguito.",

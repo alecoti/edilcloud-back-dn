@@ -25,7 +25,6 @@ from edilcloud.modules.projects.models import (
     PostComment,
     PostKind,
     Project,
-    ProjectActivity,
     ProjectDocument,
     ProjectMember,
     ProjectMemberStatus,

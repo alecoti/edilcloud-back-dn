@@ -224,10 +224,12 @@ def make_item(
     timestamp,
     snippet: str | None = None,
     external: bool = False,
+    is_demo_master: bool = False,
 ) -> dict:
     return {
         "id": item_id,
         "kind": kind,
+        "is_demo_master": is_demo_master,
         "section": section,
         "title": title,
         "subtitle": subtitle,
@@ -322,6 +324,7 @@ def finalize_sections(items: list[dict], *, query: str, limit_per_section: int, 
             {
                 "id": item["id"],
                 "kind": item["kind"],
+                "is_demo_master": item.get("is_demo_master", False),
                 "title": item["title"],
                 "subtitle": item["subtitle"],
                 "snippet": item["snippet"],
@@ -367,6 +370,7 @@ def search_workspace_index(*, user, claims: dict, query: str, limit_per_section:
             items.append(
                 make_item(
                     item_id=f"project:{project.id}",
+                    is_demo_master=project.is_demo_master,
                     kind="project",
                     section="projects",
                     title=project.name,
@@ -414,6 +418,7 @@ def search_workspace_index(*, user, claims: dict, query: str, limit_per_section:
             items.append(
                 make_item(
                     item_id=f"task:{task.id}",
+                    is_demo_master=task.project.is_demo_master,
                     kind="task",
                     section="tasks",
                     title=task.name,
@@ -458,6 +463,7 @@ def search_workspace_index(*, user, claims: dict, query: str, limit_per_section:
             items.append(
                 make_item(
                     item_id=f"activity:{activity.id}",
+                    is_demo_master=activity.task.project.is_demo_master,
                     kind="activity",
                     section="activities",
                     title=activity.title or "Attività",
@@ -524,6 +530,7 @@ def search_workspace_index(*, user, claims: dict, query: str, limit_per_section:
             items.append(
                 make_item(
                     item_id=f"post:{post.id}",
+                    is_demo_master=post.project.is_demo_master,
                     kind=kind,
                     section="updates",
                     title=title,
@@ -613,6 +620,7 @@ def search_workspace_index(*, user, claims: dict, query: str, limit_per_section:
             items.append(
                 make_item(
                     item_id=f"comment:{comment.id}",
+                    is_demo_master=comment.post.project.is_demo_master,
                     kind="comment",
                     section="updates",
                     title=title,
@@ -692,6 +700,7 @@ def search_workspace_index(*, user, claims: dict, query: str, limit_per_section:
             items.append(
                 make_item(
                     item_id=f"document:{document.id}",
+                    is_demo_master=document.project.is_demo_master,
                     kind="document",
                     section="documents",
                     title=document.title or file_name or "Documento",
@@ -728,6 +737,7 @@ def search_workspace_index(*, user, claims: dict, query: str, limit_per_section:
             items.append(
                 make_item(
                     item_id=f"drawing:{photo.id}",
+                    is_demo_master=photo.project.is_demo_master,
                     kind="drawing",
                     section="drawings",
                     title=photo.title or file_name or "Disegno",
@@ -791,6 +801,7 @@ def search_workspace_index(*, user, claims: dict, query: str, limit_per_section:
             items.append(
                 make_item(
                     item_id=f"person:{member.project_id}:{member.profile_id}",
+                    is_demo_master=member.project.is_demo_master,
                     kind="person",
                     section="people",
                     title=person_name,

@@ -16,6 +16,7 @@ from edilcloud.modules.assistant.services import (
     ask_project_assistant,
     create_assistant_thread_for_project,
     get_project_assistant_state,
+    get_project_assistant_source,
     get_project_drafting_context,
     iter_project_assistant_events,
     prepare_project_assistant_run,
@@ -135,6 +136,16 @@ def get_project_assistant_state_endpoint(request, project_id: int):
             profile=current_profile(request),
             project_id=project_id,
             thread_id=thread_id,
+        )
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.get("/{project_id}/assistant/source", response=dict[str, Any], auth=auth)
+def get_project_assistant_source_endpoint(request, project_id: int, source_key: str):
+    try:
+        return get_project_assistant_source(
+            profile=current_profile(request), project_id=project_id, source_key=source_key,
         )
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc

@@ -50,12 +50,14 @@ from edilcloud.modules.projects.services import (
     create_task_post,
     delete_post,
     get_project_for_profile,
+    ensure_project_member_role_alignment,
     list_project_feed,
     normalize_project_progress,
     project_member_effective_role,
     project_role_label,
+    serialize_project_summary,
 )
-from edilcloud.modules.workspaces.models import Profile, Workspace
+from edilcloud.modules.workspaces.models import Profile, Workspace, WorkspaceRole
 
 
 def require_demo_master_superuser(*, user) -> None:
@@ -176,6 +178,101 @@ def get_demo_master_admin_status(*, user) -> dict[str, Any]:
     return build_demo_master_status_payload()
 
 
+def ensure_demo_master_assistant_assets(project: Project) -> None:
+    from edilcloud.modules.assistant.models import ProjectAssistantGraphSnapshot, ProjectAssistantState, ProjectAssistantWikiPage
+    from edilcloud.modules.assistant.graph_service import rebuild_project_graph
+    from edilcloud.modules.assistant.indexing_service import ensure_project_index_scheduled
+    from edilcloud.modules.assistant.wiki_service import rebuild_project_wiki
+
+    # Provisioning is also called by ordinary project navigation. Existing assets
+    # are maintained by the assistant sync worker, not rebuilt on each page read.
+    if not ProjectAssistantWikiPage.objects.filter(project=project).exists():
+        rebuild_project_wiki(project)
+    if not ProjectAssistantGraphSnapshot.objects.filter(project=project).exists():
+        rebuild_project_graph(project)
+    if not ProjectAssistantState.objects.filter(project=project).exists():
+        ensure_project_index_scheduled(project)
+
+
+@transaction.atomic
+def ensure_demo_master_project_for_profile(
+    *,
+    profile: Profile,
+    viewer_password: str = DEFAULT_VIEWER_PASSWORD,
+) -> dict[str, Any] | None:
+    # Serialize provisioning and personal visibility changes on the profile row.
+    profile = Profile.objects.select_for_update().select_related("user", "workspace").get(pk=profile.pk)
+    if profile.demo_project_hidden:
+        return None
+    project = get_demo_master_project()
+    if project is None:
+        user_email = getattr(profile.user, "email", "") if profile.user_id else ""
+        viewer_email = (profile.email or user_email or DEFAULT_VIEWER_EMAIL).strip()
+        summary = Seeder(
+            viewer_email=viewer_email or DEFAULT_VIEWER_EMAIL,
+            viewer_password=viewer_password,
+        ).run()
+        project = Project.objects.get(id=summary["project_id"])
+    else:
+        changed_fields: list[str] = []
+        if not project.is_demo_master:
+            project.is_demo_master = True
+            changed_fields.append("is_demo_master")
+        if changed_fields:
+            changed_fields.append("updated_at")
+            project.save(update_fields=changed_fields)
+
+    default_role = (
+        profile.role
+        if profile.workspace_id == project.workspace_id and profile.role
+        else WorkspaceRole.MANAGER
+    )
+    member, created = ProjectMember.objects.get_or_create(
+        project=project,
+        profile=profile,
+        defaults={
+            "role": default_role,
+            "status": ProjectMemberStatus.ACTIVE,
+            "disabled": False,
+            "is_external": profile.workspace_id != project.workspace_id,
+            "project_role_codes": [],
+        },
+    )
+    if not created:
+        update_fields: list[str] = []
+        if member.status != ProjectMemberStatus.ACTIVE:
+            member.status = ProjectMemberStatus.ACTIVE
+            update_fields.append("status")
+        if member.disabled:
+            member.disabled = False
+            update_fields.append("disabled")
+        expected_external = profile.workspace_id != project.workspace_id
+        if member.is_external != expected_external:
+            member.is_external = expected_external
+            update_fields.append("is_external")
+        if not member.role:
+            member.role = default_role
+            update_fields.append("role")
+        if update_fields:
+            update_fields.append("updated_at")
+            member.save(update_fields=update_fields)
+
+    ensure_demo_master_assistant_assets(project)
+
+    return serialize_project_summary(
+        get_project_for_profile(profile=profile, project_id=project.id)
+    )
+
+
+@transaction.atomic
+def set_demo_project_visibility(*, profile: Profile, visible: bool) -> dict[str, Any]:
+    profile = Profile.objects.select_for_update().get(pk=profile.pk)
+    profile.demo_project_hidden = not visible
+    profile.save(update_fields=["demo_project_hidden", "updated_at"])
+    project = ensure_demo_master_project_for_profile(profile=profile) if visible else None
+    return {"visible": visible, "project": project}
+
+
 def build_demo_master_scenario_metric(label: str, value: Any) -> dict[str, Any]:
     return {
         "label": label,
@@ -245,13 +342,9 @@ def get_demo_master_scenarios_report(*, user) -> dict[str, Any]:
     posts_qs = ProjectPost.objects.filter(project=project, is_deleted=False)
     comments_qs = PostComment.objects.filter(post__project=project, is_deleted=False)
 
-    task_count = ProjectTask.objects.filter(project=project).count()
-    activity_count = ProjectActivity.objects.filter(task__project=project).count()
     document_count = ProjectDocument.objects.filter(project=project).count()
     photo_count = ProjectPhoto.objects.filter(project=project).count()
     folder_count = ProjectFolder.objects.filter(project=project).count()
-    post_count = posts_qs.count()
-    comment_count = comments_qs.count()
     post_attachment_count = PostAttachment.objects.filter(post__project=project).count()
     comment_attachment_count = CommentAttachment.objects.filter(comment__post__project=project).count()
     documentation_post_count = posts_qs.filter(post_kind=PostKind.DOCUMENTATION).count()

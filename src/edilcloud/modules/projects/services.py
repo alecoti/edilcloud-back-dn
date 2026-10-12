@@ -6,21 +6,27 @@ import colorsys
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 import hashlib
+from io import BytesIO
 import json
 import math
 import mimetypes
 from pathlib import Path
+from threading import Lock
 from typing import Any
 from urllib.parse import quote
 import uuid
 
 import httpx
 from django.conf import settings
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Case, Count, DateTimeField, F, Max, Prefetch, Q, When
-from django.http import FileResponse
+from django.db.models import Avg, Case, Count, DateTimeField, Exists, F, IntegerField, Max, OuterRef, Prefetch, Q, Subquery, When
+from django.db.models.functions import Coalesce
+from django.http import FileResponse, HttpResponse
 from django.utils import timezone
+from PIL import Image, ImageOps, UnidentifiedImageError
+import pypdfium2 as pdfium
 
 from edilcloud.modules.files.media_optimizer import optimize_media_for_storage
 from edilcloud.modules.notifications.catalog import (
@@ -66,6 +72,7 @@ from edilcloud.modules.projects.models import (
     ProjectDocument,
     ProjectDocumentKind,
     ProjectDrawingPin,
+    ProjectModelPin,
     ProjectFolder,
     ProjectInviteCode,
     ProjectMember,
@@ -92,6 +99,9 @@ from edilcloud.modules.workspaces.services import (
 )
 from edilcloud.platform.geocoding import geocode_address
 from edilcloud.platform.realtime.services import publish_notification_event, publish_project_event
+
+
+_PDFIUM_LOCK = Lock()
 
 
 PROJECT_EDIT_ROLES = {
@@ -1250,6 +1260,9 @@ def attachment_extension(file_field) -> str | None:
 def attachment_size(file_field) -> int | None:
     if not file_field:
         return None
+    instance = getattr(file_field, "instance", None)
+    if instance is not None and hasattr(instance, "file_size"):
+        return instance.file_size
     try:
         return file_field.size
     except Exception:
@@ -1412,6 +1425,7 @@ def serialize_project_summary(project: Project) -> dict:
         "id": project.id,
         "name": project.name,
         "description": project.description or None,
+        "is_demo_master": project.is_demo_master,
         "address": project.address or None,
         "google_place_id": project.google_place_id or None,
         "latitude": project.latitude,
@@ -1438,14 +1452,32 @@ def serialize_project_summary(project: Project) -> dict:
 
 
 def project_access_queryset(profile: Profile):
-    return (
-        Project.objects.filter(
-            members__profile=profile,
-            members__status=ProjectMemberStatus.ACTIVE,
-            members__disabled=False,
-        )
+    membership = ProjectMember.objects.filter(
+        project_id=OuterRef("pk"), profile=profile,
+        status=ProjectMemberStatus.ACTIVE, disabled=False,
+    )
+    queryset = (
+        Project.objects.filter(Exists(membership))
         .select_related("workspace", "created_by__workspace", "created_by__user")
-        .distinct()
+    )
+    return queryset.exclude(is_demo_master=True) if profile.demo_project_hidden else queryset
+
+
+def project_summary_queryset(profile: Profile):
+    # Independent aggregates avoid members x posts x tasks join multiplication.
+    members = ProjectMember.objects.filter(
+        project_id=OuterRef("pk"), status=ProjectMemberStatus.ACTIVE, disabled=False,
+    ).order_by().values("project_id").annotate(total=Count("pk")).values("total")
+    alerts = ProjectPost.objects.filter(
+        project_id=OuterRef("pk"), alert=True, is_deleted=False,
+    ).order_by().values("project_id").annotate(total=Count("pk")).values("total")
+    progress = ProjectTask.objects.filter(project_id=OuterRef("pk")).order_by().values(
+        "project_id"
+    ).annotate(average=Avg("progress")).values("average")
+    return project_access_queryset(profile).annotate(
+        team_count=Coalesce(Subquery(members, output_field=IntegerField()), 0),
+        alert_count=Coalesce(Subquery(alerts, output_field=IntegerField()), 0),
+        avg_task_progress=Subquery(progress),
     )
 
 
@@ -1468,27 +1500,7 @@ def get_project_membership(project: Project, profile: Profile) -> ProjectMember:
 
 
 def get_project_for_profile(*, profile: Profile, project_id: int) -> Project:
-    project = (
-        project_access_queryset(profile)
-        .filter(id=project_id)
-        .annotate(
-            team_count=Count(
-                "members",
-                filter=Q(
-                    members__status=ProjectMemberStatus.ACTIVE,
-                    members__disabled=False,
-                ),
-                distinct=True,
-            ),
-            alert_count=Count(
-                "posts",
-                filter=Q(posts__alert=True, posts__is_deleted=False),
-                distinct=True,
-            ),
-            avg_task_progress=Avg("tasks__progress"),
-        )
-        .first()
-    )
+    project = project_summary_queryset(profile).filter(id=project_id).first()
     if project is None:
         raise ValueError("Progetto non trovato o non accessibile.")
     return project
@@ -1526,23 +1538,7 @@ def project_company_colors_for_context(
 
 def list_projects(*, profile: Profile) -> list[dict]:
     projects = list(
-        project_access_queryset(profile)
-        .annotate(
-            team_count=Count(
-                "members",
-                filter=Q(
-                    members__status=ProjectMemberStatus.ACTIVE,
-                    members__disabled=False,
-                ),
-                distinct=True,
-            ),
-            alert_count=Count(
-                "posts",
-                filter=Q(posts__alert=True, posts__is_deleted=False),
-                distinct=True,
-            ),
-            avg_task_progress=Avg("tasks__progress"),
-        )
+        project_summary_queryset(profile)
         .order_by("-created_at", "-id")
     )
     return [serialize_project_summary(project) for project in projects]
@@ -2071,6 +2067,7 @@ def serialize_post(
     drawing_pin_tags = [
         serialize_post_pin_tag(pin) for pin in list(post.drawing_pins.all())
     ]
+    model_pin_tags = [serialize_post_model_pin_tag(pin) for pin in list(post.model_pins.all())]
     last_activity_at = effective_last_activity_at or compute_post_last_activity_at(
         post=post,
         comments=effective_comments,
@@ -2091,6 +2088,7 @@ def serialize_post(
             "id": post.project_id,
             "name": post.project.name,
             "description": post.project.description or None,
+            "is_demo_master": post.project.is_demo_master,
             "date_start": post.project.date_start,
             "date_end": post.project.date_end,
             "shared_project": None,
@@ -2117,6 +2115,7 @@ def serialize_post(
         "is_public": post.is_public,
         "unique_code": post.unique_code,
         "drawing_pin_tags": drawing_pin_tags,
+        "model_pin_tags": model_pin_tags,
         "weather_snapshot": post.weather_snapshot or None,
         "media_set": [serialize_attachment(attachment) for attachment in post.attachments.all()],
         "comment_set": serialize_comment_tree(
@@ -2142,6 +2141,7 @@ def serialize_post_summary(
     drawing_pin_tags = [
         serialize_post_pin_tag(pin) for pin in list(post.drawing_pins.all())
     ]
+    model_pin_tags = [serialize_post_model_pin_tag(pin) for pin in list(post.model_pins.all())]
     last_activity_at = effective_last_activity_at or compute_post_last_activity_at(post=post)
     viewer_seen_state = get_viewer_seen_state_for_post(post=post, viewer_profile=viewer_profile)
     viewer_seen_at = viewer_seen_state.seen_at if viewer_seen_state is not None else None
@@ -2149,6 +2149,9 @@ def serialize_post_summary(
         post,
         translation=(translation_by_post_id or {}).get(post.id),
     )
+    comment_count = getattr(post, "summary_comment_count", None)
+    if comment_count is None:
+        comment_count = sum(not comment.is_deleted for comment in post.comments.all())
     return {
         "id": post.id,
         "author": serialize_project_profile(
@@ -2159,6 +2162,7 @@ def serialize_post_summary(
             "id": post.project_id,
             "name": post.project.name,
             "description": post.project.description or None,
+            "is_demo_master": post.project.is_demo_master,
             "date_start": post.project.date_start,
             "date_end": post.project.date_end,
             "shared_project": None,
@@ -2185,8 +2189,10 @@ def serialize_post_summary(
         "is_public": post.is_public,
         "unique_code": post.unique_code,
         "drawing_pin_tags": drawing_pin_tags,
+        "model_pin_tags": model_pin_tags,
         "weather_snapshot": post.weather_snapshot or None,
         "media_set": [serialize_attachment(attachment) for attachment in post.attachments.all()],
+        "comment_count": comment_count,
         "comment_set": [],
     }
 
@@ -2198,6 +2204,7 @@ def serialize_activity(
     include_posts: bool = False,
     membership: ProjectMember | None = None,
     company_colors_by_workspace_id: dict[int, str] | None = None,
+    compact: bool = False,
 ) -> dict:
     worker_ids = {worker.id for worker in activity.workers.all()}
     return {
@@ -2224,7 +2231,7 @@ def serialize_activity(
                 member,
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
             )
-            for member in project_members
+            for member in ([] if compact else project_members)
         ],
         "workers_in_activity": [
             serialize_project_team_member(
@@ -2256,6 +2263,7 @@ def serialize_task(
     include_activity_posts: bool = False,
     membership: ProjectMember | None = None,
     company_colors_by_workspace_id: dict[int, str] | None = None,
+    compact: bool = False,
 ) -> dict:
     return {
         "id": task.id,
@@ -2290,6 +2298,7 @@ def serialize_task(
                 include_posts=include_activity_posts,
                 membership=membership,
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
+                compact=compact,
             )
             for activity in task.activities.all()
         ],
@@ -2483,6 +2492,7 @@ def delete_project_gantt_link(
 
 
 def serialize_document(document: ProjectDocument) -> dict:
+    extension = attachment_extension(document.document)
     return {
         "id": document.id,
         "title": document.title or None,
@@ -2490,13 +2500,140 @@ def serialize_document(document: ProjectDocument) -> dict:
         "document": file_url(document.document),
         "date_create": document.created_at,
         "date_last_modify": document.updated_at,
-        "extension": attachment_extension(document.document),
+        "extension": extension,
         "size": attachment_size(document.document),
         "relative_path": document.document.name if document.document else None,
         "folder_relative_path": document.folder.path if document.folder else None,
         "folder": document.folder_id,
         "document_kind": document.document_kind,
+        "preview_available": bool(document.drawing_preview)
+        or extension.lower() in {"png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp", "gif", "pdf"},
     }
+
+
+def upload_project_drawing_preview(
+    *, profile: Profile, project_id: int, drawing_id: int, uploaded_file
+) -> dict:
+    project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
+    if not can_edit_project(membership):
+        raise ValueError("Non hai permessi per modificare le tavole del progetto.")
+    drawing = project.documents.filter(
+        id=drawing_id, document_kind=ProjectDocumentKind.DRAWING
+    ).first()
+    if drawing is None:
+        raise ValueError("Tavola non trovata nel progetto.")
+    if uploaded_file.size > 30 * 1024 * 1024:
+        raise ValueError("L'anteprima non puo superare 30 MB.")
+    try:
+        with Image.open(uploaded_file) as image:
+            if image.format not in {"PNG", "JPEG", "WEBP", "TIFF"}:
+                raise ValueError("Usa un'anteprima PNG, JPG, WebP o TIFF.")
+            image.verify()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("Il file anteprima non e un'immagine valida.") from exc
+    uploaded_file.seek(0)
+    if drawing.drawing_preview:
+        drawing.drawing_preview.delete(save=False)
+    drawing.drawing_preview.save(uploaded_file.name, uploaded_file, save=True)
+    return serialize_document(drawing)
+
+
+def get_project_drawing_preview_response(
+    *, profile: Profile, project_id: int, drawing_id: int, width: int = 1600,
+    page_number: int = 1,
+):
+    project = get_project_for_profile(profile=profile, project_id=project_id)
+    drawing = project.documents.filter(
+        id=drawing_id, document_kind=ProjectDocumentKind.DRAWING
+    ).first()
+    if drawing is None:
+        raise ValueError("Tavola non trovata nel progetto.")
+    source = drawing.document if Path(drawing.document.name).suffix.lower() == ".pdf" else (
+        drawing.drawing_preview or drawing.document
+    )
+    extension = Path(source.name).suffix.lower()
+    if extension not in {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp", ".gif", ".pdf"}:
+        raise ValueError("Anteprima non disponibile. Carica una vista PNG o JPG della tavola.")
+    target_width = min(3200, max(320, int(width)))
+    normalized_page = normalize_pin_page_number(page_number)
+    cache_key = f"drawing-preview:{drawing.id}:{drawing.updated_at.timestamp()}:{target_width}:{normalized_page}"
+    content = cache.get(cache_key)
+    if content is None:
+        source.open("rb")
+        try:
+            if extension == ".pdf":
+                with _PDFIUM_LOCK:
+                    with pdfium.PdfDocument(source) as pdf:
+                        if normalized_page > len(pdf):
+                            raise ValueError("Pagina non presente nella tavola PDF.")
+                        page = pdf[normalized_page - 1]
+                        try:
+                            page_width, page_height = page.get_size()
+                            if page_width <= 0 or page_height <= 0:
+                                raise ValueError("Dimensioni pagina PDF non valide.")
+                            scale = min(
+                                target_width / page_width,
+                                target_width / page_height,
+                                (12_000_000 / (page_width * page_height)) ** 0.5,
+                            )
+                            bitmap = page.render(scale=scale)
+                            try:
+                                image = bitmap.to_pil().copy()
+                            finally:
+                                bitmap.close()
+                        finally:
+                            page.close()
+                output = BytesIO()
+                image.convert("RGB").save(output, format="WEBP", quality=82, method=4)
+                content = output.getvalue()
+            else:
+                if normalized_page != 1:
+                    raise ValueError("Questa tavola contiene una sola pagina.")
+                with Image.open(source) as image:
+                    if image.width * image.height > 120_000_000:
+                        raise ValueError("Tavola troppo grande: carica un'anteprima ottimizzata.")
+                    image = ImageOps.exif_transpose(image)
+                    image.thumbnail((target_width, target_width * 2), Image.Resampling.LANCZOS)
+                    output = BytesIO()
+                    image.convert("RGB").save(output, format="WEBP", quality=82, method=4)
+                    content = output.getvalue()
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError, pdfium.PdfiumError) as exc:
+            raise ValueError("Impossibile generare l'anteprima della tavola.") from exc
+        finally:
+            source.close()
+        cache.set(cache_key, content, timeout=3600)
+    response = HttpResponse(content, content_type="image/webp")
+    response["Cache-Control"] = "private, max-age=3600"
+    return response
+
+
+def get_project_drawing_page_count(
+    *, profile: Profile, project_id: int, drawing_id: int
+) -> int:
+    project = get_project_for_profile(profile=profile, project_id=project_id)
+    drawing = project.documents.filter(
+        id=drawing_id, document_kind=ProjectDocumentKind.DRAWING
+    ).first()
+    if drawing is None:
+        raise ValueError("Tavola non trovata nel progetto.")
+    if Path(drawing.document.name).suffix.lower() != ".pdf":
+        return 1
+    cache_key = f"drawing-pages:{drawing.id}:{drawing.updated_at.timestamp()}"
+    page_count = cache.get(cache_key)
+    if page_count is None:
+        drawing.document.open("rb")
+        try:
+            with _PDFIUM_LOCK:
+                with pdfium.PdfDocument(drawing.document) as pdf:
+                    page_count = len(pdf)
+        except (OSError, pdfium.PdfiumError) as exc:
+            raise ValueError("Impossibile leggere la tavola PDF.") from exc
+        finally:
+            drawing.document.close()
+        cache.set(cache_key, page_count, timeout=3600)
+    return page_count
 
 
 def drawing_pin_visual_state(pin: ProjectDrawingPin) -> tuple[str, str, str]:
@@ -2531,6 +2668,14 @@ def serialize_post_pin_tag(pin: ProjectDrawingPin) -> dict:
             "title": pin.drawing_document.title or None,
             "document_kind": pin.drawing_document.document_kind,
         },
+    }
+
+
+def serialize_post_model_pin_tag(pin: ProjectModelPin) -> dict:
+    return {
+        "id": pin.id,
+        "label": pin.label or None,
+        "model": {"id": pin.model_id, "title": pin.model.title},
     }
 
 
@@ -2714,7 +2859,7 @@ def project_tasks_queryset(project: Project):
             Prefetch(
                 "activities",
                 queryset=ProjectActivity.objects.order_by("datetime_start", "id").prefetch_related(
-                    "workers"
+                    Prefetch("workers", queryset=Profile.objects.select_related("workspace", "user"))
                 ),
             )
         )
@@ -2722,7 +2867,7 @@ def project_tasks_queryset(project: Project):
     )
 
 
-def list_project_tasks(*, profile: Profile, project_id: int) -> list[dict]:
+def list_project_tasks(*, profile: Profile, project_id: int, compact: bool = False) -> list[dict] | dict:
     project, membership, members = get_project_with_team_context(
         profile=profile, project_id=project_id
     )
@@ -2732,16 +2877,26 @@ def list_project_tasks(*, profile: Profile, project_id: int) -> list[dict]:
         members=members,
         tasks=tasks,
     )
-    return [
+    rows = [
         serialize_task(
             task,
             project_members=members,
             include_activity_posts=False,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            compact=compact,
         )
         for task in tasks
     ]
+    if not compact:
+        return rows
+    return {
+        "tasks": rows,
+        "assignment_members": [
+            serialize_project_team_member(member, company_colors_by_workspace_id=company_colors_by_workspace_id)
+            for member in members
+        ],
+    }
 
 
 def build_project_gantt_company_lookup(
@@ -3019,7 +3174,7 @@ def apply_project_gantt_import(
     }
 
 
-def list_project_gantt(*, profile: Profile, project_id: int) -> dict:
+def list_project_gantt(*, profile: Profile, project_id: int, compact: bool = False) -> dict:
     project, membership, members = get_project_with_team_context(
         profile=profile, project_id=project_id
     )
@@ -3038,10 +3193,15 @@ def list_project_gantt(*, profile: Profile, project_id: int) -> dict:
                 include_activity_posts=False,
                 membership=membership,
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
+                compact=compact,
             )
             for task in tasks
         ],
         "links": [serialize_schedule_link(link) for link in schedule_links],
+        **({"assignment_members": [
+            serialize_project_team_member(member, company_colors_by_workspace_id=company_colors_by_workspace_id)
+            for member in members
+        ]} if compact else {}),
     }
 
 
@@ -3119,6 +3279,10 @@ def drawing_pin_queryset():
                 "drawing_document__folder",
             ).order_by("page_number", "id"),
         ),
+        Prefetch(
+            "post__model_pins",
+            queryset=ProjectModelPin.objects.select_related("model").order_by("id"),
+        ),
     )
 
 
@@ -3126,12 +3290,16 @@ def list_project_drawing_pins(
     *,
     profile: Profile,
     project_id: int,
+    drawing_document_id: int | None = None,
     target_language: str | None = None,
 ) -> list[dict]:
     project, membership, members = get_project_with_team_context(
         profile=profile, project_id=project_id
     )
-    pins = list(drawing_pin_queryset().filter(project=project))
+    queryset = drawing_pin_queryset().filter(project=project)
+    if drawing_document_id is not None:
+        queryset = queryset.filter(drawing_document_id=drawing_document_id)
+    pins = list(queryset)
     posts = [pin.post for pin in pins]
     comments = [comment for post in posts for comment in post.comments.all()]
     post_translation_map = resolve_post_translation_memory(
@@ -3332,8 +3500,8 @@ def list_project_folders(*, profile: Profile, project_id: int) -> list[dict]:
     return [serialize_folder(folder) for folder in folders]
 
 
-def project_posts_queryset():
-    return ProjectPost.objects.select_related(
+def project_posts_queryset(*, lightweight: bool = False):
+    queryset = ProjectPost.objects.select_related(
         "author",
         "author__workspace",
         "author__user",
@@ -3349,6 +3517,16 @@ def project_posts_queryset():
                 "drawing_document__folder",
             ).order_by("page_number", "id"),
         ),
+        Prefetch(
+            "model_pins",
+            queryset=ProjectModelPin.objects.select_related("model").order_by("id"),
+        ),
+    )
+    if lightweight:
+        return queryset.annotate(
+            summary_comment_count=Count("comments", filter=Q(comments__is_deleted=False)),
+        )
+    return queryset.prefetch_related(
         Prefetch(
             "comments",
             queryset=PostComment.objects.select_related(
@@ -3373,7 +3551,7 @@ def list_project_alert_posts(
         profile=profile, project_id=project_id
     )
     posts = list(
-        annotate_posts_with_feed_activity(project_posts_queryset())
+        annotate_posts_with_feed_activity(project_posts_queryset(lightweight=lightweight))
         .filter(project=project, alert=True, is_deleted=False)
         .order_by("-effective_last_activity_at", "-id")
     )
@@ -3420,7 +3598,7 @@ def list_project_recent_posts(
         profile=profile, project_id=project_id
     )
     posts = list(
-        annotate_posts_with_feed_activity(project_posts_queryset())
+        annotate_posts_with_feed_activity(project_posts_queryset(lightweight=lightweight))
         .filter(project=project, is_deleted=False)
         .order_by("-effective_last_activity_at", "-id")[:limit]
     )
@@ -3461,11 +3639,16 @@ def list_project_feed(
     limit: int = 50,
     offset: int = 0,
     target_language: str | None = None,
+    project_id: int | None = None,
+    lightweight: bool = False,
 ) -> dict:
     safe_limit = min(max(int(limit or 50), 1), 250)
     safe_offset = max(int(offset or 0), 0)
 
-    queryset = accessible_feed_posts_queryset(profile=profile)
+    queryset = accessible_feed_posts_queryset(profile=profile, lightweight=lightweight)
+    if project_id is not None:
+        get_project_for_profile(profile=profile, project_id=project_id)
+        queryset = queryset.filter(project_id=project_id)
     posts = list(
         queryset.order_by("-effective_last_activity_at", "-id")[
             safe_offset : safe_offset + safe_limit + 1
@@ -3486,14 +3669,14 @@ def list_project_feed(
         target_language=target_language,
         fallback_language=profile.language,
     )
-    comment_translation_map = resolve_comment_translation_memory(
+    comment_translation_map = {} if lightweight else resolve_comment_translation_memory(
         [comment for post in page_posts for comment in post.comments.all()],
         target_language=target_language,
         fallback_language=profile.language,
     )
 
     items = [
-        serialize_post(
+        (serialize_post_summary if lightweight else serialize_post)(
             post=post,
             membership=membership_by_project_id[post.project_id],
             viewer_profile=profile,
@@ -3515,16 +3698,13 @@ def list_project_feed(
     }
 
 
-def accessible_feed_posts_queryset(*, profile: Profile):
-    accessible_project_ids = ProjectMember.objects.filter(
-        profile=profile,
-        status=ProjectMemberStatus.ACTIVE,
-        disabled=False,
-        project__workspace__is_active=True,
-    ).values_list("project_id", flat=True)
+def accessible_feed_posts_queryset(*, profile: Profile, lightweight: bool = False):
+    accessible_project_ids = project_access_queryset(profile).filter(
+        workspace__is_active=True,
+    ).values_list("id", flat=True)
 
     return prefetch_post_feed_seen_state(
-        annotate_posts_with_feed_activity(project_posts_queryset()).filter(
+        annotate_posts_with_feed_activity(project_posts_queryset(lightweight=lightweight)).filter(
             project_id__in=accessible_project_ids
         ),
         profile=profile,
@@ -3584,7 +3764,7 @@ def mark_feed_posts_seen(*, profile: Profile, post_ids: list[int] | None = None)
 
 
 def get_project_overview(
-    *, profile: Profile, project_id: int, target_language: str | None = None
+    *, profile: Profile, project_id: int, target_language: str | None = None, compact: bool = False
 ) -> dict:
     project, membership, members = get_project_with_team_context(
         profile=profile, project_id=project_id
@@ -3622,6 +3802,7 @@ def get_project_overview(
                 include_activity_posts=False,
                 membership=membership,
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
+                compact=compact,
             )
             for task in tasks
         ],
@@ -3640,8 +3821,22 @@ def get_project_overview(
     }
 
 
+def _paginate_posts_queryset(queryset, *, limit: int | None = None, offset: int = 0):
+    if limit is None:
+        return queryset
+    safe_limit = min(max(int(limit or 1), 1), 250)
+    safe_offset = max(int(offset or 0), 0)
+    return queryset[safe_offset : safe_offset + safe_limit]
+
+
 def list_posts_for_task(
-    *, profile: Profile, task_id: int, target_language: str | None = None
+    *,
+    profile: Profile,
+    task_id: int,
+    include_activities: bool = False,
+    limit: int | None = None,
+    offset: int = 0,
+    target_language: str | None = None,
 ) -> list[dict]:
     task = ProjectTask.objects.select_related("project").filter(id=task_id).first()
     if task is None:
@@ -3649,10 +3844,17 @@ def list_posts_for_task(
     project, membership, members = get_project_with_team_context(
         profile=profile, project_id=task.project_id
     )
+    post_filter = Q(task=task)
+    if not include_activities:
+        post_filter &= Q(activity__isnull=True)
     posts = list(
-        project_posts_queryset()
-        .filter(task=task, activity__isnull=True)
-        .order_by("-published_date", "-id")
+        _paginate_posts_queryset(
+            annotate_posts_with_feed_activity(project_posts_queryset())
+            .filter(post_filter)
+            .order_by("-effective_last_activity_at", "-id"),
+            limit=limit,
+            offset=offset,
+        )
     )
     company_colors_by_workspace_id = project_company_colors_for_context(
         project=project, members=members
@@ -3672,6 +3874,7 @@ def list_posts_for_task(
             post=post,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            effective_last_activity_at=getattr(post, "effective_last_activity_at", None),
             translation_by_post_id=post_translation_map,
             translation_by_comment_id=comment_translation_map,
         )
@@ -3680,7 +3883,12 @@ def list_posts_for_task(
 
 
 def list_posts_for_activity(
-    *, profile: Profile, activity_id: int, target_language: str | None = None
+    *,
+    profile: Profile,
+    activity_id: int,
+    limit: int | None = None,
+    offset: int = 0,
+    target_language: str | None = None,
 ) -> list[dict]:
     activity = (
         ProjectActivity.objects.select_related("task", "task__project")
@@ -3694,7 +3902,13 @@ def list_posts_for_activity(
         project_id=activity.task.project_id,
     )
     posts = list(
-        project_posts_queryset().filter(activity=activity).order_by("-published_date", "-id")
+        _paginate_posts_queryset(
+            annotate_posts_with_feed_activity(project_posts_queryset())
+            .filter(activity=activity)
+            .order_by("-effective_last_activity_at", "-id"),
+            limit=limit,
+            offset=offset,
+        )
     )
     company_colors_by_workspace_id = project_company_colors_for_context(
         project=project, members=members
@@ -3714,6 +3928,7 @@ def list_posts_for_activity(
             post=post,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
+            effective_last_activity_at=getattr(post, "effective_last_activity_at", None),
             translation_by_post_id=post_translation_map,
             translation_by_comment_id=comment_translation_map,
         )
@@ -5766,13 +5981,17 @@ def create_project_folder(
         parent = ProjectFolder.objects.filter(project=project, id=parent_id).first()
         if parent is None:
             raise ValueError("Cartella padre non valida.")
-    folder = ProjectFolder.objects.create(
+    folder, created = ProjectFolder.objects.get_or_create(
         project=project,
-        parent=parent,
-        name=normalize_text(name),
         path=build_folder_path(parent=parent, name=name),
-        is_public=bool(is_public),
+        defaults={
+            "parent": parent,
+            "name": normalize_text(name),
+            "is_public": bool(is_public),
+        },
     )
+    if not created:
+        return serialize_folder(folder)
     emit_project_realtime_event(
         event_type="folder.created",
         project_id=project.id,
@@ -5954,8 +6173,8 @@ def delete_project_folder(*, profile: Profile, folder_id: int) -> None:
     )
 
 
-def _assert_project_document_upload_size(uploaded_file) -> None:
-    max_bytes = int(getattr(settings, "PROJECT_DOCUMENT_MAX_UPLOAD_BYTES", 15 * 1024 * 1024))
+def _assert_project_document_upload_size(uploaded_file, *, max_bytes: int | None = None) -> None:
+    max_bytes = max_bytes or int(getattr(settings, "PROJECT_DOCUMENT_MAX_UPLOAD_BYTES", 15 * 1024 * 1024))
     size = int(getattr(uploaded_file, "size", 0) or 0)
     if size <= 0:
         return
@@ -5978,6 +6197,7 @@ def upload_project_document(
     additional_path: str = "",
     is_public: bool = False,
     document_kind: str = ProjectDocumentKind.DOCUMENT,
+    max_upload_bytes: int | None = None,
 ) -> dict:
     project, membership, _members = get_project_with_team_context(
         profile=profile, project_id=project_id
@@ -5991,7 +6211,7 @@ def upload_project_document(
         if document_kind in ProjectDocumentKind.values
         else ProjectDocumentKind.DOCUMENT
     )
-    _assert_project_document_upload_size(uploaded_file)
+    _assert_project_document_upload_size(uploaded_file, max_bytes=max_upload_bytes)
     prepared_file = optimize_media_for_storage(uploaded_file)
     assert_storage_quota_available(
         project.workspace,
@@ -6074,6 +6294,13 @@ def upload_project_drawing(
     description: str = "",
     is_public: bool = False,
 ) -> dict:
+    allowed_extensions = {
+        ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp", ".gif",
+        ".pdf", ".dwg", ".dxf", ".dwf", ".dwfx", ".ifc", ".rvt",
+        ".rfa", ".skp", ".dgn", ".plt", ".svg", ".glb", ".gltf",
+    }
+    if Path(uploaded_file.name).suffix.lower() not in allowed_extensions:
+        raise ValueError("Formato tavola non supportato.")
     return upload_project_document(
         profile=profile,
         project_id=project_id,
@@ -6084,7 +6311,55 @@ def upload_project_drawing(
         additional_path="",
         is_public=is_public,
         document_kind=ProjectDocumentKind.DRAWING,
+        max_upload_bytes=int(getattr(settings, "PROJECT_DRAWING_MAX_UPLOAD_BYTES", 100 * 1024 * 1024)),
     )
+
+
+def import_project_drawing(
+    *, profile: Profile, project_id: int, source_kind: str, source_id: int
+) -> dict:
+    project, membership, _members = get_project_with_team_context(
+        profile=profile, project_id=project_id
+    )
+    if not can_edit_project(membership):
+        raise ValueError("Non hai permessi per aggiungere tavole in questo progetto.")
+    if source_kind == "document":
+        source = project.documents.filter(
+            id=source_id, document_kind=ProjectDocumentKind.DOCUMENT
+        ).first()
+        if source is None:
+            raise ValueError("Documento non trovato nel progetto.")
+        source_file = source.document
+        title = source.title
+    elif source_kind == "photo":
+        source = project.photos.filter(id=source_id).first()
+        if source is None:
+            raise ValueError("Foto non trovata nel progetto.")
+        source_file = source.photo
+        title = source.title or Path(source.photo.name).stem
+    else:
+        raise ValueError("Origine tavola non valida.")
+    if not source_file:
+        raise ValueError("File originale non disponibile.")
+    existing = project.documents.filter(
+        document_kind=ProjectDocumentKind.DRAWING, document=source_file.name
+    ).first()
+    if existing:
+        return serialize_document(existing)
+    drawing = ProjectDocument.objects.create(
+        project=project,
+        title=title,
+        document=source_file.name,
+        document_kind=ProjectDocumentKind.DRAWING,
+    )
+    emit_project_realtime_event(
+        event_type="drawing.created",
+        project_id=project.id,
+        actor_profile=profile,
+        document_id=drawing.id,
+        data={"category": "drawing", "project_level": True, "document_title": drawing.title},
+    )
+    return serialize_document(drawing)
 
 
 def _clone_uploaded_binary(

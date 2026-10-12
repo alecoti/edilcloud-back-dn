@@ -6,6 +6,11 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 
+from edilcloud.modules.assistant.models import (
+    ProjectAssistantGraphSnapshot,
+    ProjectAssistantState,
+    ProjectAssistantWikiPage,
+)
 from edilcloud.modules.projects.models import (
     CommentAttachment,
     PostAttachment,
@@ -17,12 +22,14 @@ from edilcloud.modules.projects.models import (
     ProjectDocumentKind,
     ProjectDrawingPin,
     ProjectMember,
+    ProjectMemberStatus,
     ProjectPhoto,
     ProjectPost,
     ProjectPostTranslation,
     ProjectTask,
 )
 from edilcloud.modules.projects.demo_master_snapshot import build_demo_snapshot_payload
+from edilcloud.modules.projects.demo_master_admin import ensure_demo_master_project_for_profile
 from edilcloud.modules.projects.services import (
     list_project_documents,
     list_project_drawings,
@@ -178,3 +185,50 @@ def test_seed_rich_demo_project_provisions_superuser_into_demo_workspace(tmp_pat
         profile=demo_profile,
         role=WorkspaceRole.OWNER,
     ).exists()
+
+
+@pytest.mark.django_db
+def test_ensure_demo_master_project_for_profile_creates_backend_demo_and_membership(tmp_path, settings):
+    settings.MEDIA_ROOT = Path(tmp_path) / "media"
+
+    user = get_user_model().objects.create_user(
+        email="real.viewer@example.com",
+        password="demo1234!",
+        first_name="Real",
+        last_name="Viewer",
+        language="it",
+    )
+    workspace = Workspace.objects.create(
+        name="Real Viewer Workspace",
+        email="real.viewer@example.com",
+        color="#334155",
+    )
+    profile = Profile.objects.create(
+        workspace=workspace,
+        user=user,
+        email=user.email,
+        role=WorkspaceRole.OWNER,
+        first_name="Real",
+        last_name="Viewer",
+        language="it",
+        position="Viewer",
+    )
+
+    first_payload = ensure_demo_master_project_for_profile(profile=profile)
+    second_payload = ensure_demo_master_project_for_profile(profile=profile)
+
+    project = Project.objects.get(id=first_payload["id"])
+    assert first_payload["id"] == second_payload["id"]
+    assert project.is_demo_master is True
+    assert Project.objects.filter(name="Residenza Parco Naviglio - Lotto A").count() == 1
+    assert ProjectMember.objects.filter(
+        project=project,
+        profile=profile,
+        status=ProjectMemberStatus.ACTIVE,
+        disabled=False,
+    ).exists()
+    assert ProjectTask.objects.filter(project=project).count() >= 6
+    assert ProjectPost.objects.filter(project=project, post_kind=PostKind.ISSUE, alert=True).exists()
+    assert ProjectAssistantState.objects.filter(project=project).exists()
+    assert ProjectAssistantWikiPage.objects.filter(project=project, is_stale=False).count() >= 10
+    assert ProjectAssistantGraphSnapshot.objects.filter(project=project, is_stale=False).exists()

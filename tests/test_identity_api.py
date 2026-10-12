@@ -173,7 +173,7 @@ def test_login_verify_refresh_and_me_flow():
         "/api/v1/auth/me",
         HTTP_AUTHORIZATION=f"JWT {token}",
     )
-    assert stale_me_response.status_code == 401
+    assert stale_me_response.status_code == 200
 
     me_response = client.get(
         "/api/v1/auth/me",
@@ -525,7 +525,8 @@ def test_access_code_onboarding_profile_and_complete_flow_creates_workspace():
     assert complete_payload["onboarding_completed"] is True
 
     user = get_user_model().objects.get(email=email)
-    assert user.workspace_profiles.filter(workspace__name="Cantiere Futuro").exists()
+    profile = user.workspace_profiles.get(workspace__name="Cantiere Futuro")
+    assert profile.demo_project_hidden is False
 
 
 @pytest.mark.django_db

@@ -191,6 +191,56 @@ def evaluate_retrieval_ranking(
     return metrics
 
 
+def evaluate_retrieval_evidence(
+    *,
+    citations: list[dict[str, Any]],
+    evidence_items: list[dict[str, Any]],
+    expected_source_ids: list[str],
+    acceptable_source_ids: list[str] | None = None,
+    required_patterns: list[str] | None = None,
+    expected_project_id: int | None = None,
+) -> dict[str, Any]:
+    """Evaluate source selection, passage selection, and fact presence independently."""
+    expected = {normalize_text(item) for item in expected_source_ids if normalize_text(item)}
+    acceptable = {
+        normalize_text(item)
+        for item in list(acceptable_source_ids or [])
+        if normalize_text(item)
+    }
+    relevant = expected | acceptable
+    selected_source_ids = [normalize_text(str(item.get("source_key") or "")) for item in citations]
+    evidence_source_ids = [normalize_text(str(item.get("source_key") or "")) for item in evidence_items]
+    source_hits = expected.intersection(selected_source_ids)
+    passage_hits = expected.intersection(evidence_source_ids)
+    relevant_evidence = [item for item in evidence_items if item.get("source_key") in relevant]
+    relevant_text = "\n".join(normalize_text(str(item.get("text") or "")) for item in relevant_evidence)
+    pattern_checks = [
+        bool(re.search(pattern, relevant_text, flags=re.IGNORECASE))
+        for pattern in list(required_patterns or [])
+    ]
+    cross_project_evidence = []
+    if expected_project_id is not None:
+        for item in evidence_items:
+            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            project_id = metadata.get("project_id")
+            if project_id not in (None, expected_project_id):
+                cross_project_evidence.append(item.get("evidence_id"))
+    return {
+        "expected_source_count": len(expected),
+        "source_hit": bool(source_hits) if expected else None,
+        "source_recall": len(source_hits) / len(expected) if expected else None,
+        "passage_hit": bool(passage_hits) if expected else None,
+        "passage_recall": len(passage_hits) / len(expected) if expected else None,
+        "fact_in_context": all(pattern_checks) if pattern_checks and relevant_evidence else None,
+        "fact_pattern_checks": pattern_checks,
+        "relevant_evidence_count": len(relevant_evidence),
+        "selected_source_ids": selected_source_ids,
+        "evidence_source_ids": evidence_source_ids,
+        "cross_project_evidence_count": len(cross_project_evidence),
+        "cross_project_evidence_ids": cross_project_evidence,
+    }
+
+
 def evaluate_answer_against_sources(
     *,
     answer: str,

@@ -49,6 +49,7 @@ from edilcloud.modules.identity.services import (
     request_access_code,
     request_password_reset,
     refresh_user_token,
+    decode_refresh_token,
     register_user,
     search_onboarding_workspaces,
     update_onboarding_profile,
@@ -252,13 +253,24 @@ def verify_token(request, payload: SessionVerifyRequestSchema):
 
 @router.post("/token/refresh/{profile_id}", response=AuthenticatedResponseSchema)
 def refresh_token(request, profile_id: int, payload: RefreshTokenRequestSchema):
+    return refresh_token_response(request, payload, profile_id=profile_id)
+
+
+@router.post("/token/refresh", response=AuthenticatedResponseSchema)
+def renew_token(request, payload: RefreshTokenRequestSchema):
+    return refresh_token_response(request, payload)
+
+
+def refresh_token_response(request, payload: RefreshTokenRequestSchema, profile_id: int | None = None):
     try:
-        enforce_identity_rate_limit(
-            request,
-            namespace="auth.refresh",
+        claims = decode_refresh_token(payload.refresh_token)
+        if claims.get("type") != "refresh":
+            raise jwt.InvalidTokenError("Token non valido.")
+        enforce_rate_limit(
+            "auth.refresh.session",
             limit=REFRESH_RATE_LIMIT[0],
             window_seconds=REFRESH_RATE_LIMIT[1],
-            key_parts=(profile_id,),
+            key_parts=(claims["sid"],),
             message="Sessione temporaneamente bloccata. Riprova tra poco.",
         )
         return refresh_user_token(payload.refresh_token, profile_id=profile_id)

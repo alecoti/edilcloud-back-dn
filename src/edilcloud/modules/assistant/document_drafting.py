@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import json
 import re
 from datetime import datetime
@@ -1129,98 +1128,16 @@ def build_default_company_print_section(prompt_context: dict[str, Any]) -> dict[
 
 
 def build_default_giornale_personnel(prompt_context: dict[str, Any]) -> list[dict[str, str]]:
-    people = build_people_tags(prompt_context)
-    active_people = [
-        person for person in people if person.get("attivo_nell_ambito_selezionato")
-    ] or people
-    rows: list[dict[str, str]] = []
-    for person in active_people[:16]:
-        label = first_print_text(person.get("ruolo"), person.get("nominativo"), max_chars=160)
-        company = clean_print_text(person.get("impresa"), max_chars=160)
-        notes = first_print_text(person.get("nominativo"), person.get("funzione_cantiere"), max_chars=220)
-        if not label and not company and not notes:
-            continue
-        rows.append(
-            {
-                "label": label or "Addetto",
-                "quantity": "1" if person.get("nominativo") else "",
-                "company": company,
-                "notes": notes,
-            }
-        )
-    return rows
+    # Assignment is not evidence of attendance on a particular day.
+    return []
 
 
 def build_default_giornale_activities(
     payload: dict[str, Any],
     prompt_context: dict[str, Any],
 ) -> list[dict[str, str]]:
-    selected_task = prompt_context.get("selected_task") or {}
-    selected_activity = prompt_context.get("selected_activity") or {}
-    context = payload.get("context") or {}
-    operator_input = payload.get("operator_input") or {}
-    evidence = payload.get("evidence") or {}
-
-    rows: list[dict[str, str]] = []
-    if selected_activity:
-        title = first_print_text(selected_activity.get("title"), context.get("activity_title"), max_chars=180)
-        description = first_print_text(
-            selected_activity.get("description"),
-            selected_activity.get("note"),
-            operator_input.get("notes"),
-            max_chars=1600,
-        )
-        progress = clean_print_text(selected_activity.get("progress"), max_chars=40)
-        status = clean_print_text(selected_activity.get("status"), max_chars=80)
-        if progress or status:
-            suffix = "; ".join(part for part in [f"stato: {status}" if status else "", f"avanzamento: {progress}%" if progress else ""] if part)
-            description = f"{description}\n{suffix}".strip()
-        rows.append(
-            {
-                "time_start": format_print_time(selected_activity.get("datetime_start")),
-                "time_end": format_print_time(selected_activity.get("datetime_end")),
-                "title": title or "Lavorazione selezionata",
-                "description": description or "Dettaglio operativo da verificare.",
-            }
-        )
-    elif selected_task:
-        title = first_print_text(selected_task.get("name"), context.get("task_name"), max_chars=180)
-        description = first_print_text(
-            selected_task.get("note"),
-            selected_task.get("description"),
-            operator_input.get("notes"),
-            max_chars=1600,
-        )
-        rows.append(
-            {
-                "time_start": format_print_time(selected_task.get("date_start")),
-                "time_end": format_print_time(selected_task.get("date_end")),
-                "title": title or "Fase selezionata",
-                "description": description or "Dettaglio operativo da verificare.",
-            }
-        )
-
-    if operator_input.get("notes") and not any(operator_input.get("notes") in row.get("description", "") for row in rows):
-        rows.append(
-            {
-                "time_start": "",
-                "time_end": "",
-                "title": "Note operative dell'operatore",
-                "description": clean_print_text(operator_input.get("notes"), max_chars=1600),
-            }
-        )
-
-    for index, excerpt in enumerate((evidence.get("excerpts") or [])[:5]):
-        rows.append(
-            {
-                "time_start": "",
-                "time_end": "",
-                "title": f"Evidenza dal thread {index + 1}",
-                "description": clean_print_text(excerpt, max_chars=1400),
-            }
-        )
-
-    return [row for row in rows if row.get("title") or row.get("description")][:12]
+    # Task dates and thread excerpts may describe plans or earlier work.
+    return []
 
 
 def build_default_giornale_print_payload(
@@ -1234,8 +1151,8 @@ def build_default_giornale_print_payload(
     context = payload.get("context") or {}
     company_section = build_default_company_print_section(prompt_context)
     document_date = clean_print_text(resolve_single_entry_date(payload), max_chars=80)
-    if not document_date or document_date == "dato non disponibile":
-        document_date = generated_at[:10]
+    if document_date == "dato non disponibile":
+        document_date = ""
     weather = build_print_weather_label(payload)
     activities = build_default_giornale_activities(payload, prompt_context)
     personnel = build_default_giornale_personnel(prompt_context)
@@ -1253,7 +1170,7 @@ def build_default_giornale_print_payload(
         "document_type": "giornale",
         "document_title": "Giornale dei Lavori",
         "document_subtitle": "Rapporto Giornaliero",
-        "document_reference": f"GL-{document_date.replace('-', '')}-P{project_id}",
+        "document_reference": f"GL-{document_date.replace('-', '')}-P{project_id}" if document_date else "",
         "company": company_section,
         "project": {
             "site": first_print_text(project.get("name"), context.get("task_name"), max_chars=220),
@@ -1283,29 +1200,7 @@ def build_default_giornale_print_payload(
 
 
 def build_default_rapportino_workforce(prompt_context: dict[str, Any]) -> list[dict[str, str]]:
-    people = build_people_tags(prompt_context)
-    active_people = [
-        person for person in people if person.get("attivo_nell_ambito_selezionato")
-    ] or people[:0]
-    rows: list[dict[str, str]] = []
-    for person in active_people[:16]:
-        name = clean_print_text(person.get("nominativo"), max_chars=180)
-        qualification = first_print_text(person.get("ruolo"), person.get("funzione_cantiere"), max_chars=180)
-        company = clean_print_text(person.get("impresa"), max_chars=180)
-        if not name and not qualification and not company:
-            continue
-        rows.append(
-            {
-                "name": name,
-                "qualification": qualification,
-                "ordinary_hours": "",
-                "overtime_hours": "",
-                "travel": "",
-                "company": company,
-                "notes": "",
-            }
-        )
-    return rows
+    return []
 
 
 def build_default_work_description(
@@ -1314,17 +1209,11 @@ def build_default_work_description(
     *,
     max_chars: int = 2400,
 ) -> str:
-    selected_task = prompt_context.get("selected_task") or {}
-    selected_activity = prompt_context.get("selected_activity") or {}
     operator_input = payload.get("operator_input") or {}
-    evidence = payload.get("evidence") or {}
-    excerpts = evidence.get("excerpts") or []
     return first_print_text(
-        selected_activity.get("description"),
-        selected_activity.get("note"),
-        selected_task.get("note"),
         operator_input.get("notes"),
-        *(excerpts[:3]),
+        operator_input.get("voice_italian"),
+        operator_input.get("voice_original"),
         max_chars=max_chars,
     )
 
@@ -1573,8 +1462,8 @@ def build_default_rapportino_print_payload(
     context = payload.get("context") or {}
     company_section = build_default_company_print_section(prompt_context)
     document_date = clean_print_text(resolve_single_entry_date(payload), max_chars=80)
-    if not document_date or document_date == "dato non disponibile":
-        document_date = generated_at[:10]
+    if document_date == "dato non disponibile":
+        document_date = ""
 
     workforce = build_default_rapportino_workforce(prompt_context)
     work_description = build_default_work_description(payload, prompt_context)
@@ -1598,7 +1487,7 @@ def build_default_rapportino_print_payload(
         "document_type": "rapportino",
         "document_title": "Rapportino",
         "document_subtitle": "Intervento / Lavori",
-        "document_reference": f"RAP-{document_date.replace('-', '')}-P{project_id}",
+        "document_reference": f"RAP-{document_date.replace('-', '')}-P{project_id}" if document_date else "",
         "company": company_section,
         "client": {"name": "", "vat": ""},
         "site": {
@@ -1613,53 +1502,20 @@ def build_default_rapportino_print_payload(
         "operational_notes": "",
         "missing_data": missing_data,
         "signatures": default_rapportino_signatures(),
-        "footer_note": "Il presente rapporto costituisce documento valido ai fini della contabilizzazione dei lavori solo dopo verifica e sottoscrizione dei soggetti competenti.",
+        "footer_note": "Bozza da verificare e confermare prima di qualsiasi utilizzo amministrativo o contrattuale.",
     }
     return apply_guided_rapportino_interview(result, (payload.get("operator_input") or {}).get("notes"))
 
 
 def build_default_sopralluogo_attendees(prompt_context: dict[str, Any]) -> list[dict[str, str]]:
-    attendees: list[dict[str, str]] = []
-    for person in build_people_tags(prompt_context):
-        if not person.get("attivo_nell_ambito_selezionato"):
-            continue
-        name = clean_print_text(person.get("nominativo"), max_chars=180)
-        role = first_print_text(person.get("ruolo"), person.get("funzione_cantiere"), max_chars=180)
-        company = clean_print_text(person.get("impresa"), max_chars=180)
-        if name or role or company:
-            attendees.append({"name": name, "role": role, "company": company})
-    return attendees[:16]
+    return []
 
 
 def build_default_sopralluogo_findings(
     payload: dict[str, Any],
     prompt_context: dict[str, Any],
 ) -> list[dict[str, str]]:
-    selected_task = prompt_context.get("selected_task") or {}
-    selected_activity = prompt_context.get("selected_activity") or {}
-    evidence = payload.get("evidence") or {}
-    rows: list[dict[str, str]] = []
-    title = first_print_text(selected_activity.get("title"), selected_task.get("name"), max_chars=180)
-    description = build_default_work_description(payload, prompt_context, max_chars=1800)
-    if title or description:
-        rows.append(
-            {
-                "status": "neutral",
-                "title": title or "Rilievo da sopralluogo",
-                "description": description or "Dettaglio da verificare con le evidenze disponibili.",
-            }
-        )
-    for index, excerpt in enumerate((evidence.get("excerpts") or [])[:4]):
-        excerpt_text = clean_print_text(excerpt, max_chars=1400)
-        if excerpt_text and excerpt_text not in [row.get("description") for row in rows]:
-            rows.append(
-                {
-                    "status": "neutral",
-                    "title": f"Evidenza dal thread {index + 1}",
-                    "description": excerpt_text,
-                }
-            )
-    return rows[:12]
+    return []
 
 
 def build_default_sopralluogo_print_payload(
@@ -1673,8 +1529,8 @@ def build_default_sopralluogo_print_payload(
     context = payload.get("context") or {}
     company_section = build_default_company_print_section(prompt_context)
     document_date = clean_print_text(resolve_single_entry_date(payload), max_chars=80)
-    if not document_date or document_date == "dato non disponibile":
-        document_date = generated_at[:10]
+    if document_date == "dato non disponibile":
+        document_date = ""
     weather = build_print_weather_label(payload)
     attendees = build_default_sopralluogo_attendees(prompt_context)
     findings = build_default_sopralluogo_findings(payload, prompt_context)
@@ -1692,7 +1548,7 @@ def build_default_sopralluogo_print_payload(
         "document_type": "sopralluogo",
         "document_title": "Verbale",
         "document_subtitle": "di Sopralluogo",
-        "document_reference": f"VS-{document_date.replace('-', '')}-P{project_id}",
+        "document_reference": f"VS-{document_date.replace('-', '')}-P{project_id}" if document_date else "",
         "company": company_section,
         "project": {
             "site": first_print_text(project.get("name"), context.get("task_name"), max_chars=220),
@@ -2046,6 +1902,162 @@ def parse_document_print_payload(
     return sanitize_document_print_payload(document_type, parsed, fallback)
 
 
+_EVENT_STOPWORDS = {
+    "alla", "alle", "anche", "come", "con", "dalla", "delle", "della", "dello",
+    "dopo", "effettiva", "effettivamente", "essere", "fatto", "giornata", "lavori",
+    "lavorazione", "lavorazioni", "nella", "nelle", "operatore", "operativa",
+    "operativi", "presente", "presenti", "prima", "progetto", "questo", "quella",
+    "stato", "stata", "stati", "stato", "sulla", "tutti", "verificare",
+}
+_EMPTY_EVENT_VALUES = {"non disponibile", "non indicato", "nessun dato", "da verificare", "-"}
+
+
+def operator_event_text(payload: dict[str, Any]) -> str:
+    source = payload.get("operator_input") or {}
+    return " ".join(
+        normalize_text(source.get(key))
+        for key in ("notes", "voice_italian", "voice_original")
+        if normalize_text(source.get(key))
+    )
+
+
+def supported_by_operator(candidate: Any, operator_text: str) -> bool:
+    """Require two distinctive shared words before promoting prose to an event fact."""
+    words = {
+        word[:4] for word in re.findall(r"\w+", normalize_text(candidate).casefold())
+        if len(word) >= 5 and word not in _EVENT_STOPWORDS
+    }
+    source_words = {
+        word[:4] for word in re.findall(r"\w+", operator_text.casefold())
+        if len(word) >= 5 and word not in _EVENT_STOPWORDS
+    }
+    return len(words & source_words) >= 2
+
+
+def supported_event_item(candidate: Any, operator_text: str) -> bool:
+    value = normalize_text(candidate).strip().casefold()
+    if not value or value in _EMPTY_EVENT_VALUES:
+        return False
+    return (len(value) >= 5 and value in operator_text.casefold()) or supported_by_operator(value, operator_text)
+
+
+def reconcile_document_print_payload(
+    document_type: DocumentType,
+    print_payload: dict[str, Any],
+    payload: dict[str, Any],
+    prompt_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep identity and event-date fields tied to deterministic project inputs."""
+    company = print_payload.get("company") or {}
+    name = clean_print_text(company.get("name"), max_chars=180)
+    known = next(
+        (
+            item for item in build_company_tags(prompt_context)
+            if name and name.casefold() == clean_print_text(item.get("ragione_sociale"), max_chars=180).casefold()
+        ),
+        None,
+    )
+    company["vat"] = clean_print_text((known or {}).get("identificativo_fiscale"), max_chars=80)
+    company["email"] = clean_print_text((known or {}).get("email"), max_chars=180)
+    company["address"] = ""
+    print_payload["company"] = company
+
+    expected_date = resolve_single_entry_date(payload)
+    date_section = print_payload.get("site") if document_type == "rapportino" else print_payload.get("project")
+    if isinstance(date_section, dict):
+        date_section["date"] = expected_date if expected_date != "dato non disponibile" else ""
+    print_payload["document_reference"] = ""
+    missing = print_payload.get("missing_data") or []
+    if name and known is None and not any("identificativ" in item.lower() for item in missing):
+        missing.append("Identificativi fiscali e recapiti dell'impresa indicata da confermare.")
+    if expected_date == "dato non disponibile" and not any("data effettiva" in item.lower() for item in missing):
+        missing.append("Data effettiva dell'evento da confermare.")
+    print_payload["missing_data"] = missing
+
+    if document_type == "giornale":
+        operator_text = operator_event_text(payload)
+        print_payload["personnel"] = [
+            person for person in print_payload.get("personnel") or []
+            if person.get("label") and person["label"].casefold() in operator_text.casefold()
+        ]
+        for person in print_payload.get("personnel") or []:
+            quantity = clean_print_text(person.get("quantity"), max_chars=120)
+            if re.search(r"\bore?\b|\d\s*h\b", quantity, flags=re.IGNORECASE):
+                notes = clean_print_text(person.get("notes"), max_chars=220)
+                person["notes"] = "; ".join(filter(None, (notes, f"Ore dichiarate: {quantity}")))
+                person["quantity"] = ""
+        print_payload["activities"] = [
+            activity for activity in print_payload.get("activities") or []
+            if not re.match(r"(?:note operative|evidenza dal thread)", activity.get("title", ""), re.IGNORECASE)
+            and supported_by_operator(
+                " ".join((activity.get("title", ""), activity.get("description", ""))), operator_text
+            )
+        ]
+        for activity in print_payload["activities"]:
+            for key in ("time_start", "time_end"):
+                if not re.fullmatch(r"\d{1,2}:\d{2}", activity.get(key, "")):
+                    activity[key] = ""
+        if not supported_by_operator(print_payload.get("summary"), operator_text):
+            print_payload["summary"] = ""
+        print_payload["equipment"] = [
+            item for item in print_payload.get("equipment") or []
+            if supported_event_item(item.get("label"), operator_text)
+        ]
+        for section_name in ("materials_notes", "safety", "orders_communications"):
+            section = print_payload.get(section_name) or {}
+            section["items"] = [
+                item for item in section.get("items") or []
+                if supported_event_item(item, operator_text)
+            ]
+        safety = print_payload.get("safety") or {}
+        if not supported_event_item(safety.get("summary"), operator_text):
+            safety["summary"] = ""
+        if not print_payload["personnel"] and not any("personale presente" in item.lower() for item in missing):
+            missing.append("Personale effettivamente presente da confermare.")
+        if not print_payload["activities"] and not any("lavorazioni eseguite" in item.lower() for item in missing):
+            missing.append("Lavorazioni eseguite da confermare con evidenze della giornata.")
+    if document_type == "rapportino":
+        operator_text = operator_event_text(payload)
+        print_payload["workforce"] = [
+            person for person in print_payload.get("workforce") or []
+            if person.get("name") and person["name"].casefold() in operator_text.casefold()
+        ]
+        print_payload["equipment"] = [
+            item for item in print_payload.get("equipment") or []
+            if supported_event_item(item.get("description"), operator_text)
+        ]
+        print_payload["materials"] = [
+            item for item in print_payload.get("materials") or []
+            if supported_event_item(item.get("description"), operator_text)
+        ]
+        if normalize_text(print_payload.get("work_description")).strip().casefold() in _EMPTY_EVENT_VALUES:
+            print_payload["work_description"] = ""
+        print_payload["footer_note"] = (
+            "Bozza da verificare e confermare prima di qualsiasi utilizzo amministrativo o contrattuale."
+        )
+    if document_type == "sopralluogo":
+        operator_text = operator_event_text(payload)
+        print_payload["attendees"] = [
+            person for person in print_payload.get("attendees") or []
+            if person.get("name") and person["name"].casefold() in operator_text.casefold()
+        ]
+        print_payload["findings"] = [
+            finding for finding in print_payload.get("findings") or []
+            if supported_by_operator(
+                " ".join((finding.get("title", ""), finding.get("description", ""))), operator_text
+            )
+        ]
+        print_payload["prescriptions"] = [
+            item for item in print_payload.get("prescriptions") or []
+            if supported_event_item(item.get("action"), operator_text)
+        ]
+        if not print_payload["attendees"] and not any("presenti al sopralluogo" in item.lower() for item in missing):
+            missing.append("Persone presenti al sopralluogo da confermare.")
+        if not print_payload["findings"] and not any("rilievi" in item.lower() for item in missing):
+            missing.append("Rilievi del sopralluogo da confermare con evidenze.")
+    return print_payload
+
+
 def build_giornale_print_json_prompt(
     payload: dict[str, Any],
     memory_brief: dict[str, Any] | None,
@@ -2277,7 +2289,7 @@ def render_rapportino_print_payload_markdown(print_payload: dict[str, Any]) -> s
     else:
         lines.append("- Mezzi e attrezzature non dichiarati.")
 
-    lines.extend(["", "## Materiali utilizzati"])
+    lines.extend(["", "## Materiali e forniture"])
     if materials:
         lines.extend(["| Descrizione | U.M. | Quantita | Note |", "| --- | --- | --- | --- |"])
         lines.extend(
@@ -2355,14 +2367,12 @@ def render_sopralluogo_print_payload_markdown(print_payload: dict[str, Any]) -> 
                 continue
             status = clean_print_text(item.get("status")) or "neutral"
             title = clean_print_text(item.get("title")) or "Rilievo"
-            lines.extend(
-                [
-                    "",
-                    f"### {title}",
-                    f"**Stato:** {status}",
-                    clean_print_text(item.get("description"), max_chars=2400) or "-",
-                ]
-            )
+            status_label = {"warning": "Da verificare", "critical": "Criticita'",
+                            "positive": "Esito positivo"}.get(status)
+            lines.extend(["", f"### {title}"])
+            if status_label:
+                lines.append(f"**Stato:** {status_label}")
+            lines.append(clean_print_text(item.get("description"), max_chars=2400) or "-")
     else:
         lines.append("- Nessun rilievo strutturato disponibile.")
 
@@ -2781,6 +2791,9 @@ def generate_project_document_draft(
                 raw_print_payload,
                 normalized_type,
                 fallback_print_payload,
+            )
+            print_payload = reconcile_document_print_payload(
+                normalized_type, print_payload, payload, prompt_context,
             )
             markdown = render_document_print_payload_markdown(normalized_type, print_payload)
             title_date = resolve_print_payload_date(normalized_type, print_payload) or generated_at[:10]

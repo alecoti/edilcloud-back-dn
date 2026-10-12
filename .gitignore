@@ -15,6 +15,9 @@ pytest-cache-files-*/
 .ruff_cache/
 .tmp/
 tmp/
+.qa/
+.pytest-*/
+pytest-*/
 
 # Django
 db.sqlite3

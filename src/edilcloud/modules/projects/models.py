@@ -1,11 +1,31 @@
 import secrets
 from pathlib import Path
 
-from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
 from edilcloud.modules.workspaces.models import Profile, TimestampedModel, Workspace, WorkspaceRole
+
+
+class StoredFileMetadata(TimestampedModel):
+    file_size = models.PositiveBigIntegerField(null=True, blank=True, editable=False)
+    metadata_file_field = "file"
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None or self.metadata_file_field in update_fields:
+            field = getattr(self, self.metadata_file_field)
+            try:
+                self.file_size = field.size if field else None
+            except Exception:
+                # Missing legacy files must not prevent unrelated metadata updates.
+                self.file_size = None
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {"file_size"}
+        return super().save(*args, **kwargs)
 
 
 def generate_project_invite_code() -> str:
@@ -24,6 +44,14 @@ def project_document_upload_to(instance, filename: str) -> str:
     if getattr(instance, "document_kind", "") == "drawing":
         return f"projects/{instance.project_id}/drawings/{filename}"
     return f"projects/{instance.project_id}/documents/{filename}"
+
+
+def project_drawing_preview_upload_to(instance, filename: str) -> str:
+    return f"projects/{instance.project_id}/drawing-previews/{filename}"
+
+
+def project_model_3d_upload_to(instance, filename: str) -> str:
+    return f"projects/{instance.project_id}/models-3d/{filename}"
 
 
 def project_photo_upload_to(instance, filename: str) -> str:
@@ -348,7 +376,8 @@ class ProjectFolder(TimestampedModel):
         return self.path or self.name
 
 
-class ProjectDocument(TimestampedModel):
+class ProjectDocument(StoredFileMetadata):
+    metadata_file_field = "document"
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
@@ -364,6 +393,7 @@ class ProjectDocument(TimestampedModel):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     document = models.FileField(upload_to=project_document_upload_to)
+    drawing_preview = models.ImageField(upload_to=project_drawing_preview_upload_to, blank=True)
     is_public = models.BooleanField(default=False)
     document_kind = models.CharField(
         max_length=24,
@@ -434,7 +464,38 @@ class ProjectDrawingPin(TimestampedModel):
         return f"Drawing pin #{self.id} doc={self.drawing_document_id} post={self.post_id}"
 
 
-class ProjectPhoto(TimestampedModel):
+class ProjectModel3D(StoredFileMetadata):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="models_3d")
+    title = models.CharField(max_length=255)
+    file = models.FileField(upload_to=project_model_3d_upload_to)
+    vertex_count = models.PositiveIntegerField(default=0)
+    triangle_count = models.PositiveIntegerField(default=0)
+    created_by = models.ForeignKey(Profile, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+
+
+class ProjectModelPin(TimestampedModel):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="model_pins")
+    model = models.ForeignKey(ProjectModel3D, on_delete=models.CASCADE, related_name="pins")
+    post = models.ForeignKey("ProjectPost", on_delete=models.CASCADE, related_name="model_pins")
+    created_by = models.ForeignKey(Profile, on_delete=models.SET_NULL, null=True, blank=True)
+    x = models.FloatField()
+    y = models.FloatField()
+    z = models.FloatField()
+    label = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ("model_id", "id")
+        indexes = [
+            models.Index(fields=("project", "model"), name="proj_m3pin_proj_model_idx"),
+            models.Index(fields=("project", "post"), name="proj_m3pin_proj_post_idx"),
+        ]
+
+
+class ProjectPhoto(StoredFileMetadata):
+    metadata_file_field = "photo"
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
@@ -633,7 +694,7 @@ class ProjectPost(TimestampedModel):
         return f"{self.project.name} #{self.id}"
 
 
-class PostAttachment(TimestampedModel):
+class PostAttachment(StoredFileMetadata):
     post = models.ForeignKey(
         ProjectPost,
         on_delete=models.CASCADE,
@@ -773,7 +834,7 @@ class ProjectPostSeenState(TimestampedModel):
         return f"Seen post #{self.post_id} by profile #{self.profile_id}"
 
 
-class CommentAttachment(TimestampedModel):
+class CommentAttachment(StoredFileMetadata):
     comment = models.ForeignKey(
         PostComment,
         on_delete=models.CASCADE,

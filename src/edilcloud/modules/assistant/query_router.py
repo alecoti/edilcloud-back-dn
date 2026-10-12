@@ -45,7 +45,7 @@ TEAM_MARKERS = (
     "lavorano",
     "chi e coinvolto",
 )
-TASK_MARKERS = ("task", "attivita di lavoro", "lavorazioni")
+TASK_MARKERS = ("task", "attivita di lavoro", "lavorazione", "lavorazioni")
 ACTIVITY_MARKERS = ("attivita", "attivita'", "activity")
 DOCUMENT_MARKERS = (
     "document",
@@ -81,6 +81,24 @@ ALERT_MARKERS = (
     "anom",
     "risch",
     "blocc",
+)
+ALERT_REGISTER_MARKERS = (
+    "alert",
+    "issue",
+    "segnal",
+)
+ALERT_ENTITY_MARKERS = (
+    "critic",
+    "proble",
+    "anom",
+    "risch",
+)
+ALERT_STATUS_MARKERS = (
+    "apert",
+    "chius",
+    "risolt",
+    "in corso",
+    "da risolvere",
 )
 RESOLVED_MARKERS = ("risolt", "chius", "closed", "completamente risolte")
 SUMMARY_MARKERS = (
@@ -119,6 +137,20 @@ def compact_whitespace(value: str | None) -> str:
 def contains_any(text: str, markers: tuple[str, ...]) -> bool:
     lowered = compact_whitespace(text).lower()
     return any(marker in lowered for marker in markers)
+
+
+def is_explicit_alert_register_query(
+    text: str,
+    *,
+    asks_count: bool,
+    asks_list: bool,
+) -> bool:
+    """Reserve the deterministic alert path for explicit register queries."""
+    if contains_any(text, ALERT_REGISTER_MARKERS):
+        return True
+    return contains_any(text, ALERT_ENTITY_MARKERS) and (
+        asks_count or asks_list or contains_any(text, ALERT_STATUS_MARKERS)
+    )
 
 
 @dataclass(slots=True)
@@ -192,7 +224,11 @@ def classify_assistant_query(question: str) -> AssistantQueryRoute:
     mentions_summary = contains_any(lowered, SUMMARY_MARKERS)
     mentions_timeline = temporal_scope is not None
 
-    if mentions_alerts:
+    if mentions_alerts and is_explicit_alert_register_query(
+        lowered,
+        asks_count=asks_count,
+        asks_list=asks_list,
+    ):
         reasoning.append("query_alert_like")
         intent = "resolved_issues" if mentions_resolved else "open_alerts"
         strategy = "deterministic_db"
@@ -285,7 +321,7 @@ def classify_assistant_query(question: str) -> AssistantQueryRoute:
             intent = "task_status"
         return AssistantQueryRoute(
             intent=intent,
-            strategy="deterministic_db",
+            strategy="deterministic_db" if intent in {"task_count", "task_list"} else "hybrid_db_retrieval",
             selected_source_types=default_source_types_for_intent(intent),
             temporal_scope=temporal_scope,
             follow_up=follow_up,

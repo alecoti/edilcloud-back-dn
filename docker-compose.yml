@@ -24,6 +24,7 @@ services:
       retries: 20
 
   web:
+    image: edilcloud-back-dn-web
     build:
       context: .
     env_file:
@@ -31,18 +32,21 @@ services:
     environment:
       APP_ENV: local
       DJANGO_SETTINGS_MODULE: edilcloud.settings.local
+      PYTHONDONTWRITEBYTECODE: "0"
+      PYTHONPYCACHEPREFIX: /tmp/edilcloud-pycache
+      GUNICORN_WORKERS: "1"
       DEBUG: "true"
       TIME_ZONE: Europe/Rome
       ALLOWED_HOSTS: localhost,127.0.0.1
-      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
-      CSRF_TRUSTED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:35033,http://127.0.0.1:35033
+      CSRF_TRUSTED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:35033,http://127.0.0.1:35033
       DATABASE_URL: postgresql://postgres:postgres@db:5432/edilcloud_dn
       REDIS_URL: redis://redis:6379/0
-      BACKEND_PUBLIC_URL: http://localhost:8001
+      BACKEND_PUBLIC_URL: http://localhost:8000
       SUPERMEMORY_API_KEY: ""
       SUPERMEMORY_BASE_URL: ""
     ports:
-      - "8001:8001"
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -51,19 +55,20 @@ services:
     volumes:
       - ./media:/app/media
       - ./staticfiles:/app/staticfiles
+      - ./src:/app/src:ro
     command:
       - sh
       - -c
       - |
         python scripts/wait_for_services.py db:5432 redis:6379 &&
-        python manage.py migrate &&
-        python manage.py collectstatic --noinput &&
-        exec gunicorn edilcloud.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8001 --workers 3 --timeout 120
+        python manage.py migrate --skip-checks &&
+        if [ "$${COLLECTSTATIC_ON_STARTUP:-0}" = "1" ]; then python manage.py collectstatic --noinput; fi &&
+        exec gunicorn edilcloud.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers "$${GUNICORN_WORKERS:-1}" --timeout 120
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health', timeout=3).read()\"",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3).read()\"",
         ]
       interval: 10s
       timeout: 5s
@@ -71,6 +76,7 @@ services:
       start_period: 20s
 
   assistant-worker:
+    image: edilcloud-back-dn-web
     build:
       context: .
     env_file:
@@ -82,7 +88,7 @@ services:
       TIME_ZONE: Europe/Rome
       DATABASE_URL: postgresql://postgres:postgres@db:5432/edilcloud_dn
       REDIS_URL: redis://redis:6379/0
-      BACKEND_PUBLIC_URL: http://localhost:8001
+      BACKEND_PUBLIC_URL: http://localhost:8000
       SUPERMEMORY_API_KEY: ""
       SUPERMEMORY_BASE_URL: ""
     depends_on:
@@ -91,6 +97,7 @@ services:
     volumes:
       - ./media:/app/media
       - ./staticfiles:/app/staticfiles
+      - ./src:/app/src:ro
     command:
       - sh
       - -c

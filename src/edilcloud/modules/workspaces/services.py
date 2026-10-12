@@ -313,6 +313,7 @@ def resolve_active_workspace_profile(user, *, profile_id: int | None = None) -> 
 
 def serialize_current_workspace_profile(profile: Profile) -> dict:
     return {
+        "demo_project_hidden": profile.demo_project_hidden,
         "first_name": profile.first_name,
         "last_name": profile.last_name,
         "email": profile.email,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from django.http.multipartparser import MultiPartParser
 from ninja import Router
 from ninja.errors import HttpError
 from ninja.responses import Status
@@ -13,6 +14,8 @@ from edilcloud.modules.identity.auth import JWTAuth
 from edilcloud.modules.projects.archive import export_project_archive
 from edilcloud.modules.projects.demo_master_admin import (
     create_demo_master_snapshot,
+    ensure_demo_master_project_for_profile,
+    set_demo_project_visibility,
     get_demo_master_admin_status,
     get_demo_master_scenarios_report,
     reset_demo_master_project,
@@ -21,9 +24,12 @@ from edilcloud.modules.projects.demo_master_admin import (
 )
 from edilcloud.modules.projects.schemas import (
     CreateDemoMasterSnapshotRequestSchema,
+    DemoProjectVisibilityRequestSchema,
     CreateProjectGanttLinkRequestSchema,
     CreateProjectFolderRequestSchema,
     CreateProjectDrawingPinRequestSchema,
+    CreateProjectModelPinRequestSchema,
+    ImportProjectDrawingRequestSchema,
     CreateProjectRequestSchema,
     CreateProjectTaskRequestSchema,
     CreateProjectTeamMemberRequestSchema,
@@ -51,6 +57,15 @@ from edilcloud.modules.projects.schemas import (
     UpdateTaskActivityRequestSchema,
 )
 from edilcloud.modules.projects.operational_history import list_project_operational_timeline
+from edilcloud.modules.projects.model3d import (
+    create_project_model_pin,
+    delete_project_model,
+    delete_project_model_pin,
+    get_project_model_file,
+    list_project_model_pins,
+    list_project_models,
+    upload_project_model,
+)
 from edilcloud.modules.projects.services import (
     add_project_team_member,
     apply_project_gantt_import,
@@ -84,7 +99,10 @@ from edilcloud.modules.projects.services import (
     list_project_alert_posts,
     list_project_documents,
     list_project_drawings,
+    import_project_drawing,
     list_project_drawing_pins,
+    get_project_drawing_preview_response,
+    get_project_drawing_page_count,
     list_project_feed,
     list_project_folders,
     list_project_gantt,
@@ -106,6 +124,7 @@ from edilcloud.modules.projects.services import (
     update_task_activity,
     upload_project_document,
     upload_project_drawing,
+    upload_project_drawing_preview,
     upsert_project_drawing_pin,
 )
 from edilcloud.platform.realtime.services import build_project_realtime_session
@@ -268,7 +287,10 @@ def parse_project_document_upload_payload(request) -> dict[str, Any]:
 
 def parse_project_document_update_payload(request) -> dict[str, Any]:
     if is_multipart_request(request):
-        raw_folder = request.POST.get("folder")
+        form, files = (request.POST, request.FILES) if request.method == "POST" else (
+            MultiPartParser(request.META, request, request.upload_handlers, request.encoding).parse()
+        )
+        raw_folder = form.get("folder")
         folder_id = None
         if raw_folder is not None:
             if raw_folder.strip():
@@ -280,10 +302,10 @@ def parse_project_document_update_payload(request) -> dict[str, Any]:
                 folder_id = 0
 
         return {
-            "title": request.POST.get("title"),
-            "description": request.POST.get("description"),
+            "title": form.get("title"),
+            "description": form.get("description"),
             "folder_id": folder_id,
-            "uploaded_file": request.FILES.get("document"),
+            "uploaded_file": files.get("document"),
         }
 
     payload = json.loads(request.body.decode() or "{}")
@@ -354,7 +376,7 @@ def create_project_endpoint(request, payload: CreateProjectRequestSchema):
 
 
 @router.get("/feed", response=ProjectFeedPageSchema, auth=auth)
-def get_project_feed_endpoint(request, limit: int = 50, offset: int = 0):
+def get_project_feed_endpoint(request, limit: int = 50, offset: int = 0, project_id: int | None = None, lightweight: bool = False):
     try:
         profile = current_profile(request)
         return list_project_feed(
@@ -362,6 +384,8 @@ def get_project_feed_endpoint(request, limit: int = 50, offset: int = 0):
             limit=limit,
             offset=offset,
             target_language=request_locale(request),
+            project_id=project_id,
+            lightweight=lightweight,
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
@@ -450,6 +474,19 @@ def restore_demo_master_snapshot_endpoint(request, payload: RestoreDemoMasterSna
         raise HttpError(400, str(exc)) from exc
 
 
+@router.post("/demo-master/provision", response=ProjectSummarySchema | None, auth=auth)
+def provision_demo_master_project_endpoint(request):
+    try:
+        return ensure_demo_master_project_for_profile(profile=current_profile(request))
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.patch("/demo-master/visibility", response=dict[str, Any], auth=auth)
+def update_demo_project_visibility_endpoint(request, payload: DemoProjectVisibilityRequestSchema):
+    return set_demo_project_visibility(profile=current_profile(request), visible=payload.visible)
+
+
 @router.get("/{project_id}", response=ProjectSummarySchema, auth=auth)
 def get_project(request, project_id: int):
     try:
@@ -459,13 +496,14 @@ def get_project(request, project_id: int):
 
 
 @router.get("/{project_id}/overview", response=ProjectOverviewSchema, auth=auth)
-def get_project_overview_endpoint(request, project_id: int):
+def get_project_overview_endpoint(request, project_id: int, compact: bool = False):
     try:
         profile = current_profile(request)
         return get_project_overview(
             profile=profile,
             project_id=project_id,
             target_language=request_locale(request),
+            compact=compact,
         )
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
@@ -507,10 +545,10 @@ def get_project_timeline_endpoint(
     )
 
 
-@router.get("/{project_id}/tasks", response=list[dict[str, Any]], auth=auth)
-def get_project_tasks_endpoint(request, project_id: int):
+@router.get("/{project_id}/tasks", response=list[dict[str, Any]] | dict[str, Any], auth=auth)
+def get_project_tasks_endpoint(request, project_id: int, compact: bool = False):
     try:
-        return list_project_tasks(profile=current_profile(request), project_id=project_id)
+        return list_project_tasks(profile=current_profile(request), project_id=project_id, compact=compact)
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
 
@@ -650,6 +688,64 @@ def upload_project_drawing_endpoint(request, project_id: int):
     return Status(201, drawing)
 
 
+@router.post("/{project_id}/drawings/import", response={201: dict[str, Any]}, auth=auth)
+def import_project_drawing_endpoint(
+    request, project_id: int, payload: ImportProjectDrawingRequestSchema
+):
+    try:
+        drawing = import_project_drawing(
+            profile=current_profile(request), project_id=project_id,
+            source_kind=payload.source_kind, source_id=payload.source_id,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return Status(201, drawing)
+
+
+@router.get("/{project_id}/drawings/{drawing_id}/preview", auth=auth)
+def get_project_drawing_preview_endpoint(
+    request, project_id: int, drawing_id: int, width: int = 1600,
+    page: int = 1,
+):
+    try:
+        return get_project_drawing_preview_response(
+            profile=current_profile(request),
+            project_id=project_id,
+            drawing_id=drawing_id,
+            width=width,
+            page_number=page,
+        )
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.get("/{project_id}/drawings/{drawing_id}/pages", response=dict[str, int], auth=auth)
+def get_project_drawing_pages_endpoint(request, project_id: int, drawing_id: int):
+    try:
+        return {"page_count": get_project_drawing_page_count(
+            profile=current_profile(request), project_id=project_id,
+            drawing_id=drawing_id,
+        )}
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.post("/{project_id}/drawings/{drawing_id}/preview", response=dict[str, Any], auth=auth)
+def upload_project_drawing_preview_endpoint(request, project_id: int, drawing_id: int):
+    uploaded_file = request.FILES.get("preview")
+    if uploaded_file is None:
+        raise HttpError(400, "File anteprima obbligatorio.")
+    try:
+        return upload_project_drawing_preview(
+            profile=current_profile(request),
+            project_id=project_id,
+            drawing_id=drawing_id,
+            uploaded_file=uploaded_file,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
 @router.post("/{project_id}/inspection-reports", response={201: dict[str, Any]}, auth=auth)
 def create_project_inspection_report_endpoint(request, project_id: int):
     try:
@@ -665,12 +761,17 @@ def create_project_inspection_report_endpoint(request, project_id: int):
 
 
 @router.get("/{project_id}/drawing-pins", response=list[dict[str, Any]], auth=auth)
-def get_project_drawing_pins_endpoint(request, project_id: int):
+def get_project_drawing_pins_endpoint(
+    request,
+    project_id: int,
+    drawing_document: int | None = None,
+):
     try:
         profile = current_profile(request)
         return list_project_drawing_pins(
             profile=profile,
             project_id=project_id,
+            drawing_document_id=drawing_document,
             target_language=request_locale(request),
         )
     except ValueError as exc:
@@ -739,6 +840,86 @@ def delete_project_drawing_pin_endpoint(request, project_id: int, pin_id: int):
     return 204, None
 
 
+@router.get("/{project_id}/models-3d", response=list[dict[str, Any]], auth=auth)
+def get_project_models_3d_endpoint(request, project_id: int):
+    try:
+        return list_project_models(profile=current_profile(request), project_id=project_id)
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.post("/{project_id}/models-3d", response={201: dict[str, Any]}, auth=auth)
+def upload_project_model_3d_endpoint(request, project_id: int):
+    uploaded_file = request.FILES.get("model")
+    if uploaded_file is None:
+        raise HttpError(400, "File GLB obbligatorio.")
+    try:
+        model = upload_project_model(
+            profile=current_profile(request), project_id=project_id,
+            uploaded_file=uploaded_file, title=request.POST.get("title", ""),
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return Status(201, model)
+
+
+@router.get("/{project_id}/models-3d/{model_id}/file", auth=auth)
+def get_project_model_3d_file_endpoint(request, project_id: int, model_id: int):
+    try:
+        return get_project_model_file(
+            profile=current_profile(request), project_id=project_id, model_id=model_id,
+        )
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.delete("/{project_id}/models-3d/{model_id}", response={204: None}, auth=auth)
+def delete_project_model_3d_endpoint(request, project_id: int, model_id: int):
+    try:
+        delete_project_model(
+            profile=current_profile(request), project_id=project_id, model_id=model_id,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return Status(204, None)
+
+
+@router.get("/{project_id}/model-pins", response=list[dict[str, Any]], auth=auth)
+def get_project_model_pins_endpoint(request, project_id: int, model: int | None = None):
+    try:
+        return list_project_model_pins(
+            profile=current_profile(request), project_id=project_id, model_id=model,
+        )
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.post("/{project_id}/model-pins", response={201: dict[str, Any]}, auth=auth)
+def create_project_model_pin_endpoint(
+    request, project_id: int, payload: CreateProjectModelPinRequestSchema,
+):
+    try:
+        pin = create_project_model_pin(
+            profile=current_profile(request), project_id=project_id,
+            model_id=payload.model, post_id=payload.post,
+            x=payload.x, y=payload.y, z=payload.z, label=payload.label,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    return Status(201, pin)
+
+
+@router.delete("/{project_id}/model-pins/{pin_id}", response={204: None}, auth=auth)
+def delete_project_model_pin_endpoint(request, project_id: int, pin_id: int):
+    try:
+        delete_project_model_pin(
+            profile=current_profile(request), project_id=project_id, pin_id=pin_id,
+        )
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+    return Status(204, None)
+
+
 @router.get("/{project_id}/photos", response=list[dict[str, Any]], auth=auth)
 def get_project_photos_endpoint(request, project_id: int):
     try:
@@ -786,9 +967,9 @@ def get_project_alerts_endpoint(request, project_id: int):
 
 
 @router.get("/{project_id}/gantt", response=dict[str, Any], auth=auth)
-def get_project_gantt_endpoint(request, project_id: int):
+def get_project_gantt_endpoint(request, project_id: int, compact: bool = False):
     try:
-        return list_project_gantt(profile=current_profile(request), project_id=project_id)
+        return list_project_gantt(profile=current_profile(request), project_id=project_id, compact=compact)
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
 
@@ -925,12 +1106,21 @@ def create_activity_endpoint(request, task_id: int, payload: CreateTaskActivityR
 
 
 @tasks_router.get("/{task_id}/posts", response=list[dict[str, Any]], auth=auth)
-def get_task_posts_endpoint(request, task_id: int):
+def get_task_posts_endpoint(
+    request,
+    task_id: int,
+    include_activities: bool = False,
+    limit: int | None = None,
+    offset: int = 0,
+):
     try:
         profile = current_profile(request)
         return list_posts_for_task(
             profile=profile,
             task_id=task_id,
+            include_activities=include_activities,
+            limit=limit,
+            offset=offset,
             target_language=request_locale(request),
         )
     except ValueError as exc:
@@ -976,12 +1166,19 @@ def update_activity_endpoint(request, activity_id: int, payload: UpdateTaskActiv
 
 
 @activities_router.get("/{activity_id}/posts", response=list[dict[str, Any]], auth=auth)
-def get_activity_posts_endpoint(request, activity_id: int):
+def get_activity_posts_endpoint(
+    request,
+    activity_id: int,
+    limit: int | None = None,
+    offset: int = 0,
+):
     try:
         profile = current_profile(request)
         return list_posts_for_activity(
             profile=profile,
             activity_id=activity_id,
+            limit=limit,
+            offset=offset,
             target_language=request_locale(request),
         )
     except ValueError as exc:

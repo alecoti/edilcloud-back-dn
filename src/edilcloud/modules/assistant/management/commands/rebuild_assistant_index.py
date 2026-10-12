@@ -1,6 +1,5 @@
 from django.core.management.base import BaseCommand, CommandError
 
-from edilcloud.modules.assistant.models import ProjectAssistantState
 from edilcloud.modules.assistant.services import get_or_create_project_assistant_state, index_project_assistant_state
 from edilcloud.modules.projects.models import Project
 

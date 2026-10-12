@@ -40,6 +40,7 @@ class ProjectFeedBulkSeenSchema(Schema):
 class ProjectSummarySchema(Schema):
     id: int
     name: str
+    is_demo_master: bool = False
     description: str | None = None
     address: str | None = None
     google_place_id: str | None = None
@@ -63,6 +64,10 @@ class ProjectSummarySchema(Schema):
     purge_due_at: datetime | None = None
     last_export_at: datetime | None = None
     owner_export_sent_at: datetime | None = None
+
+
+class DemoProjectVisibilityRequestSchema(Schema):
+    visible: bool
 
 
 class ProjectTeamMemberSchema(Schema):
@@ -203,6 +208,20 @@ class CreateProjectDrawingPinRequestSchema(Schema):
     page_number: int = 1
     pin_code: str = ""
     label: str = ""
+
+
+class CreateProjectModelPinRequestSchema(Schema):
+    model: int
+    post: int
+    x: float
+    y: float
+    z: float
+    label: str = ""
+
+
+class ImportProjectDrawingRequestSchema(Schema):
+    source_kind: str
+    source_id: int
 
 
 class UpdateProjectDrawingPinRequestSchema(Schema):

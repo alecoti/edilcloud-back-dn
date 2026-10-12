@@ -20,6 +20,8 @@ from edilcloud.modules.projects.models import (
     ProjectActivity,
     ProjectCompanyColor,
     ProjectDocument,
+    ProjectDocumentKind,
+    ProjectDrawingPin,
     ProjectFolder,
     ProjectInviteCode,
     ProjectMember,
@@ -159,7 +161,9 @@ def create_project_fixture(profile) -> tuple[Project, ProjectTask, ProjectActivi
         folder=folder,
         title="Verbale 01",
         description="Verbale di avvio lavori",
-        document=SimpleUploadedFile("verbale-01.pdf", b"%PDF-1.4 demo", content_type="application/pdf"),
+        document=SimpleUploadedFile(
+            "verbale-01.pdf", b"%PDF-1.4 demo", content_type="application/pdf"
+        ),
     )
     ProjectPhoto.objects.create(
         project=project,
@@ -261,7 +265,9 @@ def test_project_company_colors_are_persistent_per_project_and_drive_team_tasks_
     first_task_color = first_overview_payload["tasks"][0]["assigned_company"]["color_project"]
     first_team_color = first_overview_payload["team"][0]["profile"]["company"]["color_project"]
     first_gantt_color = first_gantt_response.json()["tasks"][0]["assigned_company"]["color_project"]
-    second_gantt_color = second_gantt_response.json()["tasks"][0]["assigned_company"]["color_project"]
+    second_gantt_color = second_gantt_response.json()["tasks"][0]["assigned_company"][
+        "color_project"
+    ]
 
     assert first_task_color
     assert first_task_color == first_team_color == first_gantt_color
@@ -359,7 +365,9 @@ def test_project_team_patch_updates_company_color_and_keeps_it_persistent():
     team_after_add_response = client.get(f"/api/v1/projects/{project.id}/team", **headers)
     assert team_after_add_response.status_code == 200
     teammate_entry = next(
-        item for item in team_after_add_response.json() if item["profile"]["id"] == teammate_profile.id
+        item
+        for item in team_after_add_response.json()
+        if item["profile"]["id"] == teammate_profile.id
     )
     owner_after_add_entry = next(
         item for item in team_after_add_response.json() if item["profile"]["id"] == profile.id
@@ -463,7 +471,9 @@ def test_project_team_compliance_route_and_role_updates_work_end_to_end():
     assert initial_payload["execution_company_count"] == 2
     assert initial_payload["requires_csp_cse"] is True
     assert initial_payload["compliant"] is False
-    assert any(check["id"] == "addetti_emergenza" for check in initial_payload["missing_requirements"])
+    assert any(
+        check["id"] == "addetti_emergenza" for check in initial_payload["missing_requirements"]
+    )
 
     update_response = client.patch(
         f"/api/v1/projects/{project.id}/team/{contractor_two_member.id}",
@@ -572,7 +582,9 @@ def test_adding_new_company_member_assigns_immediate_unique_project_color():
     assert add_alpha_response.status_code == 201
 
     owner_assignment = ProjectCompanyColor.objects.get(project=project, workspace=owner_workspace)
-    alpha_assignment = ProjectCompanyColor.objects.get(project=project, workspace=teammate_workspace)
+    alpha_assignment = ProjectCompanyColor.objects.get(
+        project=project, workspace=teammate_workspace
+    )
     assert alpha_assignment.color_project
     assert alpha_assignment.color_project != owner_assignment.color_project
 
@@ -637,7 +649,9 @@ def test_google_material_project_company_palette_keeps_first_twenty_visually_sep
 
 
 @pytest.mark.django_db
-def test_closed_project_summary_exposes_archive_retention_fields_and_marks_archive_when_due(settings):
+def test_closed_project_summary_exposes_archive_retention_fields_and_marks_archive_when_due(
+    settings,
+):
     settings.PROJECT_ARCHIVE_AFTER_DAYS = 30
     settings.PROJECT_PURGE_AFTER_ARCHIVE_DAYS = 180
 
@@ -663,7 +677,9 @@ def test_closed_project_summary_exposes_archive_retention_fields_and_marks_archi
         role=WorkspaceRole.OWNER,
         status=ProjectMemberStatus.ACTIVE,
     )
-    headers = auth_headers(client, email="projects.archive.summary@example.com", password="devpass123")
+    headers = auth_headers(
+        client, email="projects.archive.summary@example.com", password="devpass123"
+    )
 
     response = client.get(f"/api/v1/projects/{project.id}", **headers)
     assert response.status_code == 200
@@ -691,7 +707,9 @@ def test_project_archive_export_endpoint_returns_complete_zip_package():
         workspace_name="Archive Export Workspace",
     )
     project, task, activity, alert_post = create_project_fixture(profile)
-    headers = auth_headers(client, email="projects.archive.export@example.com", password="devpass123")
+    headers = auth_headers(
+        client, email="projects.archive.export@example.com", password="devpass123"
+    )
 
     PostAttachment.objects.create(
         post=alert_post,
@@ -786,7 +804,9 @@ def test_project_gantt_import_preview_and_apply_create_tasks_activities_and_link
             f"4,Strutture,Getto base,{date.today() + timedelta(days=5)},{date.today() + timedelta(days=7)},2FS+1,{workspace.name}",
         ]
     )
-    upload = SimpleUploadedFile("cronoprogramma.csv", csv_content.encode("utf-8"), content_type="text/csv")
+    upload = SimpleUploadedFile(
+        "cronoprogramma.csv", csv_content.encode("utf-8"), content_type="text/csv"
+    )
     preview_response = client.post(
         f"/api/v1/projects/{project.id}/gantt/import/preview",
         data={"file": upload},
@@ -799,7 +819,9 @@ def test_project_gantt_import_preview_and_apply_create_tasks_activities_and_link
     assert preview_payload["summary"]["links"] == 2
     assert preview_payload["summary"]["unresolved_companies"] == 0
 
-    apply_upload = SimpleUploadedFile("cronoprogramma.csv", csv_content.encode("utf-8"), content_type="text/csv")
+    apply_upload = SimpleUploadedFile(
+        "cronoprogramma.csv", csv_content.encode("utf-8"), content_type="text/csv"
+    )
     apply_response = client.post(
         f"/api/v1/projects/{project.id}/gantt/import/apply",
         data={"file": apply_upload, "replace_existing": "true"},
@@ -863,7 +885,9 @@ def test_project_gantt_import_preview_supports_microsoft_project_xml():
     </Task>
   </Tasks>
 </Project>"""
-    upload = SimpleUploadedFile("microsoft-project.xml", xml_content.encode("utf-8"), content_type="application/xml")
+    upload = SimpleUploadedFile(
+        "microsoft-project.xml", xml_content.encode("utf-8"), content_type="application/xml"
+    )
     preview_response = client.post(
         f"/api/v1/projects/{project.id}/gantt/import/preview",
         data={"file": upload},
@@ -939,8 +963,13 @@ def test_project_gantt_import_preview_and_apply_support_microsoft_project_mpp():
     )
     assert apply_response.status_code == 200
     assert apply_response.json()["applied"] is True
-    assert ProjectTask.objects.filter(project=project).count() == preview_payload["summary"]["phases"]
-    assert ProjectScheduleLink.objects.filter(project=project).count() == preview_payload["summary"]["links"]
+    assert (
+        ProjectTask.objects.filter(project=project).count() == preview_payload["summary"]["phases"]
+    )
+    assert (
+        ProjectScheduleLink.objects.filter(project=project).count()
+        == preview_payload["summary"]["links"]
+    )
 
 
 @pytest.mark.django_db
@@ -964,7 +993,9 @@ def test_project_gantt_import_apply_accepts_string_activity_dates(monkeypatch):
         role=WorkspaceRole.OWNER,
         status=ProjectMemberStatus.ACTIVE,
     )
-    headers = auth_headers(client, email="projects.import.string-dates@example.com", password="devpass123")
+    headers = auth_headers(
+        client, email="projects.import.string-dates@example.com", password="devpass123"
+    )
 
     monkeypatch.setattr(
         "edilcloud.modules.projects.services.parse_gantt_import_file",
@@ -1153,17 +1184,25 @@ def test_activity_delay_expands_phase_and_pushes_linked_next_phase():
         status="progress",
         progress=35,
         datetime_start=timezone.make_aware(datetime.combine(date.today(), datetime.min.time())),
-        datetime_end=timezone.make_aware(datetime.combine(date.today() + timedelta(days=1), datetime.min.time())),
+        datetime_end=timezone.make_aware(
+            datetime.combine(date.today() + timedelta(days=1), datetime.min.time())
+        ),
     )
     ProjectActivity.objects.create(
         task=task_two,
         title="Attivita B1",
         status="to-do",
         progress=0,
-        datetime_start=timezone.make_aware(datetime.combine(date.today() + timedelta(days=3), datetime.min.time())),
-        datetime_end=timezone.make_aware(datetime.combine(date.today() + timedelta(days=4), datetime.min.time())),
+        datetime_start=timezone.make_aware(
+            datetime.combine(date.today() + timedelta(days=3), datetime.min.time())
+        ),
+        datetime_end=timezone.make_aware(
+            datetime.combine(date.today() + timedelta(days=4), datetime.min.time())
+        ),
     )
-    headers = auth_headers(client, email="projects.phase.guardrail@example.com", password="devpass123")
+    headers = auth_headers(
+        client, email="projects.phase.guardrail@example.com", password="devpass123"
+    )
 
     link_response = client.post(
         f"/api/v1/projects/{project.id}/gantt/links",
@@ -1188,8 +1227,12 @@ def test_activity_delay_expands_phase_and_pushes_linked_next_phase():
                 "description": "",
                 "status": "progress",
                 "progress": 60,
-                "datetime_start": timezone.make_aware(datetime.combine(date.today(), datetime.min.time())).isoformat(),
-                "datetime_end": timezone.make_aware(datetime.combine(date.today() + timedelta(days=5), datetime.min.time())).isoformat(),
+                "datetime_start": timezone.make_aware(
+                    datetime.combine(date.today(), datetime.min.time())
+                ).isoformat(),
+                "datetime_end": timezone.make_aware(
+                    datetime.combine(date.today() + timedelta(days=5), datetime.min.time())
+                ).isoformat(),
                 "workers": [],
                 "note": "",
                 "alert": False,
@@ -1256,10 +1299,16 @@ def test_activity_level_gantt_links_push_successor_activity_and_expand_parent_ph
         title="Attivita 2",
         status="to-do",
         progress=0,
-        datetime_start=timezone.make_aware(datetime.combine(date.today() + timedelta(days=2), datetime.min.time())),
-        datetime_end=timezone.make_aware(datetime.combine(date.today() + timedelta(days=2), datetime.min.time())),
+        datetime_start=timezone.make_aware(
+            datetime.combine(date.today() + timedelta(days=2), datetime.min.time())
+        ),
+        datetime_end=timezone.make_aware(
+            datetime.combine(date.today() + timedelta(days=2), datetime.min.time())
+        ),
     )
-    headers = auth_headers(client, email="projects.activity.links@example.com", password="devpass123")
+    headers = auth_headers(
+        client, email="projects.activity.links@example.com", password="devpass123"
+    )
 
     link_response = client.post(
         f"/api/v1/projects/{project.id}/gantt/links",
@@ -1284,8 +1333,12 @@ def test_activity_level_gantt_links_push_successor_activity_and_expand_parent_ph
                 "description": "",
                 "status": "progress",
                 "progress": 55,
-                "datetime_start": timezone.make_aware(datetime.combine(date.today(), datetime.min.time())).isoformat(),
-                "datetime_end": timezone.make_aware(datetime.combine(date.today() + timedelta(days=4), datetime.min.time())).isoformat(),
+                "datetime_start": timezone.make_aware(
+                    datetime.combine(date.today(), datetime.min.time())
+                ).isoformat(),
+                "datetime_end": timezone.make_aware(
+                    datetime.combine(date.today() + timedelta(days=4), datetime.min.time())
+                ).isoformat(),
                 "workers": [],
                 "note": "",
                 "alert": False,
@@ -1299,7 +1352,9 @@ def test_activity_level_gantt_links_push_successor_activity_and_expand_parent_ph
 
     activity_two.refresh_from_db()
     task_two.refresh_from_db()
-    assert timezone.localtime(activity_two.datetime_start).date() == date.today() + timedelta(days=5)
+    assert timezone.localtime(activity_two.datetime_start).date() == date.today() + timedelta(
+        days=5
+    )
     assert timezone.localtime(activity_two.datetime_end).date() == date.today() + timedelta(days=5)
     assert task_two.date_end == date.today() + timedelta(days=5)
 
@@ -1488,7 +1543,10 @@ def test_project_task_activity_post_and_comment_mutations_work_end_to_end():
         **headers,
     )
     assert update_comment_response.status_code == 200
-    assert update_comment_response.json()["text"] == "Verifica finale completata e chiusa senza anomalie."
+    assert (
+        update_comment_response.json()["text"]
+        == "Verifica finale completata e chiusa senza anomalie."
+    )
     assert update_comment_response.json()["parent"] == comment_id
 
     thread_response = client.get(f"/api/v1/activities/{activity_id}/posts", **headers)
@@ -1505,6 +1563,72 @@ def test_project_task_activity_post_and_comment_mutations_work_end_to_end():
 
     delete_post_response = client.delete(f"/api/v1/posts/{post_id}", **headers)
     assert delete_post_response.status_code == 204
+
+
+@pytest.mark.django_db
+def test_phase_posts_support_limit_offset_pagination():
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.phase-posts-pagination@example.com",
+        password="devpass123",
+    )
+    project, task, activity, _alert_post = create_project_fixture(profile)
+    ProjectPost.objects.filter(project=project).delete()
+    headers = auth_headers(
+        client,
+        email="projects.phase-posts-pagination@example.com",
+        password="devpass123",
+    )
+
+    base_time = timezone.now() - timedelta(hours=1)
+    created_posts: list[ProjectPost] = []
+    activity_posts: list[ProjectPost] = []
+    for index in range(16):
+        is_activity_post = index % 2 == 1
+        post = ProjectPost.objects.create(
+            project=project,
+            task=task,
+            activity=activity if is_activity_post else None,
+            author=profile,
+            post_kind=PostKind.WORK_PROGRESS,
+            text=f"Post paginato {index:02d}",
+            original_text=f"Post paginato {index:02d}",
+            source_language="it",
+            display_language="it",
+        )
+        timestamp = base_time + timedelta(minutes=index)
+        ProjectPost.objects.filter(id=post.id).update(
+            published_date=timestamp,
+            updated_at=timestamp,
+        )
+        post.published_date = timestamp
+        post.updated_at = timestamp
+        created_posts.append(post)
+        if is_activity_post:
+            activity_posts.append(post)
+
+    expected_phase_ids = [post.id for post in reversed(created_posts)]
+    first_page = client.get(
+        f"/api/v1/tasks/{task.id}/posts?include_activities=true&limit=10&offset=0",
+        **headers,
+    )
+    second_page = client.get(
+        f"/api/v1/tasks/{task.id}/posts?include_activities=true&limit=10&offset=10",
+        **headers,
+    )
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert [item["id"] for item in first_page.json()] == expected_phase_ids[:10]
+    assert [item["id"] for item in second_page.json()] == expected_phase_ids[10:]
+
+    expected_activity_ids = [post.id for post in reversed(activity_posts)]
+    activity_page = client.get(
+        f"/api/v1/activities/{activity.id}/posts?limit=5&offset=2",
+        **headers,
+    )
+    assert activity_page.status_code == 200
+    assert [item["id"] for item in activity_page.json()] == expected_activity_ids[2:7]
 
 
 @pytest.mark.django_db
@@ -1646,7 +1770,8 @@ def test_project_feed_orders_by_latest_activity_and_resets_unread_when_post_chan
     assert feed_payload["items"][0]["feed_is_unread"] is True
     assert feed_payload["items"][0]["feed_seen_at"] is None
     assert abs(
-        datetime.fromisoformat(feed_payload["items"][0]["last_activity_at"]) - first_comment.updated_at
+        datetime.fromisoformat(feed_payload["items"][0]["last_activity_at"])
+        - first_comment.updated_at
     ) < timedelta(seconds=1)
 
     seen_response = client.post(f"/api/v1/posts/{alert_post.id}/seen", **headers)
@@ -1678,7 +1803,8 @@ def test_project_feed_orders_by_latest_activity_and_resets_unread_when_post_chan
     assert unread_again_payload["items"][0]["id"] == alert_post.id
     assert unread_again_payload["items"][0]["feed_is_unread"] is True
     assert abs(
-        datetime.fromisoformat(unread_again_payload["items"][0]["last_activity_at"]) - latest_activity
+        datetime.fromisoformat(unread_again_payload["items"][0]["last_activity_at"])
+        - latest_activity
     ) < timedelta(seconds=1)
 
 
@@ -1783,7 +1909,9 @@ def test_project_folder_and_document_routes_support_create_update_delete():
             "description": "Versione firmata",
             "folder": str(folder_id),
             "is_public": "false",
-            "document": SimpleUploadedFile("pos-squadra-a.pdf", b"%PDF-1.4 pos", content_type="application/pdf"),
+            "document": SimpleUploadedFile(
+                "pos-squadra-a.pdf", b"%PDF-1.4 pos", content_type="application/pdf"
+            ),
         },
         **headers,
     )
@@ -1826,6 +1954,296 @@ def test_project_folder_and_document_routes_support_create_update_delete():
 
     delete_folder_response = client.delete(f"/api/v1/folders/{folder_id}", **headers)
     assert delete_folder_response.status_code == 204
+
+
+@pytest.mark.django_db
+def test_project_drawing_pins_support_drawing_document_filter():
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.drawing-pins-filter@example.com",
+        password="devpass123",
+        workspace_name="Drawing Pins Filter Workspace",
+    )
+    project = Project.objects.create(
+        workspace=profile.workspace,
+        created_by=profile,
+        name="Cantiere Disegni",
+        date_start=date.today(),
+        date_end=date.today() + timedelta(days=15),
+    )
+    ProjectMember.objects.create(
+        project=project,
+        profile=profile,
+        role=WorkspaceRole.OWNER,
+        status=ProjectMemberStatus.ACTIVE,
+    )
+    task = ProjectTask.objects.create(
+        project=project,
+        name="Fase disegni",
+        date_start=date.today(),
+        date_end=date.today() + timedelta(days=2),
+    )
+    post_a = ProjectPost.objects.create(project=project, task=task, author=profile, text="Pin A")
+    post_b = ProjectPost.objects.create(project=project, task=task, author=profile, text="Pin B")
+    drawing_a = ProjectDocument.objects.create(
+        project=project,
+        title="Tavola A",
+        document="drawings/tavola-a.pdf",
+        document_kind=ProjectDocumentKind.DRAWING,
+    )
+    drawing_b = ProjectDocument.objects.create(
+        project=project,
+        title="Tavola B",
+        document="drawings/tavola-b.pdf",
+        document_kind=ProjectDocumentKind.DRAWING,
+    )
+    pin_a = ProjectDrawingPin.objects.create(
+        project=project,
+        drawing_document=drawing_a,
+        post=post_a,
+        created_by=profile,
+        x=0.2,
+        y=0.3,
+    )
+    ProjectDrawingPin.objects.create(
+        project=project,
+        drawing_document=drawing_b,
+        post=post_b,
+        created_by=profile,
+        x=0.6,
+        y=0.7,
+    )
+    headers = auth_headers(
+        client,
+        email="projects.drawing-pins-filter@example.com",
+        password="devpass123",
+    )
+
+    response = client.get(
+        f"/api/v1/projects/{project.id}/drawing-pins?drawing_document={drawing_a.id}",
+        **headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["id"] for item in payload] == [pin_a.id]
+    assert payload[0]["drawing_document"]["id"] == drawing_a.id
+
+
+@pytest.mark.django_db
+def test_drawing_preview_and_post_pin_round_trip(tmp_path, settings):
+    from PIL import Image
+
+    settings.MEDIA_ROOT = tmp_path
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.drawing-preview@example.com",
+        password="devpass123",
+    )
+    project = Project.objects.create(
+        workspace=profile.workspace,
+        created_by=profile,
+        name="Tavola interattiva",
+        date_start=date.today(),
+        date_end=date.today() + timedelta(days=10),
+    )
+    ProjectMember.objects.create(
+        project=project, profile=profile, role=WorkspaceRole.OWNER,
+        status=ProjectMemberStatus.ACTIVE,
+    )
+    task = ProjectTask.objects.create(
+        project=project, name="Copertura", date_start=date.today(),
+        date_end=date.today() + timedelta(days=2),
+    )
+    post = ProjectPost.objects.create(
+        project=project, task=task, author=profile, text="Infiltrazione sul nodo ovest",
+        post_kind=PostKind.ISSUE, alert=True,
+    )
+    drawing = ProjectDocument.objects.create(
+        project=project, title="Copertura rev. B", document="drawings/copertura.dwg",
+        document_kind=ProjectDocumentKind.DRAWING,
+    )
+    headers = auth_headers(
+        client, email="projects.drawing-preview@example.com", password="devpass123"
+    )
+    image = BytesIO()
+    Image.new("RGB", (2400, 1600), "white").save(image, format="PNG")
+    image.seek(0)
+
+    preview_upload = client.post(
+        f"/api/v1/projects/{project.id}/drawings/{drawing.id}/preview",
+        {"preview": SimpleUploadedFile("copertura.png", image.getvalue(), content_type="image/png")},
+        **headers,
+    )
+    assert preview_upload.status_code == 200
+    assert preview_upload.json()["preview_available"] is True
+
+    preview_response = client.get(
+        f"/api/v1/projects/{project.id}/drawings/{drawing.id}/preview?width=640",
+        **headers,
+    )
+    assert preview_response.status_code == 200
+    assert preview_response["Content-Type"] == "image/webp"
+    assert Image.open(BytesIO(preview_response.content)).width <= 640
+
+    created = client.post(
+        f"/api/v1/projects/{project.id}/drawing-pins",
+        data=json.dumps({"drawing_document": drawing.id, "post": post.id, "x": 0.34, "y": 0.61, "label": "Nodo ovest"}),
+        content_type="application/json",
+        **headers,
+    )
+    assert created.status_code == 201
+    pin_id = created.json()["id"]
+    assert ProjectDrawingPin.objects.get(id=pin_id).x == 0.34
+
+    listed = client.get(f"/api/v1/projects/{project.id}/drawing-pins", **headers)
+    assert listed.status_code == 200
+    assert [(item["id"], item["post"]["id"]) for item in listed.json()] == [(pin_id, post.id)]
+    assert listed.json()[0]["status"] == "open"
+
+    deleted = client.delete(f"/api/v1/projects/{project.id}/drawing-pins/{pin_id}", **headers)
+    assert deleted.status_code == 204
+    assert not ProjectDrawingPin.objects.filter(id=pin_id).exists()
+
+    source_document = ProjectDocument.objects.create(
+        project=project, title="Sezione esistente", document="documents/sezione.png",
+        document_kind=ProjectDocumentKind.DOCUMENT,
+    )
+    imported = client.post(
+        f"/api/v1/projects/{project.id}/drawings/import",
+        data=json.dumps({"source_kind": "document", "source_id": source_document.id}),
+        content_type="application/json", **headers,
+    )
+    assert imported.status_code == 201
+    assert imported.json()["document_kind"] == ProjectDocumentKind.DRAWING
+    assert imported.json()["id"] != source_document.id
+    assert ProjectDocument.objects.get(id=source_document.id).document_kind == ProjectDocumentKind.DOCUMENT
+
+
+@pytest.mark.django_db
+def test_drawing_preview_supported_formats_and_pdf_pages(tmp_path, settings):
+    import pypdfium2 as pdfium
+    from PIL import Image
+
+    settings.MEDIA_ROOT = tmp_path
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.drawing-formats@example.com", password="devpass123",
+    )
+    project = Project.objects.create(
+        workspace=profile.workspace, created_by=profile, name="Formati tavole",
+        date_start=date.today(), date_end=date.today() + timedelta(days=10),
+    )
+    ProjectMember.objects.create(
+        project=project, profile=profile, role=WorkspaceRole.OWNER,
+        status=ProjectMemberStatus.ACTIVE,
+    )
+    headers = auth_headers(
+        client, email="projects.drawing-formats@example.com", password="devpass123"
+    )
+    base_image = Image.new("RGB", (1800, 1200), "white")
+    for extension, format_name in [
+        ("png", "PNG"), ("jpg", "JPEG"), ("webp", "WEBP"),
+        ("tiff", "TIFF"), ("bmp", "BMP"), ("gif", "GIF"),
+    ]:
+        source = BytesIO()
+        base_image.save(source, format=format_name)
+        drawing = ProjectDocument.objects.create(
+            project=project, title=f"Tavola {extension}",
+            document=SimpleUploadedFile(f"tavola.{extension}", source.getvalue()),
+            document_kind=ProjectDocumentKind.DRAWING,
+        )
+        response = client.get(
+            f"/api/v1/projects/{project.id}/drawings/{drawing.id}/preview?width=640",
+            **headers,
+        )
+        assert response.status_code == 200, extension
+        assert Image.open(BytesIO(response.content)).size == (640, 427)
+        assert len(response.content) < len(source.getvalue()), extension
+
+    pdf_bytes = BytesIO()
+    with pdfium.PdfDocument.new() as pdf:
+        pdf.new_page(800, 500).close()
+        pdf.new_page(500, 800).close()
+        pdf.save(pdf_bytes)
+    pdf_drawing = ProjectDocument.objects.create(
+        project=project, title="PDF multipagina",
+        document=SimpleUploadedFile("tavola.pdf", pdf_bytes.getvalue()),
+        document_kind=ProjectDocumentKind.DRAWING,
+    )
+    page_count = client.get(
+        f"/api/v1/projects/{project.id}/drawings/{pdf_drawing.id}/pages", **headers
+    )
+    assert page_count.status_code == 200
+    assert page_count.json()["page_count"] == 2
+    page_two = client.get(
+        f"/api/v1/projects/{project.id}/drawings/{pdf_drawing.id}/preview?width=640&page=2",
+        **headers,
+    )
+    assert page_two.status_code == 200
+    assert Image.open(BytesIO(page_two.content)).size == (400, 640)
+    assert client.get(
+        f"/api/v1/projects/{project.id}/drawings/{pdf_drawing.id}/preview?page=3",
+        **headers,
+    ).status_code == 404
+
+    preview_bytes = BytesIO()
+    base_image.save(preview_bytes, format="PNG")
+    for extension in ["dwg", "dxf", "dwf", "dwfx", "ifc", "rvt", "skp", "dgn", "plt"]:
+        drawing = ProjectDocument.objects.create(
+            project=project, title=f"Originale {extension}",
+            document=SimpleUploadedFile(f"originale.{extension}", b"test-original"),
+            document_kind=ProjectDocumentKind.DRAWING,
+        )
+        assert client.get(
+            f"/api/v1/projects/{project.id}/drawings/{drawing.id}/preview", **headers
+        ).status_code == 404
+        uploaded = client.post(
+            f"/api/v1/projects/{project.id}/drawings/{drawing.id}/preview",
+            {"preview": SimpleUploadedFile(
+                f"vista-{extension}.png", preview_bytes.getvalue(), content_type="image/png"
+            )},
+            **headers,
+        )
+        assert uploaded.status_code == 200, extension
+        assert uploaded.json()["preview_available"] is True
+        assert client.get(
+            f"/api/v1/projects/{project.id}/drawings/{drawing.id}/preview?width=640",
+            **headers,
+        ).status_code == 200
+
+
+@pytest.mark.django_db
+def test_drawing_upload_has_its_own_limit_and_rejects_unknown_formats(tmp_path, settings):
+    settings.MEDIA_ROOT = tmp_path
+    settings.PROJECT_DOCUMENT_MAX_UPLOAD_BYTES = 10
+    settings.PROJECT_DRAWING_MAX_UPLOAD_BYTES = 20
+    client = Client()
+    _user, _workspace, profile = create_workspace_profile(
+        email="projects.drawing-limit@example.com", password="devpass123",
+    )
+    project = Project.objects.create(
+        workspace=profile.workspace, created_by=profile, name="Tavole grandi",
+        date_start=date.today(), date_end=date.today() + timedelta(days=10),
+    )
+    ProjectMember.objects.create(
+        project=project, profile=profile, role=WorkspaceRole.OWNER,
+        status=ProjectMemberStatus.ACTIVE,
+    )
+    headers = auth_headers(
+        client, email="projects.drawing-limit@example.com", password="devpass123"
+    )
+
+    def upload(name, content):
+        return client.post(
+            f"/api/v1/projects/{project.id}/drawings",
+            {"document": SimpleUploadedFile(name, content), "title": name},
+            **headers,
+        )
+
+    assert upload("modello.dwg", b"012345678901234").status_code == 201
+    assert upload("modello.exe", b"1234").status_code == 400
+    assert upload("modello.ifc", b"0" * 21).status_code == 400
 
 
 @pytest.mark.django_db
@@ -1927,7 +2345,9 @@ def test_project_document_upload_supports_nested_additional_path_inside_existing
     assert document.folder.path == "Documenti tecnici/Impianti/Elettrico"
 
     nested_paths = list(
-        ProjectFolder.objects.filter(project=project).order_by("path").values_list("path", flat=True)
+        ProjectFolder.objects.filter(project=project)
+        .order_by("path")
+        .values_list("path", flat=True)
     )
     assert nested_paths == [
         "Documenti tecnici",
@@ -2208,13 +2628,11 @@ def test_project_mutations_publish_realtime_events(monkeypatch):
     }
     assert timeline_by_type["task.created"]["event_kind"] == "task_created"
     assert any(
-        detail["label"] == "Azienda"
-        for detail in timeline_by_type["task.created"]["details"]
+        detail["label"] == "Azienda" for detail in timeline_by_type["task.created"]["details"]
     )
     assert timeline_by_type["task.updated"]["event_kind"] == "task_updated"
     assert any(
-        detail["label"] == "Progresso"
-        for detail in timeline_by_type["task.updated"]["details"]
+        detail["label"] == "Progresso" for detail in timeline_by_type["task.updated"]["details"]
     )
     assert timeline_by_type["post.resolved"]["event_kind"] == "issue_resolved"
     assert timeline_by_type["document.deleted"]["event_kind"] == "document_deleted"
@@ -2403,7 +2821,9 @@ def test_project_creator_keeps_workspace_role_when_not_owner():
 
     assert create_response.status_code == 201
     created_project = Project.objects.get(id=create_response.json()["id"])
-    created_membership = ProjectMember.objects.get(project=created_project, profile=delegate_profile)
+    created_membership = ProjectMember.objects.get(
+        project=created_project, profile=delegate_profile
+    )
     assert created_membership.role == WorkspaceRole.DELEGATE
 
 
@@ -2595,7 +3015,9 @@ def test_project_permission_audit_worker_can_read_but_cannot_manage_members_or_t
         password="devpass123",
     )
 
-    assert client.get(f"/api/v1/projects/{project.id}/overview", **worker_headers).status_code == 200
+    assert (
+        client.get(f"/api/v1/projects/{project.id}/overview", **worker_headers).status_code == 200
+    )
     assert client.get(f"/api/v1/projects/{project.id}/team", **worker_headers).status_code == 200
     assert client.get(f"/api/v1/projects/{project.id}/gantt", **worker_headers).status_code == 200
 
@@ -2612,7 +3034,10 @@ def test_project_permission_audit_worker_can_read_but_cannot_manage_members_or_t
         **worker_headers,
     )
     assert add_member_response.status_code == 400
-    assert "Non hai permessi per invitare membri su questo progetto." in add_member_response.json()["detail"]
+    assert (
+        "Non hai permessi per invitare membri su questo progetto."
+        in add_member_response.json()["detail"]
+    )
 
     invite_code_response = client.post(
         f"/api/v1/projects/{project.id}/invite-code",
@@ -2644,10 +3069,15 @@ def test_project_permission_audit_worker_can_read_but_cannot_manage_members_or_t
         **worker_headers,
     )
     assert create_task_response.status_code == 400
-    assert "Non hai permessi per creare task in questo progetto." in create_task_response.json()["detail"]
+    assert (
+        "Non hai permessi per creare task in questo progetto."
+        in create_task_response.json()["detail"]
+    )
 
     outsider_headers = auth_headers(client, email=outsider_email, password="devpass123")
-    overview_outsider_response = client.get(f"/api/v1/projects/{project.id}/overview", **outsider_headers)
+    overview_outsider_response = client.get(
+        f"/api/v1/projects/{project.id}/overview", **outsider_headers
+    )
     team_outsider_response = client.get(f"/api/v1/projects/{project.id}/team", **outsider_headers)
     gantt_outsider_response = client.get(f"/api/v1/projects/{project.id}/gantt", **outsider_headers)
 
@@ -2728,7 +3158,9 @@ def test_project_file_download_endpoints_stream_project_assets_and_enforce_acces
     )
     outsider_headers = auth_headers(client, email=outsider_email, password="devpass123")
 
-    assert client.get(f"/api/v1/documents/{document.id}/file", **outsider_headers).status_code == 404
+    assert (
+        client.get(f"/api/v1/documents/{document.id}/file", **outsider_headers).status_code == 404
+    )
     assert client.get(f"/api/v1/photos/{photo.id}/file", **outsider_headers).status_code == 404
     assert (
         client.get(
@@ -2762,7 +3194,9 @@ def test_activity_posts_are_translated_and_cached_by_requested_locale(monkeypatc
         source_language="it",
         display_language="it",
     )
-    headers = auth_headers(client, email="projects.translation.activity@example.com", password="devpass123")
+    headers = auth_headers(
+        client, email="projects.translation.activity@example.com", password="devpass123"
+    )
     calls: list[tuple[str, str]] = []
 
     def fake_translate(*, source_text: str, source_language: str, target_language: str) -> str:
@@ -2826,7 +3260,9 @@ def test_project_feed_translates_posts_once_and_reuses_saved_memory(monkeypatch)
         alert=False,
         is_public=False,
     )
-    headers = auth_headers(client, email="projects.translation.feed@example.com", password="devpass123")
+    headers = auth_headers(
+        client, email="projects.translation.feed@example.com", password="devpass123"
+    )
     translated_ids: list[str] = []
 
     def fake_translate(*, source_text: str, source_language: str, target_language: str) -> str:
@@ -2851,7 +3287,9 @@ def test_project_feed_translates_posts_once_and_reuses_saved_memory(monkeypatch)
     monkeypatch.setattr(
         project_services,
         "generate_project_content_translation",
-        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("Il feed doveva riusare la memoria salvata.")),
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Il feed doveva riusare la memoria salvata.")
+        ),
     )
     second_feed_response = client.get(
         "/api/v1/projects/feed?limit=10&offset=0",
@@ -2879,12 +3317,17 @@ def test_updating_post_and_comment_invalidates_translation_memory(monkeypatch):
         source_language="it",
         display_language="it",
     )
-    headers = auth_headers(client, email="projects.translation.update@example.com", password="devpass123")
+    headers = auth_headers(
+        client, email="projects.translation.update@example.com", password="devpass123"
+    )
 
     monkeypatch.setattr(
         project_services,
         "generate_project_content_translation",
-        lambda *, source_text, source_language, target_language: f"[{target_language}] {source_text}",
+        lambda *,
+        source_text,
+        source_language,
+        target_language: f"[{target_language}] {source_text}",
     )
     warmup_response = client.get(
         f"/api/v1/activities/{activity.id}/posts",
@@ -2892,16 +3335,24 @@ def test_updating_post_and_comment_invalidates_translation_memory(monkeypatch):
         **headers,
     )
     assert warmup_response.status_code == 200
-    original_post_translation = ProjectPostTranslation.objects.get(post=alert_post, target_language="ru")
-    original_comment_translation = PostCommentTranslation.objects.get(comment=comment, target_language="ru")
+    original_post_translation = ProjectPostTranslation.objects.get(
+        post=alert_post, target_language="ru"
+    )
+    original_comment_translation = PostCommentTranslation.objects.get(
+        comment=comment, target_language="ru"
+    )
 
     post_update_calls: list[str] = []
 
-    def fake_translate_after_update(*, source_text: str, source_language: str, target_language: str) -> str:
+    def fake_translate_after_update(
+        *, source_text: str, source_language: str, target_language: str
+    ) -> str:
         post_update_calls.append(source_text)
         return f"[{target_language}] aggiornato: {source_text}"
 
-    monkeypatch.setattr(project_services, "generate_project_content_translation", fake_translate_after_update)
+    monkeypatch.setattr(
+        project_services, "generate_project_content_translation", fake_translate_after_update
+    )
 
     update_post_response = client.patch(
         f"/api/v1/posts/{alert_post.id}",
@@ -2921,7 +3372,9 @@ def test_updating_post_and_comment_invalidates_translation_memory(monkeypatch):
         **headers,
     )
     assert update_post_response.status_code == 200
-    updated_post_translation = ProjectPostTranslation.objects.get(post=alert_post, target_language="ru")
+    updated_post_translation = ProjectPostTranslation.objects.get(
+        post=alert_post, target_language="ru"
+    )
     assert updated_post_translation.id == original_post_translation.id
     assert updated_post_translation.translated_text == "[ru] aggiornato: Testo aggiornato lato nord"
     assert "Testo aggiornato lato nord" in post_update_calls
@@ -2941,6 +3394,11 @@ def test_updating_post_and_comment_invalidates_translation_memory(monkeypatch):
         **headers,
     )
     assert comment_update_response.status_code == 200
-    updated_comment_translation = PostCommentTranslation.objects.get(comment=comment, target_language="ru")
+    updated_comment_translation = PostCommentTranslation.objects.get(
+        comment=comment, target_language="ru"
+    )
     assert updated_comment_translation.id == original_comment_translation.id
-    assert updated_comment_translation.translated_text == "[ru] aggiornato: Commento aggiornato lato ponteggio"
+    assert (
+        updated_comment_translation.translated_text
+        == "[ru] aggiornato: Commento aggiornato lato ponteggio"
+    )

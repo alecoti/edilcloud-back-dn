@@ -330,6 +330,15 @@ def unregister_notification_device(
     return {"ok": True, "updated": updated}
 
 
+def visible_notifications_queryset(profile):
+    queryset = Notification.objects.filter(recipient_profile=profile)
+    if profile.demo_project_hidden:
+        from edilcloud.modules.projects.models import Project
+
+        queryset = queryset.exclude(project_id__in=Project.objects.filter(is_demo_master=True).values("id"))
+    return queryset
+
+
 def list_notifications(*, user, claims: dict, limit: int = 80) -> dict:
     profile = resolve_notification_profile(user=user, claims=claims)
     if profile is None:
@@ -337,14 +346,13 @@ def list_notifications(*, user, claims: dict, limit: int = 80) -> dict:
 
     safe_limit = min(max(int(limit or 80), 1), 100)
     queryset = (
-        Notification.objects.select_related(
+        visible_notifications_queryset(profile).select_related(
             "recipient_profile",
             "sender_user",
             "sender_profile",
             "sender_profile__workspace",
             "sender_profile__user",
         )
-        .filter(recipient_profile=profile)
         .order_by("-created_at", "-id")
     )
     return {
@@ -397,7 +405,7 @@ def mark_all_notifications_read(*, user, claims: dict) -> dict:
         return {"ok": True, "updated": 0}
 
     updated = (
-        Notification.objects.filter(recipient_profile=profile, read_at__isnull=True)
+        visible_notifications_queryset(profile).filter(read_at__isnull=True)
         .update(read_at=timezone.now(), updated_at=timezone.now())
     )
 

@@ -17,7 +17,6 @@ from edilcloud.modules.assistant.wiki_service import (
     compact_whitespace,
     dedupe_source_refs,
     document_source_ref,
-    format_date,
     json_dumps,
     member_source_ref,
     normalize_text,
@@ -33,7 +32,6 @@ from edilcloud.modules.projects.models import (
     Project,
     ProjectActivity,
     ProjectDocument,
-    ProjectMember,
     ProjectPost,
     ProjectTask,
 )

@@ -12,7 +12,10 @@ from edilcloud.modules.billing.models import (
     BillingStatus,
     BillingTokenLedger,
 )
-from edilcloud.modules.billing.services import ensure_workspace_attached_to_owner_account
+from edilcloud.modules.billing.services import (
+    assert_ai_request_headroom,
+    ensure_workspace_attached_to_owner_account,
+)
 from edilcloud.modules.projects.models import Project, ProjectMember, ProjectMemberStatus
 from edilcloud.modules.workspaces.models import Workspace, WorkspaceRole
 
@@ -138,6 +141,39 @@ def test_billing_catalog_endpoint_is_public():
     assert payload["default_plan_code"] == "fondazioni"
     assert len(payload["plans"]) >= 3
     assert len(payload["token_packs"]) >= 3
+
+
+@pytest.mark.parametrize("remaining", [0, 3999, 4000])
+def test_ai_token_quota_is_enforced_when_enabled(settings, monkeypatch, remaining):
+    settings.AI_TOKEN_QUOTA_ENFORCED = True
+    monkeypatch.setattr(
+        "edilcloud.modules.billing.services.get_workspace_billing_account",
+        lambda workspace: object(),
+    )
+    monkeypatch.setattr(
+        "edilcloud.modules.billing.services.entitlement_snapshot",
+        lambda account: {"ai_tokens": {"remaining_this_period": remaining}},
+    )
+
+    if remaining < 4000:
+        with pytest.raises(ValueError, match="Token AI insufficienti"):
+            assert_ai_request_headroom(object())
+    else:
+        assert_ai_request_headroom(object())
+
+
+def test_ai_token_quota_can_be_disabled_without_changing_billing(settings, monkeypatch):
+    settings.AI_TOKEN_QUOTA_ENFORCED = False
+
+    def unexpected_account_lookup(workspace):
+        raise AssertionError("The disabled quota must not read or modify the billing account.")
+
+    monkeypatch.setattr(
+        "edilcloud.modules.billing.services.get_workspace_billing_account",
+        unexpected_account_lookup,
+    )
+
+    assert_ai_request_headroom(object())
 
 
 @pytest.mark.django_db

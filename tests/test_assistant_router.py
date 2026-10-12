@@ -32,6 +32,45 @@ def test_query_router_classifies_team_count_and_timeline_queries():
     assert work_today_route.temporal_scope == "today"
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Quando e prevista la consegna dei serramenti del blocco nord?",
+        "Quale anomalia geometrica emerge dal verbale del sopralluogo?",
+        "Perche la posa risulta bloccata nel rapporto tecnico?",
+        "Quale fornitura blocca la posa e quale verifica resta aperta sulla scala?",
+        "Metti insieme il calendario serramenti del blocco nord e l'ordine copertura.",
+    ],
+)
+def test_query_router_does_not_bypass_retrieval_for_domain_language(question):
+    route = classify_assistant_query(question)
+
+    assert route.strategy != "deterministic_db"
+    assert route.intent not in {"open_alerts", "resolved_issues"}
+
+
+@pytest.mark.parametrize(
+    "question, expected_intent",
+    [
+        ("Quante segnalazioni aperte ci sono?", "open_alerts"),
+        ("Elenca le criticita aperte", "open_alerts"),
+        ("Quali problemi sono stati risolti?", "resolved_issues"),
+    ],
+)
+def test_query_router_keeps_explicit_alert_register_queries_deterministic(question, expected_intent):
+    route = classify_assistant_query(question)
+
+    assert route.intent == expected_intent
+    assert route.strategy == "deterministic_db"
+
+
+def test_query_router_combines_task_facts_with_retrieval_for_open_status_questions():
+    route = classify_assistant_query("Qual e lo stato della lavorazione serramenti del blocco nord?")
+
+    assert route.intent == "task_status"
+    assert route.strategy == "hybrid_db_retrieval"
+
+
 def test_answer_planner_uses_short_mode_for_count_queries():
     route = classify_assistant_query("quante aziende ci sono nel progetto?")
     plan = plan_assistant_answer(question="quante aziende ci sono nel progetto?", route=route)
@@ -39,6 +78,41 @@ def test_answer_planner_uses_short_mode_for_count_queries():
     assert plan.target_length == "short"
     assert plan.answer_mode == "fact_list"
     assert plan.response_structure == "direct"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Quello scostamento e gia risolto?",
+        "E stata conclusa?",
+    ],
+)
+def test_answer_planner_requests_clarification_for_unresolved_references(question):
+    route = classify_assistant_query(question)
+
+    plan = plan_assistant_answer(
+        question=question,
+        route=route,
+        has_conversation_context=False,
+    )
+
+    assert plan.answerability == "needs_clarification"
+    assert plan.presentation == "clarification"
+    assert plan.depth == "compact"
+
+
+def test_answer_planner_allows_contextual_follow_up_when_history_exists():
+    question = "Quello scostamento e gia risolto?"
+    route = classify_assistant_query(question)
+
+    plan = plan_assistant_answer(
+        question=question,
+        route=route,
+        has_conversation_context=True,
+    )
+
+    assert plan.answerability == "answer"
+    assert plan.presentation == "adaptive"
 
 
 def test_retrieval_context_uses_thread_context_for_follow_up_queries():

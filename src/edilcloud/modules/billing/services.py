@@ -518,23 +518,18 @@ def storage_size_for_name(name: str | None) -> int:
 def calculate_storage_usage_for_workspace_ids(workspace_ids: list[int]) -> int:
     if not workspace_ids:
         return 0
-    document_names = ProjectDocument.objects.filter(project__workspace_id__in=workspace_ids).values_list(
-        "document",
-        flat=True,
-    )
-    photo_names = ProjectPhoto.objects.filter(project__workspace_id__in=workspace_ids).values_list(
-        "photo",
-        flat=True,
-    )
-    post_attachment_names = PostAttachment.objects.filter(
-        post__project__workspace_id__in=workspace_ids
-    ).values_list("file", flat=True)
-    comment_attachment_names = CommentAttachment.objects.filter(
-        comment__post__project__workspace_id__in=workspace_ids
-    ).values_list("file", flat=True)
     total = 0
-    for name in [*document_names, *photo_names, *post_attachment_names, *comment_attachment_names]:
-        total += storage_size_for_name(str(name))
+    collections = (
+        (ProjectDocument.objects.filter(project__workspace_id__in=workspace_ids), "document"),
+        (ProjectPhoto.objects.filter(project__workspace_id__in=workspace_ids), "photo"),
+        (PostAttachment.objects.filter(post__project__workspace_id__in=workspace_ids), "file"),
+        (CommentAttachment.objects.filter(comment__post__project__workspace_id__in=workspace_ids), "file"),
+    )
+    for rows, field in collections:
+        total += rows.aggregate(total=Sum("file_size"))["total"] or 0
+        # Preserve quota enforcement for legacy files until the offline backfill.
+        for name in rows.filter(file_size__isnull=True).values_list(field, flat=True).iterator(chunk_size=100):
+            total += storage_size_for_name(str(name))
     return total
 
 
@@ -738,6 +733,8 @@ def assert_storage_quota_available(workspace: Workspace, *, incoming_bytes: int)
 
 
 def assert_ai_request_headroom(workspace: Workspace, *, minimum_headroom: int = DEFAULT_AI_REQUEST_HEADROOM) -> None:
+    if not settings.AI_TOKEN_QUOTA_ENFORCED:
+        return
     account = get_workspace_billing_account(workspace)
     snapshot = entitlement_snapshot(account)
     if snapshot["ai_tokens"]["remaining_this_period"] < max(minimum_headroom, 1):

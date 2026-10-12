@@ -35,6 +35,7 @@ class WorkspaceProfileSchema(Schema):
 
 
 class WorkspaceCurrentProfileSchema(Schema):
+    demo_project_hidden: bool = False
     first_name: str
     last_name: str
     email: str

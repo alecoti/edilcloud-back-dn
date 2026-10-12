@@ -1,0 +1,7 @@
+services:
+  web:
+    volumes:
+      - ./src:/app/src:ro
+  assistant-worker:
+    volumes:
+      - ./src:/app/src:ro

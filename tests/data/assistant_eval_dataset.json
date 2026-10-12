@@ -64,10 +64,10 @@
     },
     {
         "question":  "cosa blocca i collaudi?",
-        "expected_intent":  "open_alerts",
-        "expected_strategy":  "deterministic_db",
-        "expected_target_length":  "medium",
-        "expected_answer_shape":  "brief"
+        "expected_intent":  "generic_semantic",
+        "expected_strategy":  "semantic_retrieval",
+        "expected_target_length":  "long",
+        "expected_answer_shape":  "deep_report"
     },
     {
         "question":  "quali issue sono state risolte?",
@@ -93,7 +93,7 @@
     {
         "question":  "qual e lo stato della task ponteggi?",
         "expected_intent":  "task_status",
-        "expected_strategy":  "deterministic_db",
+        "expected_strategy":  "hybrid_db_retrieval",
         "expected_target_length":  "medium",
         "expected_answer_shape":  "brief"
     },

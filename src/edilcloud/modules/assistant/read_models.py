@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from django.db.models import Case, IntegerField, Max, Value, When
 from django.utils import timezone
 
 from edilcloud.modules.assistant.query_router import AssistantQueryRoute
@@ -12,7 +13,15 @@ from edilcloud.modules.assistant.timeline_service import (
     build_project_operational_events,
     resolve_temporal_window,
 )
-from edilcloud.modules.projects.models import PostKind, Project, ProjectMemberStatus, ProjectPost, ProjectTask
+from edilcloud.modules.projects.models import (
+    PostKind,
+    Project,
+    ProjectActivity,
+    ProjectMemberStatus,
+    ProjectPost,
+    ProjectTask,
+    TaskActivityStatus,
+)
 
 
 @dataclass(slots=True)
@@ -39,6 +48,7 @@ def make_citation(
     snippet: str,
     metadata: dict[str, Any] | None = None,
     score: float = 1.0,
+    snippet_limit: int = 240,
 ) -> dict[str, Any]:
     return {
         "index": index,
@@ -46,7 +56,7 @@ def make_citation(
         "source_type": source_type,
         "label": label,
         "score": round(float(score), 2),
-        "snippet": truncate_text(snippet, 240),
+        "snippet": truncate_text(snippet, snippet_limit),
         "metadata": metadata or {},
     }
 
@@ -55,48 +65,159 @@ def task_is_closed(task: ProjectTask) -> bool:
     return bool(task.date_completed) or int(task.progress or 0) >= 100
 
 
-def build_project_summary_facts(project: Project) -> AssistantStructuredFacts:
-    today = timezone.localdate()
+def build_project_summary_facts(project: Project, *, now: datetime | None = None) -> AssistantStructuredFacts:
+    reference = timezone.localtime(now or timezone.now())
+    today = reference.date()
     tasks = list(project.tasks.select_related("assigned_company").all())
-    documents = list(project.documents.select_related("folder").all())
-    members = list(
-        project.members.select_related("profile__workspace")
-        .filter(disabled=False, status=ProjectMemberStatus.ACTIVE)
-        .all()
+    activities = list(
+        ProjectActivity.objects.filter(task__project=project)
+        .select_related("task", "task__assigned_company")
+        .order_by("datetime_start", "id")
     )
-    open_alerts = list(ProjectPost.objects.filter(project=project, is_deleted=False, alert=True).order_by("-published_date")[:5])
-    recent_events = build_project_operational_events(
-        project=project,
-        start_at=timezone.now() - timedelta(days=7),
-        end_at=timezone.now(),
-        limit=6,
+    document_count = project.documents.count()
+    team_count = project.members.filter(disabled=False, status=ProjectMemberStatus.ACTIVE).count()
+    alert_query = ProjectPost.objects.filter(project=project, is_deleted=False, alert=True)
+    open_alert_count = alert_query.count()
+    open_alerts = list(
+        alert_query.select_related("task", "activity")
+        .annotate(
+            issue_priority=Case(
+                When(post_kind=PostKind.ISSUE, then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
+        )
+        .order_by("issue_priority", "-published_date", "-id")[:4]
     )
-    open_tasks = [task for task in tasks if not task_is_closed(task)]
-    overdue_tasks = [task for task in open_tasks if task.date_end < today]
+    post_updates = ProjectPost.objects.filter(project=project, is_deleted=False).aggregate(
+        latest_published=Max("published_date"),
+        latest_updated=Max("updated_at"),
+    )
 
+    open_tasks = [task for task in tasks if not task_is_closed(task)]
+    overdue_tasks = sorted((task for task in open_tasks if task.date_end < today), key=lambda task: (task.date_end, task.id))
+    active_activities = sorted(
+        (activity for activity in activities if activity.status == TaskActivityStatus.PROGRESS),
+        key=lambda activity: (activity.updated_at, activity.id),
+        reverse=True,
+    )
+    upcoming_activities = [
+        activity for activity in activities
+        if activity.status == TaskActivityStatus.TODO
+        and reference <= activity.datetime_start <= reference + timedelta(days=14)
+    ]
+    upcoming_tasks = sorted(
+        (task for task in open_tasks if today < task.date_start <= today + timedelta(days=14)),
+        key=lambda task: (task.date_start, task.id),
+    )
+    operational_updates = [
+        *[task.updated_at for task in tasks],
+        *[activity.updated_at for activity in activities],
+    ]
+    operational_updates.extend(value for value in post_updates.values() if value is not None)
+    last_update = max(operational_updates) if operational_updates else None
+    days_since_update = max(0, (today - timezone.localtime(last_update).date()).days) if last_update else None
+    stale = days_since_update is None or days_since_update > 14
+
+    sections = [
+        f"Fotografia del progetto {project.name} al {reference.strftime('%d/%m/%Y %H:%M')}.",
+        f"Ultimo aggiornamento operativo registrato: {timezone.localtime(last_update).strftime('%d/%m/%Y %H:%M') if last_update else 'non disponibile'}.",
+        f"Task: {len(tasks)} totali, {len(open_tasks)} non completate, {len(overdue_tasks)} oltre la data pianificata.",
+        f"Attivita marcate in corso: {len(active_activities)}. Segnalazioni marcate aperte: {open_alert_count}.",
+    ]
+    if stale:
+        sections.append("Non ci sono aggiornamenti operativi recenti: lo stato odierno delle lavorazioni non e confermato.")
+    if active_activities:
+        sections.append("Attivita registrate in corso:")
+        for activity in active_activities[:1]:
+            sections.append(
+                f"- {activity.title} (task {activity.task.name}, progresso {activity.progress}%, "
+                f"fine pianificata {timezone.localtime(activity.datetime_end).strftime('%d/%m/%Y')})."
+            )
+    elif open_tasks:
+        sections.append("Nessuna attivita e marcata in corso; le task non completate non provano lavoro in esecuzione oggi.")
+    if overdue_tasks:
+        sections.append("Task oltre la data pianificata:")
+        for task in overdue_tasks[:1]:
+            sections.append(
+                f"- {task.name} (fine pianificata {task.date_end.strftime('%d/%m/%Y')}, "
+                f"progresso {task.progress}%, azienda {task.assigned_company.name if task.assigned_company else 'non indicata'})."
+            )
+    if open_alerts:
+        sections.append("Segnalazioni ancora marcate aperte:")
+        for post in open_alerts[:3]:
+            sections.append(
+                f"- {truncate_text(post.text, 180)} "
+                f"(registrata il {timezone.localtime(post.published_date).strftime('%d/%m/%Y')}, "
+                f"task {post.task.name if post.task else 'non indicata'})."
+            )
+    if upcoming_activities or upcoming_tasks:
+        sections.append("Prossime attivita pianificate nei 14 giorni:")
+        for activity in upcoming_activities[:2]:
+            sections.append(f"- {activity.title}: avvio {timezone.localtime(activity.datetime_start).strftime('%d/%m/%Y')}.")
+        for task in upcoming_tasks[:2]:
+            sections.append(f"- {task.name}: avvio {task.date_start.strftime('%d/%m/%Y')}.")
+    else:
+        sections.append("Nessuna nuova attivita pianificata nei prossimi 14 giorni nei dati disponibili.")
     citations = [
         make_citation(
             index=1,
             source_key=f"project:{project.id}",
             source_type="project",
-            label=project.name,
-            snippet=f"Task aperte: {len(open_tasks)}. Documenti: {len(documents)}. Alert aperti: {len(open_alerts)}.",
-            metadata={"project_id": project.id},
+            label=f"Stato operativo: {project.name}",
+            snippet=(
+                f"Al {reference.strftime('%d/%m/%Y')}: task non completate {len(open_tasks)}/{len(tasks)}, "
+                f"oltre data {len(overdue_tasks)}, attivita marcate in corso {len(active_activities)}, "
+                f"segnalazioni marcate aperte {open_alert_count}. "
+                f"Ultimo aggiornamento operativo {timezone.localtime(last_update).strftime('%d/%m/%Y') if last_update else 'non disponibile'}."
+            ),
+            metadata={"project_id": project.id, "provenance": "structured_db", "as_of": reference.isoformat()},
         )
     ]
-    for offset, event in enumerate(recent_events[:3], start=2):
+    for post in open_alerts[:3]:
         citations.append(
             make_citation(
-                index=offset,
-                source_key=f"{event.source_type}:{offset}",
-                source_type=event.source_type,
-                label=event.label,
-                snippet=event.summary,
-                metadata={
-                    "task_id": event.task_id,
-                    "activity_id": event.activity_id,
-                    "event_at": event.event_at.isoformat(),
-                },
+                index=len(citations) + 1,
+                source_key=f"post:{post.id}",
+                source_type="post",
+                label=truncate_text(post.text.split(".", 1)[0], 90) or f"Segnalazione #{post.id}",
+                snippet=post.text,
+                metadata={"project_id": project.id, "post_id": post.id, "task_id": post.task_id, "activity_id": post.activity_id, "alert": True},
+                snippet_limit=600,
+            )
+        )
+    for activity in active_activities[:1]:
+        citations.append(
+            make_citation(
+                index=len(citations) + 1,
+                source_key=f"activity:{activity.id}",
+                source_type="activity",
+                label=activity.title,
+                snippet=f"Attivita marcata in corso: {activity.title}. Progresso {activity.progress}%.",
+                metadata={"project_id": project.id, "task_id": activity.task_id, "activity_id": activity.id},
+            )
+        )
+    for task in overdue_tasks[:1]:
+        citations.append(
+            make_citation(
+                index=len(citations) + 1,
+                source_key=f"task:{task.id}",
+                source_type="task",
+                label=task.name,
+                snippet=f"Fine pianificata {task.date_end.isoformat()}, progresso {task.progress}%.",
+                metadata={"project_id": project.id, "task_id": task.id},
+            )
+        )
+    if upcoming_activities:
+        activity = upcoming_activities[0]
+        citations.append(
+            make_citation(
+                index=len(citations) + 1,
+                source_key=f"activity:{activity.id}",
+                source_type="activity",
+                label=activity.title,
+                snippet=f"Avvio pianificato {activity.datetime_start.isoformat()}.",
+                metadata={"project_id": project.id, "task_id": activity.task_id, "activity_id": activity.id},
             )
         )
 
@@ -104,21 +225,24 @@ def build_project_summary_facts(project: Project) -> AssistantStructuredFacts:
         intent="project_summary",
         facts={
             "project_name": project.name,
-            "team_count": len(members),
+            "as_of": reference.isoformat(),
+            "last_operational_update": last_update.isoformat() if last_update else None,
+            "days_since_update": days_since_update,
+            "stale": stale,
+            "team_count": team_count,
+            "task_total_count": len(tasks),
             "task_open_count": len(open_tasks),
             "task_overdue_count": len(overdue_tasks),
-            "document_count": len(documents),
-            "open_alert_count": len(open_alerts),
-            "recent_events": [event.summary for event in recent_events[:6]],
+            "activity_in_progress_count": len(active_activities),
+            "document_count": document_count,
+            "open_alert_count": open_alert_count,
+            "active_activities": [activity.title for activity in active_activities[:3]],
+            "overdue_tasks": [task.name for task in overdue_tasks[:3]],
+            "open_alerts": [post.text for post in open_alerts[:3]],
+            "upcoming_activities": [activity.title for activity in upcoming_activities[:2]],
+            "upcoming_tasks": [task.name for task in upcoming_tasks[:2]],
         },
-        sections=[
-            f"Progetto: {project.name}",
-            f"Partecipanti attivi: {len(members)}",
-            f"Task aperte: {len(open_tasks)}",
-            f"Task in ritardo: {len(overdue_tasks)}",
-            f"Documenti: {len(documents)}",
-            f"Alert aperti: {len(open_alerts)}",
-        ],
+        sections=sections,
         citations=citations,
     )
 
@@ -267,33 +391,37 @@ def build_task_facts(project: Project, *, intent: str) -> AssistantStructuredFac
 def build_alert_facts(project: Project, *, resolved: bool) -> AssistantStructuredFacts:
     queryset = ProjectPost.objects.filter(project=project, is_deleted=False)
     if resolved:
-        posts = list(queryset.filter(post_kind=PostKind.ISSUE, alert=False).select_related("task", "activity").order_by("-published_date")[:18])
+        queryset = queryset.filter(post_kind=PostKind.ISSUE, alert=False)
         title = "Segnalazioni risolte"
         source_key = f"project:{project.id}:resolved_issues"
         source_type = "resolved_issues_summary"
         intent = "resolved_issues"
     else:
-        posts = list(queryset.filter(alert=True).select_related("task", "activity").order_by("-published_date")[:18])
+        queryset = queryset.filter(alert=True)
         title = "Segnalazioni aperte"
         source_key = f"project:{project.id}:open_alerts"
         source_type = "open_alerts_summary"
         intent = "open_alerts"
 
-    sections = [f"{title}: {len(posts)}"]
+    count = queryset.count()
+    posts = list(queryset.select_related("task__assigned_company", "activity", "author").order_by("-published_date", "-id")[:18])
+    sections = [f"{title}: {count}"]
     citations = [
         make_citation(
             index=1,
             source_key=source_key,
             source_type=source_type,
-            label=f"{title} ({len(posts)})",
-            snippet=f"{title}: {len(posts)}",
+            label=f"{title} ({count})",
+            snippet=f"{title}: {count}",
             metadata={"issue_status": "resolved" if resolved else "open"},
         )
     ]
     for offset, post in enumerate(posts[:8], start=2):
+        company = post.task.assigned_company.name if post.task and post.task.assigned_company else "non assegnata"
         snippet = (
             f"- {post.task.name if post.task else 'N/D'} / {post.activity.title if post.activity else 'N/D'}: "
-            f"{truncate_text(post.text, 180)}"
+            f"Azienda assegnata alla fase: {company}; autore della segnalazione: {post.author.member_name}; "
+            f"data: {post.published_date.date().isoformat()}. {truncate_text(post.text, 360)}"
         )
         sections.append(snippet)
         citations.append(
@@ -301,15 +429,15 @@ def build_alert_facts(project: Project, *, resolved: bool) -> AssistantStructure
                 index=offset,
                 source_key=f"post:{post.id}",
                 source_type="post",
-                label=f"{title[:-1]} #{post.id}",
+                label=post.activity.title if post.activity else post.task.name if post.task else title,
                 snippet=snippet,
-                metadata={"post_id": post.id, "task_id": post.task_id, "activity_id": post.activity_id},
+                metadata={"post_id": post.id, "task_id": post.task_id, "activity_id": post.activity_id, "assigned_company": company, "author_name": post.author.member_name},
             )
         )
 
     return AssistantStructuredFacts(
         intent=intent,
-        facts={"count": len(posts), "items": sections[1:]},
+        facts={"count": count, "items": sections[1:]},
         sections=sections,
         citations=citations,
     )

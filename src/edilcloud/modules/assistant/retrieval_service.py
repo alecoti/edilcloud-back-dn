@@ -74,7 +74,7 @@ def derive_retrieval_context(
     if activity_id:
         reasoning.append("explicit_activity_context")
 
-    if task_id is None and activity_id is None:
+    if task_id is None and activity_id is None and route.follow_up:
         last_context = (thread_metadata or {}).get("last_context") if isinstance(thread_metadata, dict) else {}
         if isinstance(last_context, dict):
             thread_task_id = last_context.get("task_id")

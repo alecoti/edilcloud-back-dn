@@ -10,6 +10,7 @@ class SearchActionSchema(Schema):
 
 class SearchItemSchema(Schema):
     id: str
+    is_demo_master: bool = False
     kind: str
     title: str
     subtitle: str

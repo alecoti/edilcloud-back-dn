@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser, BaseUserManager
@@ -140,6 +141,7 @@ class AuthTokenSession(TimestampedModel):
     )
     current_access_jti = models.CharField(max_length=128, blank=True, default="")
     current_refresh_jti = models.CharField(max_length=128, blank=True, default="")
+    recent_refresh_jtis = models.JSONField(default=list, blank=True)
     current_profile_id = models.IntegerField(null=True, blank=True)
     expires_at = models.DateTimeField(db_index=True)
     revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -155,7 +157,9 @@ class AuthTokenSession(TimestampedModel):
 
     @property
     def is_expired(self) -> bool:
-        return self.expires_at <= timezone.now()
+        now = timezone.now()
+        absolute_expiry = self.created_at + timedelta(seconds=settings.AUTH_SESSION_ABSOLUTE_TTL_SECONDS)
+        return self.expires_at <= now or absolute_expiry <= now
 
     @property
     def is_active(self) -> bool:

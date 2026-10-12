@@ -27,9 +27,62 @@ from edilcloud.modules.assistant.services import (
     sync_project_assistant_sources,
     transcribe_project_audio,
 )
+from edilcloud.modules.billing.services import get_workspace_billing_account
 from edilcloud.modules.projects.models import PostAttachment, ProjectMember, ProjectMemberStatus
 from edilcloud.modules.workspaces.models import WorkspaceRole
 from tests.test_projects_api import auth_headers, create_project_fixture, create_workspace_profile
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("quota_enforced", [False, True])
+def test_assistant_exhausted_token_quota_is_reversible_and_usage_is_recorded(
+    settings, streaming, quota_enforced
+):
+    settings.AI_TOKEN_QUOTA_ENFORCED = quota_enforced
+    settings.AI_ASSISTANT_CONVERSATIONAL_ENABLED = False
+    settings.OPENAI_API_KEY = ""
+    client = Client()
+    _user, workspace, profile = create_workspace_profile(
+        email="assistant.exhausted-quota@example.com",
+        password="devpass123",
+    )
+    project, _task, _activity, _alert_post = create_project_fixture(profile)
+    account = get_workspace_billing_account(workspace)
+    account.monthly_ai_tokens_base = 0
+    account.ai_token_balance_topup = 0
+    account.save(update_fields=["monthly_ai_tokens_base", "ai_token_balance_topup"])
+    headers = auth_headers(client, email=profile.email, password="devpass123")
+    endpoint = f"/api/v1/projects/{project.id}/assistant" + ("/stream" if streaming else "")
+
+    response = client.post(
+        endpoint,
+        data=json.dumps({"message": "Quante task ci sono nel progetto?"}),
+        content_type="application/json",
+        **headers,
+    )
+
+    if quota_enforced:
+        assert response.status_code == 400
+        assert "Token AI insufficienti" in response.json()["detail"]
+        assert not ProjectAssistantUsage.objects.filter(project=project).exists()
+        assert not ProjectAssistantMessage.objects.filter(project=project).exists()
+        return
+
+    if streaming:
+        assert response.status_code == 200
+        events = b"".join(response.streaming_content).decode("utf-8")
+        assert "event: done" in events
+        assert "event: error" not in events
+    else:
+        assert response.status_code == 201
+        assert response.json()["stats"]["token_budget"]["monthly_remaining"] == 0
+    usage = ProjectAssistantUsage.objects.get(project=project, profile=profile)
+    assert usage.total_tokens > 0
+    assert ProjectAssistantMessage.objects.filter(project=project).count() == 2
+    account.refresh_from_db()
+    assert account.monthly_ai_tokens_base == 0
+    assert account.ai_token_balance_topup == 0
 
 
 @pytest.mark.django_db
@@ -67,7 +120,7 @@ def test_project_assistant_state_and_ask_routes_work_with_shared_memory(monkeypa
     )
     monkeypatch.setattr(
         "edilcloud.modules.assistant.services.generate_assistant_completion",
-        lambda **kwargs: "Sintesi: oggi il focus e sulla verifica degli ancoraggi nord.",
+        lambda **kwargs: "Sintesi: oggi il focus e sulla verifica degli ancoraggi nord [1].",
     )
 
     state_response = client.get(f"/api/v1/projects/{project.id}/assistant", **headers)
@@ -867,10 +920,13 @@ def test_pgvector_sync_is_incremental_and_tracks_real_file_backed_sources(monkey
     )
 
     monkeypatch.setattr("edilcloud.modules.assistant.services.assistant_rag_enabled", lambda: True)
-    monkeypatch.setattr(
-        "edilcloud.modules.assistant.services.embed_texts",
-        lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts],
-    )
+    embedding_batches = []
+
+    def fake_embed_texts(texts):
+        embedding_batches.append(len(texts))
+        return [[0.1, 0.2, 0.3, 0.4] for _ in texts]
+
+    monkeypatch.setattr("edilcloud.modules.assistant.services.embed_texts", fake_embed_texts)
 
     state = get_or_create_project_assistant_state(project)
     source_documents, current_version = build_project_source_snapshot(project)
@@ -881,6 +937,8 @@ def test_pgvector_sync_is_incremental_and_tracks_real_file_backed_sources(monkey
         current_version=current_version,
         force=True,
     )
+    assert len(embedding_batches) == 1
+    assert embedding_batches[0] > 1
 
     assert ProjectAssistantChunkSource.objects.filter(
         assistant_state=state,
@@ -909,6 +967,8 @@ def test_pgvector_sync_is_incremental_and_tracks_real_file_backed_sources(monkey
     )
     initial_chunk_count = chunk_maps.count()
 
+    state.background_sync_scheduled = True
+    state.save(update_fields=["background_sync_scheduled"])
     sync_project_assistant_sources(
         project=project,
         state=state,
@@ -916,6 +976,9 @@ def test_pgvector_sync_is_incremental_and_tracks_real_file_backed_sources(monkey
         current_version=current_version,
         force=False,
     )
+    assert len(embedding_batches) == 1
+    state.refresh_from_db()
+    assert state.background_sync_scheduled is False
     assert set(chunk_maps.values_list("point_id", flat=True)) == initial_chunk_point_ids
     assert chunk_maps.count() == initial_chunk_count
 
@@ -930,6 +993,8 @@ def test_pgvector_sync_is_incremental_and_tracks_real_file_backed_sources(monkey
         current_version=updated_version,
         force=False,
     )
+    assert len(embedding_batches) == 2
+    assert embedding_batches[1] >= 1
     refreshed_chunk_maps = ProjectAssistantChunkMap.objects.filter(assistant_state=state, scope="project")
     refreshed_alert_point_ids = set(
         refreshed_chunk_maps.filter(source_key=f"post:{alert_post.id}").values_list("point_id", flat=True)
@@ -942,3 +1007,23 @@ def test_pgvector_sync_is_incremental_and_tracks_real_file_backed_sources(monkey
     assert changed_point_ids
     assert changed_point_ids.issuperset(initial_alert_point_ids | refreshed_alert_point_ids)
     assert len(changed_point_ids) < len(refreshed_chunk_point_ids)
+
+    deleted_source_key = f"post:{alert_post.id}"
+    alert_post.delete()
+    deleted_source_documents, deleted_version = build_project_source_snapshot(project)
+    sync_project_assistant_sources(
+        project=project,
+        state=state,
+        source_documents=deleted_source_documents,
+        current_version=deleted_version,
+        force=False,
+    )
+
+    assert not ProjectAssistantChunkSource.objects.filter(
+        assistant_state=state,
+        source_key=deleted_source_key,
+    ).exists()
+    assert not ProjectAssistantChunkMap.objects.filter(
+        assistant_state=state,
+        source_key=deleted_source_key,
+    ).exists()

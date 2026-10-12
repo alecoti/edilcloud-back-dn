@@ -101,6 +101,7 @@ class Profile(TimestampedModel):
     position = models.CharField(max_length=255, blank=True)
     photo = models.FileField(upload_to=profile_photo_upload_to, blank=True)
     is_active = models.BooleanField(default=True)
+    demo_project_hidden = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         ordering = ("workspace_id", "id")
