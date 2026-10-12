@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import mimetypes
+import hashlib
+from collections import OrderedDict
+from threading import RLock
 import os
 from pathlib import Path
 import shutil
@@ -39,6 +42,62 @@ VIDEO_EXTENSIONS = {
     ".mpg",
     ".webm",
 }
+
+# Demo imports repeatedly submit identical bytes under different filenames.
+# Cache only image results, bounded by bytes and entries, never uploaded-file handles.
+_image_results = OrderedDict()
+_image_results_lock = RLock()
+_image_results_bytes = 0
+_MAX_IMAGE_RESULT_BYTES = 32 * 1024 * 1024
+_MAX_IMAGE_CACHE_SOURCE_BYTES = 24 * 1024 * 1024
+
+
+def _optimize_image_cached(uploaded_file, *, original_name: str, content_type: str):
+    global _image_results_bytes
+    size = _file_size(uploaded_file)
+    if size <= 0 or size > _MAX_IMAGE_CACHE_SOURCE_BYTES:
+        return _optimize_image(uploaded_file, original_name=original_name, content_type=content_type)
+    _rewind(uploaded_file)
+    digest = hashlib.sha256()
+    if hasattr(uploaded_file, "chunks"):
+        for chunk in uploaded_file.chunks():
+            digest.update(chunk)
+    else:
+        for chunk in iter(lambda: uploaded_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    _rewind(uploaded_file)
+    key = (digest.digest(), Path(original_name).suffix.lower(), content_type,
+           getattr(settings, "MEDIA_IMAGE_JPEG_QUALITY", 92),
+           getattr(settings, "MEDIA_IMAGE_MAX_DIMENSION", 0))
+    with _image_results_lock:
+        cached = _image_results.get(key)
+        if cached is not None:
+            _image_results.move_to_end(key)
+    if cached is not None:
+        data, suffix, mime = cached
+        if data is None:
+            return uploaded_file
+        return SimpleUploadedFile(f"{Path(original_name).stem}{suffix}", data, content_type=mime)
+    result = _optimize_image(uploaded_file, original_name=original_name, content_type=content_type)
+    if result is uploaded_file:
+        entry = (None, "", "")
+    elif result.size <= _MAX_IMAGE_CACHE_SOURCE_BYTES:
+        result.open("rb")
+        data = result.read()
+        result.seek(0)
+        entry = (data, Path(result.name).suffix, result.content_type)
+    else:
+        return result
+    with _image_results_lock:
+        old = _image_results.pop(key, None)
+        if old and old[0] is not None:
+            _image_results_bytes -= len(old[0])
+        _image_results[key] = entry
+        _image_results_bytes += len(entry[0]) if entry[0] is not None else 0
+        while len(_image_results) > 128 or _image_results_bytes > _MAX_IMAGE_RESULT_BYTES:
+            _, expired = _image_results.popitem(last=False)
+            _image_results_bytes -= len(expired[0]) if expired[0] is not None else 0
+    return result
 
 
 class TemporaryOptimizedFile(File):
@@ -101,7 +160,7 @@ def optimize_media_for_storage(uploaded_file):
     media_kind = _classify_media(content_type=content_type, suffix=suffix)
 
     if media_kind == "image":
-        return _optimize_image(uploaded_file, original_name=original_name, content_type=content_type)
+        return _optimize_image_cached(uploaded_file, original_name=original_name, content_type=content_type)
     if media_kind == "audio":
         return _optimize_audio(uploaded_file, original_name=original_name, content_type=content_type)
     if media_kind == "video":
@@ -137,6 +196,9 @@ def _optimize_image(uploaded_file, *, original_name: str, content_type: str):
     _rewind(uploaded_file)
     try:
         with Image.open(uploaded_file) as opened:
+            if getattr(opened, "n_frames", 1) > 1:
+                _rewind(uploaded_file)
+                return uploaded_file
             image = ImageOps.exif_transpose(opened)
             image.load()
             working = image.copy()

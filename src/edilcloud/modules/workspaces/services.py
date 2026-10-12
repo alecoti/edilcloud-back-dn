@@ -46,10 +46,15 @@ def get_role_priority(role: str | None) -> int:
     return ROLE_PRIORITY.get(role, 0)
 
 
-def file_url(file_field) -> str | None:
+def file_url(file_field, *, image_pixels: int | None = None) -> str | None:
     if not file_field:
         return None
     try:
+        if image_pixels and callable(getattr(file_field.storage, "image_metadata", None)):
+            variants = sorted(file_field.storage.image_metadata(file_field.name).get("variants", []), key=lambda v: v["width"])
+            if variants:
+                selected = next((v for v in variants if v["width"] >= image_pixels), variants[-1])
+                return file_field.storage.url(selected["name"])
         return file_field.url
     except ValueError:
         return None
@@ -198,7 +203,7 @@ def serialize_workspace(workspace: Workspace) -> dict:
         "id": workspace.id,
         "name": workspace.name,
         "slug": workspace.slug,
-        "logo": file_url(workspace.logo),
+        "logo": file_url(workspace.logo, image_pixels=640),
         "workspace_type": workspace.workspace_type or None,
         "email": workspace.email or None,
         "phone": workspace.phone or None,
@@ -210,7 +215,7 @@ def serialize_workspace(workspace: Workspace) -> dict:
 
 
 def profile_photo_url(profile: Profile) -> str | None:
-    return file_url(profile.photo) or file_url(getattr(profile.user, "photo", None))
+    return file_url(profile.photo, image_pixels=640) or file_url(getattr(profile.user, "photo", None), image_pixels=640)
 
 
 def serialize_profile(profile: Profile) -> dict:
@@ -237,7 +242,7 @@ def serialize_workspace_option(profile: Profile) -> dict:
         "companyId": workspace.id,
         "companyName": workspace.name,
         "companySlug": workspace.slug,
-        "companyLogo": file_url(workspace.logo),
+        "companyLogo": file_url(workspace.logo, image_pixels=640),
         "role": profile.role,
         "memberName": profile.member_name,
         "photo": profile_photo_url(profile),
@@ -252,7 +257,7 @@ def serialize_company_record(workspace: Workspace) -> dict:
         "url": workspace.website or None,
         "email": workspace.email or None,
         "phone": workspace.phone or None,
-        "logo": file_url(workspace.logo),
+        "logo": file_url(workspace.logo, image_pixels=640),
         "address": None,
         "province": None,
         "cap": None,
@@ -1542,7 +1547,7 @@ def get_workspace_search_results(*, email: str, query: str, limit: int = 10) -> 
             "id": workspace.id,
             "name": workspace.name,
             "slug": workspace.slug,
-            "logo": file_url(workspace.logo),
+            "logo": file_url(workspace.logo, image_pixels=640),
             "workspace_type": workspace.workspace_type or None,
             "already_member": workspace.id in existing_profile_ids,
             "pending_invite": workspace.id in pending_invite_ids,

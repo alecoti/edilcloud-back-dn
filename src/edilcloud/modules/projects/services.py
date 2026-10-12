@@ -29,6 +29,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 import pypdfium2 as pdfium
 
 from edilcloud.modules.files.media_optimizer import optimize_media_for_storage
+from edilcloud.modules.files.image_storage import image_variant_payload
 from edilcloud.modules.notifications.catalog import (
     NotificationBlueprint,
     build_project_activity_notification,
@@ -1326,7 +1327,7 @@ def serialize_project_company(
         "slug": workspace.slug or None,
         "email": workspace.email or None,
         "tax_code": workspace.vat_number or None,
-        "logo": file_url(workspace.logo),
+        "logo": file_url(workspace.logo, image_pixels=640),
         "color_project": (
             company_colors_by_workspace_id.get(workspace.id)
             if company_colors_by_workspace_id is not None
@@ -1363,7 +1364,7 @@ def serialize_project_profile(
         "email": profile.email or None,
         "phone": profile.phone or None,
         "position": profile.position or None,
-        "photo": file_url(profile.photo),
+        "photo": file_url(profile.photo, image_pixels=640),
         "role": profile.role or None,
         "language": profile.language or None,
         "company": serialize_project_company(
@@ -1434,7 +1435,7 @@ def serialize_project_summary(project: Project) -> dict:
         "date_end": project.date_end,
         "status": project.status,
         "completed": progress,
-        "logo": file_url(project.logo),
+        "logo": file_url(project.logo, image_pixels=960),
         "progress_percentage": progress,
         "team_count": getattr(project, "team_count", None),
         "alert_count": getattr(project, "alert_count", 0),
@@ -1581,6 +1582,7 @@ def serialize_attachment(attachment) -> dict:
     return {
         "id": attachment.id,
         "media_url": file_url(attachment.file),
+        **image_variant_payload(attachment.file),
         "size": attachment_size(attachment.file),
         "name": attachment_name(attachment.file),
         "extension": extension,
@@ -2498,6 +2500,7 @@ def serialize_document(document: ProjectDocument) -> dict:
         "title": document.title or None,
         "description": document.description or None,
         "document": file_url(document.document),
+        **image_variant_payload(document.document),
         "date_create": document.created_at,
         "date_last_modify": document.updated_at,
         "extension": extension,
@@ -2724,6 +2727,7 @@ def serialize_photo(photo: ProjectPhoto) -> dict:
         "title": photo.title or None,
         "pub_date": photo.created_at,
         "photo": file_url(photo.photo),
+        **image_variant_payload(photo.photo),
         "extension": attachment_extension(photo.photo),
         "size": attachment_size(photo.photo),
         "relative_path": photo.photo.name if photo.photo else None,

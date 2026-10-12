@@ -134,6 +134,11 @@ PROJECT_PURGE_AFTER_ARCHIVE_DAYS = int(get_env("PROJECT_PURGE_AFTER_ARCHIVE_DAYS
 MEDIA_OPTIMIZATION_ENABLED = get_bool_env("MEDIA_OPTIMIZATION_ENABLED", True)
 MEDIA_IMAGE_JPEG_QUALITY = int(get_env("MEDIA_IMAGE_JPEG_QUALITY", "92"))
 MEDIA_IMAGE_MAX_DIMENSION = int(get_env("MEDIA_IMAGE_MAX_DIMENSION", "0"))
+MEDIA_IMAGE_PREVIEWS_ENABLED = get_bool_env("MEDIA_IMAGE_PREVIEWS_ENABLED", True)
+STORAGES = {
+    "default": {"BACKEND": "edilcloud.modules.files.image_storage.OptimizedImageStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 MEDIA_AUDIO_TRANSCODE_MODE = get_env("MEDIA_AUDIO_TRANSCODE_MODE", "safe").strip().lower() or "safe"
 MEDIA_VIDEO_TRANSCODE_MODE = get_env("MEDIA_VIDEO_TRANSCODE_MODE", "safe").strip().lower() or "safe"
 MEDIA_VIDEO_TRANSPARENT_CRF = int(get_env("MEDIA_VIDEO_TRANSPARENT_CRF", "18"))
