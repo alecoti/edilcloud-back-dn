@@ -11,6 +11,14 @@ from edilcloud.platform.telemetry import increment_counter, observe_duration
 logger = logging.getLogger("edilcloud.request")
 
 
+def metric_path(request) -> str:
+    """Group IDs by route and unknown URLs together; logs keep the actual path."""
+    match = getattr(request, "resolver_match", None)
+    if match is None:
+        return "/<unmatched>"
+    return "/" + match.route.lstrip("/")
+
+
 def get_client_ip(request) -> str:
     forwarded_for = (request.META.get("HTTP_X_FORWARDED_FOR") or "").split(",")[0].strip()
     if forwarded_for:
@@ -44,17 +52,18 @@ class RequestContextMiddleware:
             duration_ms = round((perf_counter() - start) * 1000, 2)
             status_code = getattr(locals().get("response"), "status_code", 500)
             update_request_context(status_code=status_code, duration_ms=duration_ms)
+            path = metric_path(request)
             increment_counter(
                 "http.requests",
                 method=request.method,
-                path=request.path,
+                path=path,
                 status=status_code,
             )
             observe_duration(
                 "http.request.duration",
                 duration_ms,
                 method=request.method,
-                path=request.path,
+                path=path,
                 status=status_code,
             )
             logger.info(

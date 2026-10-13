@@ -113,7 +113,8 @@ def evaluate_runtime_summary(
         matched = [
             endpoint
             for endpoint in endpoint_list
-            if str(endpoint.get("method")) == rule.method and matcher.match(str(endpoint.get("path", "")))
+            if str(endpoint.get("method")) == rule.method
+            and matcher.match(re.sub(r"<[^>]+>", "0", str(endpoint.get("path", ""))))
         ]
 
         total_requests = sum(int(item.get("requests") or 0) for item in matched)

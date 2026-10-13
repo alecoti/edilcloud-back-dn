@@ -3,11 +3,14 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from dataclasses import field
-from math import ceil
+import logging
+from math import ceil, isfinite
 from threading import Lock
-from time import sleep, time
+from time import monotonic, time
 
 from django.core.cache import cache
+
+from edilcloud.platform.telemetry_store import MAX_SERIES, redis_metric_store
 
 
 @dataclass
@@ -21,11 +24,20 @@ class MetricSeries:
 
 _LOCAL_LOCK = Lock()
 _MAX_TIMING_SAMPLES = 512
-_CACHE_KEY = "telemetry:state:v2"
-_LOCK_KEY = "telemetry:state:v2:lock"
+_CACHE_KEY = "telemetry:state:v3"
+_LOCK_KEY = "telemetry:state:v3:lock"
 _LOCK_TIMEOUT_SECONDS = 2
-_LOCK_RETRY_SECONDS = 0.01
-_LOCK_ATTEMPTS = 50
+_logger = logging.getLogger(__name__)
+_last_failure_log = float("-inf")
+
+
+def _report_store_failure() -> None:
+    global _last_failure_log
+    now = monotonic()
+    if now - _last_failure_log >= 60:
+        _last_failure_log = now
+        # Connection URLs and arbitrary exception text can contain credentials.
+        _logger.warning("Telemetry temporarily unavailable; application request continues.")
 
 
 def _metric_key(name: str, labels: dict[str, object] | None = None) -> str:
@@ -49,6 +61,13 @@ def _empty_state() -> dict[str, object]:
 
 
 def _load_state() -> dict[str, object]:
+    try:
+        store = redis_metric_store()
+        if store is not None:
+            return store.snapshot()
+    except Exception:
+        _report_store_failure()
+        return _empty_state()
     payload = cache.get(_CACHE_KEY)
     if isinstance(payload, dict):
         return payload
@@ -62,11 +81,7 @@ def _save_state(state: dict[str, object]) -> None:
 
 
 def _acquire_cache_lock() -> bool:
-    for _ in range(_LOCK_ATTEMPTS):
-        if cache.add(_LOCK_KEY, "1", timeout=_LOCK_TIMEOUT_SECONDS):
-            return True
-        sleep(_LOCK_RETRY_SECONDS)
-    return False
+    return cache.add(_LOCK_KEY, "1", timeout=_LOCK_TIMEOUT_SECONDS)
 
 
 def _release_cache_lock() -> None:
@@ -76,6 +91,8 @@ def _release_cache_lock() -> None:
 def _mutate_shared_state(mutator) -> None:
     with _LOCAL_LOCK:
         acquired = _acquire_cache_lock()
+        if not acquired:
+            return
         try:
             state = _load_state()
             mutator(state)
@@ -93,14 +110,24 @@ def increment_counter(name: str, value: int = 1, **labels: object) -> None:
         if not isinstance(counters, dict):
             counters = {}
             state["counters"] = counters
-        counters[key] = int(counters.get(key, 0)) + value
+        if key in counters or len(counters) < MAX_SERIES:
+            counters[key] = int(counters.get(key, 0)) + value
 
-    _mutate_shared_state(apply)
+    try:
+        store = redis_metric_store()
+        if store is not None:
+            store.increment(key, value)
+        else:
+            _mutate_shared_state(apply)
+    except Exception:
+        _report_store_failure()
 
 
 def observe_duration(name: str, value_ms: float, **labels: object) -> None:
     key = _metric_key(name, labels)
     numeric_value = float(value_ms)
+    if not isfinite(numeric_value):
+        return
 
     def apply(state: dict[str, object]) -> None:
         timings = state.setdefault("timings", {})
@@ -109,6 +136,8 @@ def observe_duration(name: str, value_ms: float, **labels: object) -> None:
             state["timings"] = timings
         raw_series = timings.get(key)
         if not isinstance(raw_series, dict):
+            if len(timings) >= MAX_SERIES:
+                return
             raw_series = {
                 "count": 0,
                 "sum": 0.0,
@@ -137,7 +166,14 @@ def observe_duration(name: str, value_ms: float, **labels: object) -> None:
             sample_index = int(raw_series["count"]) % _MAX_TIMING_SAMPLES
             samples[sample_index] = numeric_value
 
-    _mutate_shared_state(apply)
+    try:
+        store = redis_metric_store()
+        if store is not None:
+            store.observe(key, numeric_value)
+        else:
+            _mutate_shared_state(apply)
+    except Exception:
+        _report_store_failure()
 
 
 def _percentile(values: list[float], target_percentile: int) -> float:
@@ -164,6 +200,10 @@ def _parse_metric_key(key: str) -> tuple[str, dict[str, str]]:
 
 
 def reset_metrics() -> None:
+    store = redis_metric_store()
+    if store is not None:
+        store.reset()
+        return
     with _LOCAL_LOCK:
         cache.delete(_CACHE_KEY)
         cache.delete(_LOCK_KEY)
