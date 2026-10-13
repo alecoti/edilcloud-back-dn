@@ -25,6 +25,7 @@ def test_upload_creates_smaller_previews_and_retains_exact_original(tmp_path):
     assert (tmp_path / name).read_bytes() == original
     metadata = storage.image_metadata(name)
     assert [max(v["width"], v["height"]) for v in metadata["variants"]] == [320, 960, 1920]
+    assert [max(v["width"], v["height"]) for v in metadata["extra_variants"]] == [640]
     for variant in metadata["variants"]:
         with Image.open(tmp_path / variant["name"]) as image:
             assert image.format == "WEBP"
@@ -45,6 +46,25 @@ def test_preview_transparency_orientation_and_no_upscale(tmp_path):
     name = storage.save("vertical.jpg", ContentFile(image_bytes(size=(1600, 900), format="JPEG", quality=100, exif=exif)))
     metadata = storage.image_metadata(name)
     assert all(v["height"] > v["width"] for v in metadata["variants"])
+
+
+def test_intermediate_backfill_preserves_legacy_preview_bytes_and_original(tmp_path):
+    storage = OptimizedImageStorage(location=tmp_path)
+    original = image_bytes(size=(1600, 1000))
+    name = storage.save("legacy.png", ContentFile(original))
+    metadata = storage.image_metadata(name)
+    metadata.pop("extra_variants", None)
+    manifest = tmp_path / storage._manifest_name(name)
+    import json
+    manifest.write_text(json.dumps(metadata), encoding="utf-8")
+    storage._remember(name, metadata)
+    legacy_bytes = {v["name"]: (tmp_path / v["name"]).read_bytes() for v in metadata["variants"]}
+    extended = storage.extend_image_previews(name)
+    assert extended["extra_variants"] and extended["variants"] == metadata["variants"]
+    assert len(extended["variants"]) <= 3
+    assert (tmp_path / name).read_bytes() == original
+    assert all((tmp_path / key).read_bytes() == value for key, value in legacy_bytes.items())
+    assert storage.extend_image_previews(name) == extended
 
 
 def test_backfill_is_idempotent_and_read_paths_do_not_decode(tmp_path, monkeypatch):

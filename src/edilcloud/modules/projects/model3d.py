@@ -8,7 +8,7 @@ from pathlib import Path
 import struct
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.http import FileResponse
 
 from edilcloud.modules.billing.services import assert_storage_quota_available
@@ -19,6 +19,7 @@ from edilcloud.modules.projects.services import (
     get_project_with_team_context,
     project_posts_queryset,
     serialize_post_summary,
+    annotate_posts_with_feed_activity,
 )
 from edilcloud.modules.workspaces.models import Profile
 
@@ -131,13 +132,14 @@ def upload_project_model(*, profile: Profile, project_id: int, uploaded_file, ti
     return serialize_model(model, can_delete=True)
 
 
-def get_project_model_file(*, profile: Profile, project_id: int, model_id: int):
+def get_project_model_file(*, profile: Profile, project_id: int, model_id: int, request=None):
     project = get_project_for_profile(profile=profile, project_id=project_id)
     model = project.models_3d.filter(id=model_id).first()
     if model is None:
         raise ValueError("Modello 3D non trovato.")
-    response = FileResponse(model.file.open("rb"), content_type="model/gltf-binary")
-    response["Cache-Control"] = "private, max-age=300"
+    from edilcloud.modules.files.responses import inline_file_response
+    response = inline_file_response(model.file, filename=Path(model.file.name).name,
+        content_type="model/gltf-binary", request=request)
     response["X-Content-Type-Options"] = "nosniff"
     return response
 
@@ -173,7 +175,8 @@ def serialize_model_pin(pin: ProjectModelPin, *, membership) -> dict:
         "id": pin.id,
         "project": pin.project_id,
         "model": {"id": pin.model_id, "title": pin.model.title},
-        "post": serialize_post_summary(post=pin.post, membership=membership),
+        "post": serialize_post_summary(post=pin.post, membership=membership,
+            effective_last_activity_at=getattr(pin.post, "effective_last_activity_at", None)),
         "x": pin.x,
         "y": pin.y,
         "z": pin.z,
@@ -185,10 +188,9 @@ def serialize_model_pin(pin: ProjectModelPin, *, membership) -> dict:
 
 
 def model_pin_queryset():
-    return ProjectModelPin.objects.select_related(
-        "model", "post", "post__author", "post__author__workspace",
-        "post__author__user", "post__project", "post__task", "post__activity",
-    ).prefetch_related("post__attachments", "post__drawing_pins", "post__model_pins")
+    return ProjectModelPin.objects.select_related("model").prefetch_related(
+        Prefetch("post", queryset=annotate_posts_with_feed_activity(project_posts_queryset(lightweight=True)))
+    )
 
 
 def list_project_model_pins(*, profile: Profile, project_id: int, model_id: int | None = None) -> list[dict]:

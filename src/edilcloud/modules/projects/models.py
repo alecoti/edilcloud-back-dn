@@ -695,6 +695,7 @@ class ProjectPost(TimestampedModel):
 
 
 class PostAttachment(StoredFileMetadata):
+    content_type = models.CharField(max_length=255, blank=True, default="")
     post = models.ForeignKey(
         ProjectPost,
         on_delete=models.CASCADE,
@@ -835,6 +836,7 @@ class ProjectPostSeenState(TimestampedModel):
 
 
 class CommentAttachment(StoredFileMetadata):
+    content_type = models.CharField(max_length=255, blank=True, default="")
     comment = models.ForeignKey(
         PostComment,
         on_delete=models.CASCADE,

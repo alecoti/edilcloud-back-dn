@@ -4,12 +4,14 @@ from datetime import date, timedelta
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import connection
+from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from edilcloud.modules.projects import services
 from edilcloud.modules.projects.models import Project, ProjectActivity, ProjectMember, ProjectMemberStatus, ProjectPost, ProjectTask, PostComment
 from edilcloud.modules.workspaces.models import Profile, Workspace, WorkspaceRole
+from tests.test_projects_api import auth_headers, create_workspace_profile
 
 
 def fixture():
@@ -48,11 +50,51 @@ def test_task_queries_stay_bounded_and_compact_payload_preserves_assignments():
     assert len(compact["assignment_members"]) == len(workers)
     assert len(compact["tasks"][0]["activities"]) == 30
     assert len(json.dumps(compact, default=str)) < len(json.dumps(legacy, default=str)) * .55
+    # Expanding the one shared list must recover the exact legacy response,
+    # including assigned workers, statuses, permissions and company metadata.
+    expanded = [
+        {
+            **task_row,
+            "activities": [
+                {**activity, "can_assign_in_activity": compact["assignment_members"]}
+                for activity in task_row["activities"]
+            ],
+        }
+        for task_row in compact["tasks"]
+    ]
+    assert expanded == legacy
     for row, old in zip(compact["tasks"][0]["activities"], legacy[0]["activities"]):
         assert row["can_assign_in_activity"] == []
         assert row["workers"] == old["workers"]
         assert row["workers_in_activity"] == old["workers_in_activity"]
         assert old["can_assign_in_activity"] == compact["assignment_members"]
+
+
+@pytest.mark.django_db
+def test_compact_tasks_endpoint_preserves_data_and_project_access_control():
+    owner, project, task, workers = fixture()
+    activity = ProjectActivity.objects.create(
+        task=task, title="Collaudo", status="progress", alert=True,
+        datetime_start=timezone.now(), datetime_end=timezone.now() + timedelta(days=1),
+    )
+    activity.workers.set(workers[:3])
+    client = Client()
+    headers = auth_headers(client, email=owner.email, password="perf-test")
+    path = f"/api/v1/projects/{project.id}/tasks"
+    legacy = client.get(path, **headers)
+    compact = client.get(path, {"compact": "true"}, **headers)
+    assert legacy.status_code == compact.status_code == 200
+    payload = compact.json()
+    assert len(payload["assignment_members"]) == len(workers)
+    for phase in payload["tasks"]:
+        for row in phase["activities"]:
+            assert row["can_assign_in_activity"] == []
+            row["can_assign_in_activity"] = payload["assignment_members"]
+    assert payload["tasks"] == legacy.json()
+    assert client.get(path, {"compact": "true"}).status_code == 401
+    _, _, outsider = create_workspace_profile(email="outside-perf@example.com", password="outside-test")
+    outside_headers = auth_headers(client, email=outsider.email, password="outside-test")
+    assert client.get(path, {"compact": "true"}, **outside_headers).status_code == 404
 
 
 @pytest.mark.django_db

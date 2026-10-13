@@ -196,12 +196,40 @@ def parse_post_form_payload(request) -> dict[str, Any]:
         "source_language": request.POST.get("source_language", ""),
         "mentioned_profile_ids": parse_int_list(request.POST.get("mentioned_profile_ids")),
         "files": list(request.FILES.values()),
-        "weather_payload": {
-            key: request.POST.get(key)
-            for key in ("project_latitude", "project_longitude", "project_google_place_id")
-            if request.POST.get(key) not in {None, ""}
-        },
+        "weather_payload": parse_post_weather_snapshot(request.POST.get("weather_snapshot")),
     }
+
+
+def parse_post_weather_snapshot(raw_value: str | None) -> dict[str, Any]:
+    """Keep the observation sent by the existing weather integration.
+
+    Missing/unavailable weather must never prevent publication; coordinates alone
+    are not an observation. Limit metadata, and never retain arbitrary fields.
+    """
+    if not raw_value or len(raw_value) > 8192:
+        return {}
+    try:
+        snapshot = json.loads(raw_value)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(snapshot, dict):
+        return {}
+    allowed = {
+        "source", "recordedAt", "recorded_at", "timeZone", "summary",
+        "conditionType", "condition_type", "isDaytime", "temperatureC",
+        "temperature_c", "feelsLikeC", "humidity", "uvIndex",
+        "thunderstormProbability", "cloudCover", "precipitationProbability",
+        "precipitationType", "windSpeedKph", "windGustKph", "windDirection",
+        "latitude", "longitude", "googlePlaceId",
+    }
+    result = {
+        key: value for key, value in snapshot.items()
+        if key in allowed and (value is None or isinstance(value, (str, int, float, bool)))
+    }
+    if not any(result.get(key) is not None for key in
+               ("summary", "conditionType", "condition_type", "temperatureC", "temperature_c")):
+        return {}
+    return result
 
 
 def parse_comment_form_payload(request) -> dict[str, Any]:
@@ -376,10 +404,12 @@ def create_project_endpoint(request, payload: CreateProjectRequestSchema):
 
 
 @router.get("/feed", response=ProjectFeedPageSchema, auth=auth)
-def get_project_feed_endpoint(request, limit: int = 50, offset: int = 0, project_id: int | None = None, lightweight: bool = False):
+def get_project_feed_endpoint(request, limit: int = 50, offset: int = 0, project_id: int | None = None, lightweight: bool = False, post_id: int | None = None, normalized: bool = False):
     try:
         profile = current_profile(request)
         return list_project_feed(
+            normalized=normalized,
+            post_id=post_id,
             profile=profile,
             limit=limit,
             offset=offset,
@@ -496,7 +526,7 @@ def get_project(request, project_id: int):
 
 
 @router.get("/{project_id}/overview", response=ProjectOverviewSchema, auth=auth)
-def get_project_overview_endpoint(request, project_id: int, compact: bool = False):
+def get_project_overview_endpoint(request, project_id: int, compact: bool = False, normalized: bool = False, view: str = "full"):
     try:
         profile = current_profile(request)
         return get_project_overview(
@@ -504,6 +534,8 @@ def get_project_overview_endpoint(request, project_id: int, compact: bool = Fals
             project_id=project_id,
             target_language=request_locale(request),
             compact=compact,
+            normalized=normalized,
+            view=view,
         )
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
@@ -524,6 +556,8 @@ def get_project_timeline_endpoint(
     mode: str = "general",
     taskId: int | None = None,
     activityId: int | None = None,
+    limit: int | None = None,
+    cursor: str | None = None,
 ):
     try:
         get_project_for_profile(profile=current_profile(request), project_id=project_id)
@@ -537,18 +571,17 @@ def get_project_timeline_endpoint(
     if mode in {"phase", "general"} and taskId is None:
         raise HttpError(400, "taskId obbligatorio per questa cronologia.")
 
-    return list_project_operational_timeline(
-        project_id=project_id,
-        mode=mode,
-        task_id=taskId,
-        activity_id=activityId,
-    )
+    try:
+        return list_project_operational_timeline(project_id=project_id, mode=mode,
+            task_id=taskId, activity_id=activityId, limit=limit, cursor=cursor)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
 
 
 @router.get("/{project_id}/tasks", response=list[dict[str, Any]] | dict[str, Any], auth=auth)
-def get_project_tasks_endpoint(request, project_id: int, compact: bool = False):
+def get_project_tasks_endpoint(request, project_id: int, compact: bool = False, normalized: bool = False):
     try:
-        return list_project_tasks(profile=current_profile(request), project_id=project_id, compact=compact)
+        return list_project_tasks(profile=current_profile(request), project_id=project_id, compact=compact, normalized=normalized)
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
 
@@ -765,13 +798,18 @@ def get_project_drawing_pins_endpoint(
     request,
     project_id: int,
     drawing_document: int | None = None,
+    drawing_id: int | None = None,
+    page: int | None = None,
+    view: str = "full",
 ):
     try:
         profile = current_profile(request)
         return list_project_drawing_pins(
             profile=profile,
             project_id=project_id,
-            drawing_document_id=drawing_document,
+            drawing_document_id=drawing_document if drawing_document is not None else drawing_id,
+            page=page,
+            view=view,
             target_language=request_locale(request),
         )
     except ValueError as exc:
@@ -867,6 +905,7 @@ def upload_project_model_3d_endpoint(request, project_id: int):
 def get_project_model_3d_file_endpoint(request, project_id: int, model_id: int):
     try:
         return get_project_model_file(
+            request=request,
             profile=current_profile(request), project_id=project_id, model_id=model_id,
         )
     except ValueError as exc:
@@ -967,9 +1006,9 @@ def get_project_alerts_endpoint(request, project_id: int):
 
 
 @router.get("/{project_id}/gantt", response=dict[str, Any], auth=auth)
-def get_project_gantt_endpoint(request, project_id: int, compact: bool = False):
+def get_project_gantt_endpoint(request, project_id: int, compact: bool = False, normalized: bool = False):
     try:
-        return list_project_gantt(profile=current_profile(request), project_id=project_id, compact=compact)
+        return list_project_gantt(profile=current_profile(request), project_id=project_id, compact=compact, normalized=normalized)
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
 
@@ -1112,6 +1151,8 @@ def get_task_posts_endpoint(
     include_activities: bool = False,
     limit: int | None = None,
     offset: int = 0,
+    post_id: int | None = None,
+    lightweight: bool = False,
 ):
     try:
         profile = current_profile(request)
@@ -1121,6 +1162,8 @@ def get_task_posts_endpoint(
             include_activities=include_activities,
             limit=limit,
             offset=offset,
+            post_id=post_id,
+            lightweight=lightweight,
             target_language=request_locale(request),
         )
     except ValueError as exc:
@@ -1171,6 +1214,8 @@ def get_activity_posts_endpoint(
     activity_id: int,
     limit: int | None = None,
     offset: int = 0,
+    post_id: int | None = None,
+    lightweight: bool = False,
 ):
     try:
         profile = current_profile(request)
@@ -1179,6 +1224,8 @@ def get_activity_posts_endpoint(
             activity_id=activity_id,
             limit=limit,
             offset=offset,
+            post_id=post_id,
+            lightweight=lightweight,
             target_language=request_locale(request),
         )
     except ValueError as exc:
@@ -1279,6 +1326,7 @@ def delete_comment_endpoint(request, comment_id: int):
 def download_post_attachment_endpoint(request, attachment_id: int):
     try:
         return get_post_attachment_file_response(
+            request=request,
             profile=current_profile(request),
             attachment_id=attachment_id,
         )
@@ -1290,6 +1338,7 @@ def download_post_attachment_endpoint(request, attachment_id: int):
 def download_comment_attachment_endpoint(request, attachment_id: int):
     try:
         return get_comment_attachment_file_response(
+            request=request,
             profile=current_profile(request),
             attachment_id=attachment_id,
         )
@@ -1347,6 +1396,7 @@ def delete_document_endpoint(request, document_id: int):
 def download_document_file_endpoint(request, document_id: int):
     try:
         return get_project_document_file_response(
+            request=request,
             profile=current_profile(request),
             document_id=document_id,
         )
@@ -1358,6 +1408,7 @@ def download_document_file_endpoint(request, document_id: int):
 def download_photo_file_endpoint(request, photo_id: int):
     try:
         return get_project_photo_file_response(
+            request=request,
             profile=current_profile(request),
             photo_id=photo_id,
         )

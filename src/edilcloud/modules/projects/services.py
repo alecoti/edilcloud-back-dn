@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from edilcloud.modules.projects.read_models import read_profile
+from edilcloud.modules.projects.read_context import read_only_models
 import colorsys
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -400,6 +402,7 @@ def ensure_project_company_colors(
     *,
     project: Project,
     workspace_ids: list[int] | tuple[int, ...] | set[int] | None = None,
+    persist: bool = True,
 ) -> dict[int, str]:
     ordered_ids = collect_project_company_workspace_ids(workspace_ids=workspace_ids)
     if not ordered_ids:
@@ -417,7 +420,8 @@ def ensure_project_company_colors(
                 used_colors=used_colors,
             )
             assignment.color_project = normalized
-            assignment.save(update_fields=("color_project", "updated_at"))
+            if persist:
+                assignment.save(update_fields=("color_project", "updated_at"))
         colors_by_workspace_id[assignment.workspace_id] = normalized
         used_colors.add(normalized)
 
@@ -428,11 +432,10 @@ def ensure_project_company_colors(
             project_id=project.id,
             used_colors=used_colors,
         )
-        ProjectCompanyColor.objects.create(
-            project=project,
-            workspace_id=workspace_id,
-            color_project=candidate,
-        )
+        if persist:
+            ProjectCompanyColor.objects.create(
+                project=project, workspace_id=workspace_id, color_project=candidate,
+            )
         colors_by_workspace_id[workspace_id] = candidate
         used_colors.add(candidate)
 
@@ -853,6 +856,13 @@ def resolve_post_translation_memory(
             resolved[post.id] = cached_translation
             continue
 
+        if getattr(settings, "PROJECT_CONTENT_TRANSLATION_ASYNC", True):
+            from edilcloud.modules.projects.translation_jobs import enqueue_translation
+            post._translation_pending_language = normalized_target_language
+            enqueue_translation(kind="post", entity_id=post.id,
+                target_language=normalized_target_language, source_signature=source_signature)
+            continue
+
         try:
             translated_text = generate_project_content_translation(
                 source_text=source_text,
@@ -922,6 +932,13 @@ def resolve_comment_translation_memory(
             resolved[comment.id] = cached_translation
             continue
 
+        if getattr(settings, "PROJECT_CONTENT_TRANSLATION_ASYNC", True):
+            from edilcloud.modules.projects.translation_jobs import enqueue_translation
+            comment._translation_pending_language = normalized_target_language
+            enqueue_translation(kind="comment", entity_id=comment.id,
+                target_language=normalized_target_language, source_signature=source_signature)
+            continue
+
         try:
             translated_text = generate_project_content_translation(
                 source_text=source_text,
@@ -954,6 +971,7 @@ def localized_post_content(
     )
     if translation is None:
         return {
+            "translation_status": "pending" if getattr(post, "_translation_pending_language", None) else "original",
             "text": post.text or None,
             "original_text": source_text or None,
             "source_language": source_language or None,
@@ -966,6 +984,7 @@ def localized_post_content(
         }
 
     return {
+        "translation_status": "ready",
         "text": translation.translated_text or source_text or None,
         "original_text": source_text or None,
         "source_language": source_language or None,
@@ -988,6 +1007,7 @@ def localized_comment_content(
     )
     if translation is None:
         return {
+            "translation_status": "pending" if getattr(comment, "_translation_pending_language", None) else "original",
             "text": comment.text or None,
             "original_text": source_text or None,
             "source_language": source_language or None,
@@ -1000,6 +1020,7 @@ def localized_comment_content(
         }
 
     return {
+        "translation_status": "ready",
         "text": translation.translated_text or source_text or None,
         "original_text": source_text or None,
         "source_language": source_language or None,
@@ -1419,8 +1440,8 @@ def project_is_delayed(project: Project, *, progress: int) -> bool:
 
 
 def serialize_project_summary(project: Project) -> dict:
-    sync_project_archive_schedule(project=project, save=True)
-    mark_project_archived_if_due(project=project, save=True)
+    sync_project_archive_schedule(project=project, save=not read_only_models())
+    mark_project_archived_if_due(project=project, save=not read_only_models())
     progress = calculate_project_progress(project)
     return {
         "id": project.id,
@@ -1534,7 +1555,7 @@ def project_company_colors_for_context(
         profiles=profiles,
         workspace_ids=workspace_ids,
     )
-    return ensure_project_company_colors(project=project, workspace_ids=company_workspace_ids)
+    return ensure_project_company_colors(project=project, workspace_ids=company_workspace_ids, persist=not read_only_models())
 
 
 def list_projects(*, profile: Profile) -> list[dict]:
@@ -1579,6 +1600,15 @@ def serialize_activity_context(activity: ProjectActivity | None) -> dict | None:
 
 def serialize_attachment(attachment) -> dict:
     extension = attachment_extension(attachment.file)
+    content_type = (getattr(attachment, "content_type", "") or "").lower().split(";", 1)[0].strip()
+    kind = attachment_kind_from_extension(extension)
+    if content_type.startswith("audio/"):
+        kind = "audio"
+    elif content_type.startswith("video/"):
+        kind = "video"
+    elif extension == "webm" and attachment_name(attachment.file).lower().startswith(("nota-vocale-", "commento-vocale-")):
+        # Existing recordings predate MIME metadata, but have a dedicated name.
+        kind = "audio"
     return {
         "id": attachment.id,
         "media_url": file_url(attachment.file),
@@ -1586,7 +1616,7 @@ def serialize_attachment(attachment) -> dict:
         "size": attachment_size(attachment.file),
         "name": attachment_name(attachment.file),
         "extension": extension,
-        "type": attachment_kind_from_extension(extension),
+        "type": kind,
     }
 
 
@@ -1595,14 +1625,12 @@ def guess_download_content_type(file_name: str | None) -> str:
     return content_type or "application/octet-stream"
 
 
-def build_inline_file_response(file_field, *, filename: str | None):
+def build_inline_file_response(file_field, *, filename: str | None, request=None):
     if not file_field:
         raise ValueError("File non disponibile.")
-    file_field.open("rb")
-    response = FileResponse(file_field, content_type=guess_download_content_type(filename))
-    if filename:
-        response.headers["Content-Disposition"] = f'inline; filename="{filename}"'
-    return response
+    from edilcloud.modules.files.responses import inline_file_response
+    return inline_file_response(file_field, filename=filename,
+        content_type=guess_download_content_type(filename), request=request)
 
 
 def can_manage_project(membership: ProjectMember) -> bool:
@@ -1635,7 +1663,9 @@ def project_member_effective_role(membership: ProjectMember) -> str:
     )
 
 
-def ensure_project_member_role_alignment(member: ProjectMember) -> ProjectMember:
+def ensure_project_member_role_alignment(member: ProjectMember, *, persist: bool | None = None) -> ProjectMember:
+    if persist is None:
+        persist = not read_only_models()
     normalized_role = project_member_effective_role(member)
     normalized_is_external = member.profile.workspace_id != member.project.workspace_id
     update_fields: list[str] = []
@@ -1645,7 +1675,7 @@ def ensure_project_member_role_alignment(member: ProjectMember) -> ProjectMember
     if member.is_external != normalized_is_external:
         member.is_external = normalized_is_external
         update_fields.append("is_external")
-    if update_fields:
+    if update_fields and persist:
         member.save(update_fields=update_fields)
     return member
 
@@ -1979,7 +2009,7 @@ def emit_feed_refresh_for_post(
         comment_id=comment_id,
         data={
             "action": action,
-            "post_kind": post.post_kind,
+            "post_kind": PostKind.ISSUE if post.alert else post.post_kind,
             "alert": post.alert,
             "is_deleted": post.is_deleted,
         },
@@ -1993,6 +2023,7 @@ def serialize_comment(
     comments_by_parent: dict[int | None, list[PostComment]] | None = None,
     company_colors_by_workspace_id: dict[int, str] | None = None,
     translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
+    profile_directory: dict | None = None,
 ) -> dict:
     replies = (
         comments_by_parent.get(comment.id, [])
@@ -2015,8 +2046,9 @@ def serialize_comment(
         "created_date": comment.created_at,
         "parent": comment.parent_id,
         "media_set": [serialize_attachment(attachment) for attachment in comment.attachments.all()],
-        "author": serialize_project_profile(
+        "author": read_profile(
             comment.author,
+            directory=profile_directory,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
         ),
         "replies_set": [
@@ -2026,6 +2058,7 @@ def serialize_comment(
                 comments_by_parent=comments_by_parent,
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
                 translation_by_comment_id=translation_by_comment_id,
+            profile_directory=profile_directory,
             )
             for reply in replies
         ],
@@ -2038,6 +2071,7 @@ def serialize_comment_tree(
     membership: ProjectMember,
     company_colors_by_workspace_id: dict[int, str] | None = None,
     translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
+    profile_directory: dict | None = None,
 ) -> list[dict]:
     comments_by_parent: dict[int | None, list[PostComment]] = defaultdict(list)
     for comment in comments:
@@ -2049,6 +2083,7 @@ def serialize_comment_tree(
             comments_by_parent=comments_by_parent,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
             translation_by_comment_id=translation_by_comment_id,
+            profile_directory=profile_directory,
         )
         for comment in comments_by_parent.get(None, [])
     ]
@@ -2064,6 +2099,7 @@ def serialize_post(
     company_colors_by_workspace_id: dict[int, str] | None = None,
     translation_by_post_id: dict[int, ProjectPostTranslation] | None = None,
     translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
+    profile_directory: dict | None = None,
 ) -> dict:
     effective_comments = comments if comments is not None else list(post.comments.all())
     drawing_pin_tags = [
@@ -2082,8 +2118,9 @@ def serialize_post(
     )
     return {
         "id": post.id,
-        "author": serialize_project_profile(
+        "author": read_profile(
             post.author,
+            directory=profile_directory,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
         ),
         "project": {
@@ -2106,7 +2143,7 @@ def serialize_post(
             and last_activity_at is not None
             and (viewer_seen_at is None or viewer_seen_at < last_activity_at)
         ),
-        "post_kind": post.post_kind,
+        "post_kind": PostKind.ISSUE if post.alert else post.post_kind,
         **localized_content,
         "is_deleted": post.is_deleted,
         "deleted_at": post.deleted_at,
@@ -2125,6 +2162,7 @@ def serialize_post(
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
             translation_by_comment_id=translation_by_comment_id,
+            profile_directory=profile_directory,
         ),
     }
 
@@ -2138,6 +2176,7 @@ def serialize_post_summary(
     company_colors_by_workspace_id: dict[int, str] | None = None,
     translation_by_post_id: dict[int, ProjectPostTranslation] | None = None,
     translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
+    profile_directory: dict | None = None,
 ) -> dict:
     """Serialize the overview-safe post shape without the full comment tree."""
     drawing_pin_tags = [
@@ -2156,8 +2195,9 @@ def serialize_post_summary(
         comment_count = sum(not comment.is_deleted for comment in post.comments.all())
     return {
         "id": post.id,
-        "author": serialize_project_profile(
+        "author": read_profile(
             post.author,
+            directory=profile_directory,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
         ),
         "project": {
@@ -2180,7 +2220,7 @@ def serialize_post_summary(
             and last_activity_at is not None
             and (viewer_seen_at is None or viewer_seen_at < last_activity_at)
         ),
-        "post_kind": post.post_kind,
+        "post_kind": PostKind.ISSUE if post.alert else post.post_kind,
         **localized_content,
         "is_deleted": post.is_deleted,
         "deleted_at": post.deleted_at,
@@ -2207,8 +2247,10 @@ def serialize_activity(
     membership: ProjectMember | None = None,
     company_colors_by_workspace_id: dict[int, str] | None = None,
     compact: bool = False,
+    normalized: bool = False,
 ) -> dict:
-    worker_ids = {worker.id for worker in activity.workers.all()}
+    workers = list(activity.workers.all())
+    worker_ids = {worker.id for worker in workers}
     return {
         "id": activity.id,
         "title": activity.title,
@@ -2220,13 +2262,19 @@ def serialize_activity(
         "alert": activity.alert,
         "starred": activity.starred,
         "note": activity.note or None,
-        "workers": [
+        **({
+            "worker_profile_ids": [worker.id for worker in workers],
+            "worker_member_ids": [member.id for member in project_members if member.profile_id in worker_ids],
+        } if normalized else {"workers": [
             serialize_project_profile(
                 worker,
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
             )
             for worker in activity.workers.all()
-        ],
+        ], "workers_in_activity": [
+            serialize_project_team_member(member, company_colors_by_workspace_id=company_colors_by_workspace_id)
+            for member in project_members if member.profile_id in worker_ids
+        ]}),
         "media_set": [],
         "can_assign_in_activity": [
             serialize_project_team_member(
@@ -2234,14 +2282,6 @@ def serialize_activity(
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
             )
             for member in ([] if compact else project_members)
-        ],
-        "workers_in_activity": [
-            serialize_project_team_member(
-                member,
-                company_colors_by_workspace_id=company_colors_by_workspace_id,
-            )
-            for member in project_members
-            if member.profile_id in worker_ids
         ],
         "post_set": (
             [
@@ -2266,6 +2306,7 @@ def serialize_task(
     membership: ProjectMember | None = None,
     company_colors_by_workspace_id: dict[int, str] | None = None,
     compact: bool = False,
+    normalized: bool = False,
 ) -> dict:
     return {
         "id": task.id,
@@ -2301,6 +2342,7 @@ def serialize_task(
                 membership=membership,
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
                 compact=compact,
+                normalized=normalized,
             )
             for activity in task.activities.all()
         ],
@@ -2510,7 +2552,7 @@ def serialize_document(document: ProjectDocument) -> dict:
         "folder": document.folder_id,
         "document_kind": document.document_kind,
         "preview_available": bool(document.drawing_preview)
-        or extension.lower() in {"png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp", "gif", "pdf"},
+        or (extension or "").lower() in {"png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp", "gif", "pdf"},
     }
 
 
@@ -2640,14 +2682,12 @@ def get_project_drawing_page_count(
 
 
 def drawing_pin_visual_state(pin: ProjectDrawingPin) -> tuple[str, str, str]:
-    if pin.post.post_kind == PostKind.ISSUE:
+    if pin.post.alert or pin.post.post_kind == PostKind.ISSUE:
         return (
             ("open", "#ef4444", "danger")
             if pin.post.alert
             else ("resolved", "#16a34a", "success")
         )
-    if pin.post.alert:
-        return ("attention", "#f59e0b", "warning")
     return ("linked", "#2563eb", "info")
 
 
@@ -2689,14 +2729,17 @@ def serialize_drawing_pin(
     company_colors_by_workspace_id: dict[int, str] | None = None,
     translation_by_post_id: dict[int, ProjectPostTranslation] | None = None,
     translation_by_comment_id: dict[int, PostCommentTranslation] | None = None,
+    summary: bool = False,
 ) -> dict:
     pin_status, pin_color, pin_tone = drawing_pin_visual_state(pin)
     return {
         "id": pin.id,
         "project": pin.project_id,
-        "drawing_document": serialize_document(pin.drawing_document),
-        "post": serialize_post(
+        "drawing_document": ({"id": pin.drawing_document_id, "title": pin.drawing_document.title,
+                              "document_kind": pin.drawing_document.document_kind} if summary else serialize_document(pin.drawing_document)),
+        "post": (serialize_post_summary if summary else serialize_post)(
             post=pin.post,
+            effective_last_activity_at=getattr(pin.post, "effective_last_activity_at", None),
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
             translation_by_post_id=translation_by_post_id,
@@ -2871,7 +2914,18 @@ def project_tasks_queryset(project: Project):
     )
 
 
-def list_project_tasks(*, profile: Profile, project_id: int, compact: bool = False) -> list[dict] | dict:
+def task_worker_directory(tasks, *, company_colors_by_workspace_id):
+    """Each assigned profile appears once, including historical/non-member workers."""
+    profiles = {
+        worker.id: worker for task in tasks for activity in task.activities.all()
+        for worker in activity.workers.all()
+    }
+    return [serialize_project_profile(worker, company_colors_by_workspace_id=company_colors_by_workspace_id)
+            for worker in profiles.values()]
+
+
+def list_project_tasks(*, profile: Profile, project_id: int, compact: bool = False, normalized: bool = False) -> list[dict] | dict:
+    compact = compact or normalized
     project, membership, members = get_project_with_team_context(
         profile=profile, project_id=project_id
     )
@@ -2889,6 +2943,7 @@ def list_project_tasks(*, profile: Profile, project_id: int, compact: bool = Fal
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
             compact=compact,
+            normalized=normalized,
         )
         for task in tasks
     ]
@@ -2896,6 +2951,7 @@ def list_project_tasks(*, profile: Profile, project_id: int, compact: bool = Fal
         return rows
     return {
         "tasks": rows,
+        **({"contract_version": 2, "worker_profiles": task_worker_directory(tasks, company_colors_by_workspace_id=company_colors_by_workspace_id)} if normalized else {}),
         "assignment_members": [
             serialize_project_team_member(member, company_colors_by_workspace_id=company_colors_by_workspace_id)
             for member in members
@@ -3178,7 +3234,8 @@ def apply_project_gantt_import(
     }
 
 
-def list_project_gantt(*, profile: Profile, project_id: int, compact: bool = False) -> dict:
+def list_project_gantt(*, profile: Profile, project_id: int, compact: bool = False, normalized: bool = False) -> dict:
+    compact = compact or normalized
     project, membership, members = get_project_with_team_context(
         profile=profile, project_id=project_id
     )
@@ -3198,10 +3255,12 @@ def list_project_gantt(*, profile: Profile, project_id: int, compact: bool = Fal
                 membership=membership,
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
                 compact=compact,
+                normalized=normalized,
             )
             for task in tasks
         ],
         "links": [serialize_schedule_link(link) for link in schedule_links],
+        **({"contract_version": 2, "worker_profiles": task_worker_directory(tasks, company_colors_by_workspace_id=company_colors_by_workspace_id)} if normalized else {}),
         **({"assignment_members": [
             serialize_project_team_member(member, company_colors_by_workspace_id=company_colors_by_workspace_id)
             for member in members
@@ -3296,16 +3355,28 @@ def list_project_drawing_pins(
     project_id: int,
     drawing_document_id: int | None = None,
     target_language: str | None = None,
+    page: int | None = None,
+    view: str = "full",
 ) -> list[dict]:
+    if view not in {"full", "summary"}:
+        raise ValueError("Vista pin non valida.")
+    summary = view == "summary"
     project, membership, members = get_project_with_team_context(
         profile=profile, project_id=project_id
     )
     queryset = drawing_pin_queryset().filter(project=project)
+    if summary:
+        queryset = queryset.select_related(None).select_related(
+            "drawing_document", "created_by__workspace", "created_by__user"
+        ).prefetch_related(None).prefetch_related(Prefetch("post",
+            queryset=annotate_posts_with_feed_activity(project_posts_queryset(lightweight=True))))
     if drawing_document_id is not None:
         queryset = queryset.filter(drawing_document_id=drawing_document_id)
+    if page is not None:
+        queryset = queryset.filter(page_number=normalize_pin_page_number(page))
     pins = list(queryset)
     posts = [pin.post for pin in pins]
-    comments = [comment for post in posts for comment in post.comments.all()]
+    comments = [] if summary else [comment for post in posts for comment in post.comments.all()]
     post_translation_map = resolve_post_translation_memory(
         posts,
         target_language=target_language,
@@ -3322,6 +3393,7 @@ def list_project_drawing_pins(
     return [
         serialize_drawing_pin(
             pin,
+            summary=summary,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
             translation_by_post_id=post_translation_map,
@@ -3478,7 +3550,7 @@ def list_project_photos(*, profile: Profile, project_id: int) -> list[dict]:
     return [serialize_photo(photo) for photo in photos]
 
 
-def get_project_document_file_response(*, profile: Profile, document_id: int):
+def get_project_document_file_response(*, profile: Profile, document_id: int, request=None):
     document = ProjectDocument.objects.select_related("project").filter(id=document_id).first()
     if document is None:
         raise ValueError("Documento non trovato.")
@@ -3486,16 +3558,16 @@ def get_project_document_file_response(*, profile: Profile, document_id: int):
     file_name = (
         Path(document.document.name).name if document.document else document.title or "documento"
     )
-    return build_inline_file_response(document.document, filename=file_name)
+    return build_inline_file_response(document.document, filename=file_name, request=request)
 
 
-def get_project_photo_file_response(*, profile: Profile, photo_id: int):
+def get_project_photo_file_response(*, profile: Profile, photo_id: int, request=None):
     photo = ProjectPhoto.objects.select_related("project").filter(id=photo_id).first()
     if photo is None:
         raise ValueError("Foto non trovata.")
     get_project_with_team_context(profile=profile, project_id=photo.project_id)
     file_name = Path(photo.photo.name).name if photo.photo else photo.title or "foto"
-    return build_inline_file_response(photo.photo, filename=file_name)
+    return build_inline_file_response(photo.photo, filename=file_name, request=request)
 
 
 def list_project_folders(*, profile: Profile, project_id: int) -> list[dict]:
@@ -3550,14 +3622,14 @@ def list_project_alert_posts(
     project_id: int,
     lightweight: bool = False,
     target_language: str | None = None,
+    limit: int | None = None,
+    _context: tuple | None = None,
 ) -> list[dict]:
-    project, membership, members = get_project_with_team_context(
-        profile=profile, project_id=project_id
-    )
+    project, membership, members = _context or get_project_with_team_context(profile=profile, project_id=project_id)
     posts = list(
         annotate_posts_with_feed_activity(project_posts_queryset(lightweight=lightweight))
         .filter(project=project, alert=True, is_deleted=False)
-        .order_by("-effective_last_activity_at", "-id")
+        .order_by("-effective_last_activity_at", "-id")[:limit]
     )
     serializer = serialize_post_summary if lightweight else serialize_post
     company_colors_by_workspace_id = project_company_colors_for_context(
@@ -3597,10 +3669,9 @@ def list_project_recent_posts(
     limit: int = 8,
     lightweight: bool = False,
     target_language: str | None = None,
+    _context: tuple | None = None,
 ) -> list[dict]:
-    project, membership, members = get_project_with_team_context(
-        profile=profile, project_id=project_id
-    )
+    project, membership, members = _context or get_project_with_team_context(profile=profile, project_id=project_id)
     posts = list(
         annotate_posts_with_feed_activity(project_posts_queryset(lightweight=lightweight))
         .filter(project=project, is_deleted=False)
@@ -3645,11 +3716,15 @@ def list_project_feed(
     target_language: str | None = None,
     project_id: int | None = None,
     lightweight: bool = False,
+    post_id: int | None = None,
+    normalized: bool = False,
 ) -> dict:
     safe_limit = min(max(int(limit or 50), 1), 250)
     safe_offset = max(int(offset or 0), 0)
 
     queryset = accessible_feed_posts_queryset(profile=profile, lightweight=lightweight)
+    if post_id is not None:
+        queryset = queryset.filter(id=post_id)
     if project_id is not None:
         get_project_for_profile(profile=profile, project_id=project_id)
         queryset = queryset.filter(project_id=project_id)
@@ -3679,9 +3754,11 @@ def list_project_feed(
         fallback_language=profile.language,
     )
 
+    profile_directory = {} if normalized else None
     items = [
         (serialize_post_summary if lightweight else serialize_post)(
             post=post,
+            profile_directory=profile_directory,
             membership=membership_by_project_id[post.project_id],
             viewer_profile=profile,
             effective_last_activity_at=getattr(post, "effective_last_activity_at", None),
@@ -3695,6 +3772,7 @@ def list_project_feed(
     has_more = len(posts) > safe_limit
     return {
         "items": items,
+        **({"included": {"profiles": list(profile_directory.values())}, "contract_version": 2} if normalized else {}),
         "offset": safe_offset,
         "limit": safe_limit,
         "has_more": has_more,
@@ -3768,18 +3846,28 @@ def mark_feed_posts_seen(*, profile: Profile, post_ids: list[int] | None = None)
 
 
 def get_project_overview(
-    *, profile: Profile, project_id: int, target_language: str | None = None, compact: bool = False
+    *, profile: Profile, project_id: int, target_language: str | None = None, compact: bool = False,
+    normalized: bool = False, view: str = "full",
 ) -> dict:
+    if view not in {"full", "summary"}:
+        raise ValueError("Vista overview non valida.")
+    summary = view == "summary"
+    normalized = normalized or summary
+    compact = compact or normalized
     project, membership, members = get_project_with_team_context(
         profile=profile, project_id=project_id
     )
     tasks = list(project_tasks_queryset(project))
-    documents = list(
+    document_queryset = (
         project.documents.select_related("folder")
         .filter(document_kind=ProjectDocumentKind.DOCUMENT)
         .order_by("-updated_at", "-id")
     )
-    photos = list(project.photos.order_by("-created_at", "-id"))
+    photo_queryset = project.photos.order_by("-created_at", "-id")
+    document_count = document_queryset.count() if summary else None
+    photo_count = photo_queryset.count() if summary else None
+    documents = list(document_queryset[:8] if summary else document_queryset)
+    photos = list(photo_queryset[:8] if summary else photo_queryset)
     company_colors_by_workspace_id = project_company_colors_for_context(
         project=project,
         members=members,
@@ -3790,15 +3878,23 @@ def get_project_overview(
         project_id=project_id,
         lightweight=True,
         target_language=target_language,
+        limit=8 if summary else None,
+        _context=(project, membership, members),
     )
     recent_posts = list_project_recent_posts(
         profile=profile,
         project_id=project_id,
         lightweight=True,
         target_language=target_language,
+        _context=(project, membership, members),
     )
 
     return {
+        "view": view,
+        "document_count": document_count if summary else len(documents),
+        "photo_count": photo_count if summary else len(photos),
+        "alert_count": project.posts.filter(alert=True, is_deleted=False).count() if summary else len(alert_posts),
+        **({"contract_version": 2, "worker_profiles": task_worker_directory(tasks, company_colors_by_workspace_id=company_colors_by_workspace_id)} if normalized else {}),
         "tasks": [
             serialize_task(
                 task,
@@ -3807,6 +3903,7 @@ def get_project_overview(
                 membership=membership,
                 company_colors_by_workspace_id=company_colors_by_workspace_id,
                 compact=compact,
+                normalized=normalized,
             )
             for task in tasks
         ],
@@ -3840,6 +3937,8 @@ def list_posts_for_task(
     include_activities: bool = False,
     limit: int | None = None,
     offset: int = 0,
+    post_id: int | None = None,
+    lightweight: bool = False,
     target_language: str | None = None,
 ) -> list[dict]:
     task = ProjectTask.objects.select_related("project").filter(id=task_id).first()
@@ -3849,11 +3948,13 @@ def list_posts_for_task(
         profile=profile, project_id=task.project_id
     )
     post_filter = Q(task=task)
+    if post_id is not None:
+        post_filter &= Q(id=post_id)
     if not include_activities:
         post_filter &= Q(activity__isnull=True)
     posts = list(
         _paginate_posts_queryset(
-            annotate_posts_with_feed_activity(project_posts_queryset())
+            annotate_posts_with_feed_activity(project_posts_queryset(lightweight=lightweight))
             .filter(post_filter)
             .order_by("-effective_last_activity_at", "-id"),
             limit=limit,
@@ -3868,13 +3969,13 @@ def list_posts_for_task(
         target_language=target_language,
         fallback_language=profile.language,
     )
-    comment_translation_map = resolve_comment_translation_memory(
+    comment_translation_map = {} if lightweight else resolve_comment_translation_memory(
         [comment for post in posts for comment in post.comments.all()],
         target_language=target_language,
         fallback_language=profile.language,
     )
     return [
-        serialize_post(
+        (serialize_post_summary if lightweight else serialize_post)(
             post=post,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
@@ -3892,6 +3993,8 @@ def list_posts_for_activity(
     activity_id: int,
     limit: int | None = None,
     offset: int = 0,
+    post_id: int | None = None,
+    lightweight: bool = False,
     target_language: str | None = None,
 ) -> list[dict]:
     activity = (
@@ -3907,8 +4010,8 @@ def list_posts_for_activity(
     )
     posts = list(
         _paginate_posts_queryset(
-            annotate_posts_with_feed_activity(project_posts_queryset())
-            .filter(activity=activity)
+            annotate_posts_with_feed_activity(project_posts_queryset(lightweight=lightweight))
+            .filter(Q(activity=activity) & (Q(id=post_id) if post_id is not None else Q()))
             .order_by("-effective_last_activity_at", "-id"),
             limit=limit,
             offset=offset,
@@ -3922,13 +4025,13 @@ def list_posts_for_activity(
         target_language=target_language,
         fallback_language=profile.language,
     )
-    comment_translation_map = resolve_comment_translation_memory(
+    comment_translation_map = {} if lightweight else resolve_comment_translation_memory(
         [comment for post in posts for comment in post.comments.all()],
         target_language=target_language,
         fallback_language=profile.language,
     )
     return [
-        serialize_post(
+        (serialize_post_summary if lightweight else serialize_post)(
             post=post,
             membership=membership,
             company_colors_by_workspace_id=company_colors_by_workspace_id,
@@ -4820,7 +4923,8 @@ def save_post_attachments(post: ProjectPost, files: list[object]) -> None:
     )
     assert_storage_quota_available(post.project.workspace, incoming_bytes=incoming_bytes)
     for uploaded_file in prepared_files:
-        PostAttachment.objects.create(post=post, file=uploaded_file)
+        PostAttachment.objects.create(post=post, file=uploaded_file,
+            content_type=(getattr(uploaded_file, "content_type", "") or "")[:255])
 
 
 def save_comment_attachments(comment: PostComment, files: list[object]) -> None:
@@ -4832,7 +4936,8 @@ def save_comment_attachments(comment: PostComment, files: list[object]) -> None:
     )
     assert_storage_quota_available(comment.post.project.workspace, incoming_bytes=incoming_bytes)
     for uploaded_file in prepared_files:
-        CommentAttachment.objects.create(comment=comment, file=uploaded_file)
+        CommentAttachment.objects.create(comment=comment, file=uploaded_file,
+            content_type=(getattr(uploaded_file, "content_type", "") or "")[:255])
 
 
 def get_post_for_profile(*, profile: Profile, post_id: int) -> tuple[ProjectPost, ProjectMember]:
@@ -4857,7 +4962,7 @@ def get_comment_for_profile(
     return comment, membership
 
 
-def get_post_attachment_file_response(*, profile: Profile, attachment_id: int):
+def get_post_attachment_file_response(*, profile: Profile, attachment_id: int, request=None):
     attachment = (
         PostAttachment.objects.select_related("post", "post__project")
         .filter(id=attachment_id)
@@ -4867,10 +4972,10 @@ def get_post_attachment_file_response(*, profile: Profile, attachment_id: int):
         raise ValueError("Allegato post non trovato.")
     get_project_membership(attachment.post.project, profile)
     file_name = Path(attachment.file.name).name if attachment.file else "allegato-post"
-    return build_inline_file_response(attachment.file, filename=file_name)
+    return build_inline_file_response(attachment.file, filename=file_name, request=request)
 
 
-def get_comment_attachment_file_response(*, profile: Profile, attachment_id: int):
+def get_comment_attachment_file_response(*, profile: Profile, attachment_id: int, request=None):
     attachment = (
         CommentAttachment.objects.select_related(
             "comment", "comment__post", "comment__post__project"
@@ -4882,7 +4987,7 @@ def get_comment_attachment_file_response(*, profile: Profile, attachment_id: int
         raise ValueError("Allegato commento non trovato.")
     get_project_membership(attachment.comment.post.project, profile)
     file_name = Path(attachment.file.name).name if attachment.file else "allegato-commento"
-    return build_inline_file_response(attachment.file, filename=file_name)
+    return build_inline_file_response(attachment.file, filename=file_name, request=request)
 
 
 def notify_post_created(
@@ -5202,7 +5307,7 @@ def create_task_post(
         project=task.project,
         task=task,
         author=profile,
-        post_kind=post_kind if post_kind in PostKind.values else PostKind.WORK_PROGRESS,
+        post_kind=PostKind.ISSUE if alert else (post_kind if post_kind in PostKind.values else PostKind.WORK_PROGRESS),
         text=normalize_text(text),
         original_text=normalize_text(text),
         source_language=normalize_text(source_language),
@@ -5246,7 +5351,7 @@ def create_task_post(
             "project_name": task.project.name,
             "task_name": task.name,
             "activity_title": None,
-            "post_kind": post.post_kind,
+            "post_kind": PostKind.ISSUE if post.alert else post.post_kind,
             "alert": post.alert,
             "is_public": post.is_public,
             "has_attachments": post.attachments.exists(),
@@ -5337,7 +5442,7 @@ def create_activity_post(
         task=activity.task,
         activity=activity,
         author=profile,
-        post_kind=post_kind if post_kind in PostKind.values else PostKind.WORK_PROGRESS,
+        post_kind=PostKind.ISSUE if alert else (post_kind if post_kind in PostKind.values else PostKind.WORK_PROGRESS),
         text=normalize_text(text),
         original_text=normalize_text(text),
         source_language=normalize_text(source_language),
@@ -5383,7 +5488,7 @@ def create_activity_post(
             "project_name": activity.task.project.name,
             "task_name": activity.task.name,
             "activity_title": activity.title,
-            "post_kind": post.post_kind,
+            "post_kind": PostKind.ISSUE if post.alert else post.post_kind,
             "alert": post.alert,
             "is_public": post.is_public,
             "has_attachments": post.attachments.exists(),
@@ -5586,6 +5691,9 @@ def update_post(
         post.is_public = bool(is_public)
     if alert is not None:
         post.alert = bool(alert)
+    # Preserve issue history when closing older alerts with a missing/wrong kind.
+    if post.alert or (was_alert and not post_kind):
+        post.post_kind = PostKind.ISSUE
     if source_language is not None:
         post.source_language = normalize_text(source_language)
         post.display_language = normalize_text(source_language)

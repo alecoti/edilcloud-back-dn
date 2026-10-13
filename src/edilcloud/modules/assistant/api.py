@@ -128,11 +128,12 @@ class TranslateProjectDocumentTextRequestSchema(Schema):
 
 
 @router.get("/{project_id}/assistant", response=dict[str, Any], auth=auth)
-def get_project_assistant_state_endpoint(request, project_id: int):
+def get_project_assistant_state_endpoint(request, project_id: int, message_limit: int | None = None, cursor: str | None = None):
     try:
         thread_id_raw = request.GET.get("thread_id")
         thread_id = int(thread_id_raw) if thread_id_raw and thread_id_raw.isdigit() else None
         return get_project_assistant_state(
+            message_limit=message_limit, cursor=cursor,
             profile=current_profile(request),
             project_id=project_id,
             thread_id=thread_id,

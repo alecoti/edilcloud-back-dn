@@ -14,12 +14,8 @@ from edilcloud.modules.notifications.push import dispatch_notification_push
 
 
 def file_url(file_field) -> str | None:
-    if not file_field:
-        return None
-    try:
-        return file_field.url
-    except ValueError:
-        return None
+    from edilcloud.modules.workspaces.services import file_url as preview_file_url
+    return preview_file_url(file_field, image_pixels=320)
 
 
 def resolve_notification_profile(*, user, claims: dict):
@@ -339,7 +335,7 @@ def visible_notifications_queryset(profile):
     return queryset
 
 
-def list_notifications(*, user, claims: dict, limit: int = 80) -> dict:
+def list_notifications(*, user, claims: dict, limit: int = 80, count_only: bool = False) -> dict:
     profile = resolve_notification_profile(user=user, claims=claims)
     if profile is None:
         return {"unread_count": 0, "results": []}
@@ -357,7 +353,7 @@ def list_notifications(*, user, claims: dict, limit: int = 80) -> dict:
     )
     return {
         "unread_count": queryset.filter(read_at__isnull=True).count(),
-        "results": [serialize_notification(item) for item in queryset[:safe_limit]],
+        "results": [] if count_only else [serialize_notification(item) for item in queryset[:safe_limit]],
     }
 
 

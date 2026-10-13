@@ -37,12 +37,13 @@ def notification_realtime_session(request):
 
 
 @router.get("", response=NotificationCenterSchema, auth=auth)
-def get_notifications(request, limit: int = 80):
+def get_notifications(request, limit: int = 80, count_only: bool = False):
     try:
         return list_notifications(
             user=request.auth.user,
             claims=request.auth.claims,
             limit=limit,
+            count_only=count_only,
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc

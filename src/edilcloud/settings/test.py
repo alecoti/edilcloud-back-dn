@@ -19,6 +19,12 @@ PASSWORD_HASHERS = [
 
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 EMAIL_DELIVERY_MODE = "sync"
+# Existing localization tests assert deterministic synchronous translation.
+# Background delivery has separate tests with this overridden to True.
+PROJECT_CONTENT_TRANSLATION_ASYNC = False
+# Tests must explicitly opt in and mock providers; a developer .env must never
+# turn regression tests into billable network calls.
+OPENAI_API_KEY = ""
 
 CACHES = {
     "default": {

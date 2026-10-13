@@ -51,7 +51,8 @@ def file_url(file_field, *, image_pixels: int | None = None) -> str | None:
         return None
     try:
         if image_pixels and callable(getattr(file_field.storage, "image_metadata", None)):
-            variants = sorted(file_field.storage.image_metadata(file_field.name).get("variants", []), key=lambda v: v["width"])
+            from edilcloud.modules.files.image_storage import metadata_variants
+            variants = metadata_variants(file_field.storage.image_metadata(file_field.name))
             if variants:
                 selected = next((v for v in variants if v["width"] >= image_pixels), variants[-1])
                 return file_field.storage.url(selected["name"])

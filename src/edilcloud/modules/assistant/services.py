@@ -2205,7 +2205,7 @@ def build_project_source_snapshot(project: Project) -> tuple[list[AssistantSourc
     return source_documents, current_version
 
 
-def get_or_create_project_assistant_state(project: Project) -> ProjectAssistantState:
+def get_or_create_project_assistant_state(project: Project, *, read_only: bool = False) -> ProjectAssistantState:
     defaults = {
         "container_tag": build_project_container_tag(project.id),
         "chat_model": assistant_chat_model(),
@@ -2213,6 +2213,8 @@ def get_or_create_project_assistant_state(project: Project) -> ProjectAssistantS
         "chunk_schema_version": assistant_chunk_schema_version(),
         "index_version": assistant_index_version(current_version=0),
     }
+    if read_only:
+        return ProjectAssistantState.objects.filter(project=project).first() or ProjectAssistantState(project=project, **defaults)
     state, _created = ProjectAssistantState.objects.get_or_create(project=project, defaults=defaults)
     if not normalize_text(state.container_tag):
         state.container_tag = build_project_container_tag(project.id)
@@ -2261,7 +2263,12 @@ def refresh_project_assistant_thread_summary(thread: ProjectAssistantThread) -> 
     return thread
 
 
-def get_or_create_assistant_profile_settings(profile: Profile) -> AssistantProfileSettings:
+def get_or_create_assistant_profile_settings(profile: Profile, *, read_only: bool = False) -> AssistantProfileSettings:
+    if read_only:
+        return AssistantProfileSettings.objects.filter(profile=profile).first() or AssistantProfileSettings(
+            profile=profile, tone=AssistantTone.PRAGMATICO, response_mode=AssistantResponseMode.AUTO,
+            citation_mode=AssistantCitationMode.STANDARD, preferred_model=assistant_chat_model(),
+            monthly_token_limit=assistant_monthly_token_limit())
     settings_obj, _created = AssistantProfileSettings.objects.get_or_create(
         profile=profile,
         defaults={
@@ -2291,8 +2298,9 @@ def resolve_project_assistant_settings(
     *,
     project: Project,
     profile: Profile,
+    read_only: bool = False,
 ) -> tuple[AssistantProfileSettings, ProjectAssistantProjectSettings | None, AssistantResolvedSettings]:
-    default_settings = get_or_create_assistant_profile_settings(profile)
+    default_settings = get_or_create_assistant_profile_settings(profile, read_only=read_only)
     project_settings = get_assistant_project_settings(project=project, profile=profile)
 
     def resolve_value(field_name: str, fallback: str) -> str:
@@ -2389,9 +2397,38 @@ def serialize_assistant_token_budget(
     remaining = max(monthly_limit - monthly_used, 0)
     try:
         from edilcloud.modules.billing.services import get_workspace_billing_account, entitlement_snapshot
-
-        billing_account = get_workspace_billing_account(project.workspace)
-        billing_ai = entitlement_snapshot(billing_account)["ai_tokens"]
+        from edilcloud.modules.projects.read_context import read_only_models
+        if read_only_models():
+            from edilcloud.modules.billing.models import BillingWorkspace
+            from edilcloud.modules.billing.services import billing_month_bounds
+            from edilcloud.modules.workspaces.models import Workspace, WorkspaceRole
+            assignment = BillingWorkspace.objects.select_related("billing_account").filter(workspace=project.workspace).first()
+            if assignment is None:
+                raise ValueError("Billing account is not provisioned yet.")
+            billing_account = assignment.billing_account
+            # Derive the same account scope without provisioning workspace links
+            # during a read. Missing assignments remain the mutation path's job.
+            linked_ids = BillingWorkspace.objects.filter(
+                billing_account=billing_account, workspace__is_active=True,
+            ).values_list("workspace_id", flat=True)
+            owned_ids = Workspace.objects.filter(
+                profiles__user=billing_account.owner_user,
+                profiles__role=WorkspaceRole.OWNER,
+                profiles__is_active=True,
+                is_active=True,
+            ).values_list("id", flat=True)
+            workspace_ids = set(linked_ids) | set(owned_ids)
+            billing_start, billing_end = billing_month_bounds()
+            used = ProjectAssistantUsage.objects.filter(
+                project__workspace_id__in=workspace_ids,
+                created_at__gte=billing_start,
+                created_at__lt=billing_end,
+            ).aggregate(total=Sum("total_tokens"))["total"] or 0
+            total = int(billing_account.monthly_ai_tokens_base + billing_account.ai_token_balance_topup)
+            billing_ai = {"total_available": total, "used_this_period": used, "remaining_this_period": max(0, total - int(used))}
+        else:
+            billing_account = get_workspace_billing_account(project.workspace)
+            billing_ai = entitlement_snapshot(billing_account)["ai_tokens"]
         monthly_limit = int(billing_ai["total_available"])
         monthly_used = int(billing_ai["used_this_period"])
         remaining = int(billing_ai["remaining_this_period"])
@@ -5881,10 +5918,13 @@ def refresh_project_assistant_state_for_read(
     *,
     state: ProjectAssistantState,
 ) -> ProjectAssistantState:
-    state.chunk_count = count_project_assistant_chunks(state) or state.chunk_count
-    if assistant_rag_enabled() and state.is_dirty:
-        schedule_project_assistant_sync(state)
-    state.save(update_fields=["chunk_count"])
+    from edilcloud.modules.projects.read_context import read_only_models
+    if state.pk:
+        state.chunk_count = count_project_assistant_chunks(state) or state.chunk_count
+    if not read_only_models():
+        if assistant_rag_enabled() and state.is_dirty:
+            schedule_project_assistant_sync(state)
+        state.save(update_fields=["chunk_count"])
     return state
 
 
@@ -5924,12 +5964,17 @@ def get_project_assistant_state(
     profile: Profile,
     project_id: int,
     thread_id: int | None = None,
+    message_limit: int | None = None,
+    cursor: str | None = None,
 ) -> dict[str, Any]:
+    from edilcloud.modules.projects.read_context import read_only_models
+    pure_read = read_only_models()
     project, _membership, _members = get_project_with_team_context(profile=profile, project_id=project_id)
-    state = get_or_create_project_assistant_state(project)
+    state = get_or_create_project_assistant_state(project, read_only=pure_read)
     default_settings, project_settings, resolved_settings = resolve_project_assistant_settings(
         project=project,
         profile=profile,
+        read_only=pure_read,
     )
     refresh_project_assistant_state_for_read(state=state)
     token_budget = serialize_assistant_token_budget(
@@ -5937,20 +5982,33 @@ def get_project_assistant_state(
         profile=profile,
         monthly_limit=resolved_settings.monthly_token_limit,
     )
-    threads = list_project_assistant_threads(project, profile)
-    active_thread = get_project_assistant_thread(project=project, profile=profile, thread_id=thread_id)
-    messages = list(
-        active_thread.messages.select_related("author", "author__workspace", "author__user").order_by(
-            "created_at",
-            "id",
-        )
-    )
+    # Provisioning and legacy-message migration happen on explicit create/send.
+    threads = list(project.assistant_threads.filter(archived_at__isnull=True, author=profile)
+        .annotate(message_count=Count("messages")).order_by("-last_message_at", "-updated_at", "-id"))
+    if not pure_read:
+        threads = list_project_assistant_threads(project, profile)
+        get_project_assistant_thread(project=project, profile=profile, thread_id=thread_id)
+    active_thread = next((thread for thread in threads if thread.id == thread_id), None) if thread_id is not None else (threads[0] if threads else None)
+    if thread_id is not None and active_thread is None:
+        raise ValueError("Conversazione non disponibile per questo progetto e utente.")
+    queryset = (active_thread.messages if active_thread else project.assistant_messages.filter(thread__isnull=True, author=profile)).select_related("author", "author__workspace", "author__user")
+    from edilcloud.modules.projects.read_cursor import apply_read_cursor, next_read_cursor
+    scope = f"assistant:{project_id}:{profile.id}:{active_thread.id if active_thread else 'legacy'}"
+    queryset = apply_read_cursor(queryset, cursor=cursor, scope=scope, timestamp="created_at")
+    safe_limit = min(250, max(1, message_limit)) if message_limit is not None else None
+    newest = list(queryset.order_by("-created_at", "-id")[:safe_limit + 1] if safe_limit is not None else queryset.order_by("-created_at", "-id"))
+    has_more = safe_limit is not None and len(newest) > safe_limit
+    page = newest[:safe_limit] if safe_limit is not None else newest
+    next_cursor = next_read_cursor(page[-1], scope=scope, timestamp="created_at") if has_more else None
+    messages = list(reversed(page))
     return {
         "detail": None,
-        "active_thread_id": active_thread.id,
-        "active_thread": serialize_assistant_thread(active_thread),
+        "active_thread_id": active_thread.id if active_thread else None,
+        "active_thread": serialize_assistant_thread(active_thread) if active_thread else None,
         "threads": [serialize_assistant_thread(thread) for thread in threads],
         "messages": [serialize_assistant_message(message) for message in messages],
+        "has_more_messages": has_more,
+        "next_message_cursor": next_cursor,
         "stats": serialize_assistant_stats(state, token_budget=token_budget),
         "settings": serialize_resolved_assistant_settings(
             default_settings=default_settings,

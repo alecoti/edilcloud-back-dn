@@ -161,6 +161,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "edilcloud.modules.projects.read_context.ReadModelMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "edilcloud.platform.middleware.request_context.RequestContextMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",

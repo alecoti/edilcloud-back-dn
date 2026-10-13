@@ -4,7 +4,7 @@ from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
-from django.db.models import Q
+from django.db.models import OuterRef, Q, Subquery
 from django.utils import timezone
 
 from edilcloud.modules.projects.models import (
@@ -397,15 +397,16 @@ def search_workspace_index(*, user, claims: dict, query: str, limit_per_section:
             )
 
     if "tasks" in allowed:
-        tasks = ProjectTask.objects.select_related("project", "assigned_company").filter(project_id__in=project_ids)
+        tasks = ProjectTask.objects.select_related("project", "assigned_company").filter(project_id__in=project_ids).annotate(
+            first_activity_id=Subquery(ProjectActivity.objects.filter(task_id=OuterRef("pk"))
+                .order_by("datetime_start", "id").values("id")[:1])
+        )
         if raw_tokens:
             tasks = tasks.filter(
                 build_token_filter(raw_tokens, ("name", "note", "project__name", "assigned_company__name"))
             )
         for task in tasks.order_by("-updated_at", "-id")[:scan_limit]:
-            first_activity_id = (
-                ProjectActivity.objects.filter(task=task).order_by("datetime_start", "id").values_list("id", flat=True).first()
-            )
+            first_activity_id = task.first_activity_id
             status_bits = []
             if task.alert:
                 status_bits.append("Critica")

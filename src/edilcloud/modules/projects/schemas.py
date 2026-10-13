@@ -15,6 +15,8 @@ class ProjectRealtimeSessionSchema(Schema):
 
 
 class ProjectFeedPageSchema(Schema):
+    contract_version: int = 1
+    included: dict[str, Any] = {}
     items: list[dict[str, Any]]
     offset: int
     limit: int
@@ -90,6 +92,12 @@ class ProjectInviteCodeSchema(Schema):
 
 
 class ProjectOverviewSchema(Schema):
+    view: str = "full"
+    document_count: int | None = None
+    photo_count: int | None = None
+    alert_count: int | None = None
+    contract_version: int = 1
+    worker_profiles: list[dict[str, Any]] = []
     tasks: list[dict[str, Any]]
     team: list[dict[str, Any]]
     documents: list[dict[str, Any]]

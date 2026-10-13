@@ -548,6 +548,8 @@ def list_project_operational_timeline(
     mode: str,
     task_id: int | None = None,
     activity_id: int | None = None,
+    limit: int | None = None,
+    cursor: str | None = None,
 ) -> dict[str, Any]:
     queryset = ProjectOperationalEvent.objects.filter(project_id=project_id)
 
@@ -559,8 +561,17 @@ def list_project_operational_timeline(
             scope_filter |= Q(task_id_snapshot__isnull=True, activity_id_snapshot__isnull=True)
         queryset = queryset.filter(scope_filter)
 
+    from edilcloud.modules.projects.read_cursor import apply_read_cursor, next_read_cursor
+    scope = f"timeline:{project_id}:{mode}:{task_id}:{activity_id}"
+    safe_limit = min(250, max(1, limit)) if limit is not None else None
+    queryset = apply_read_cursor(queryset, cursor=cursor, scope=scope, timestamp="occurred_at")
+    if safe_limit is not None:
+        queryset = queryset.filter(payload__has_key="timeline")
+    rows = list(queryset.order_by("-occurred_at", "-id")[:safe_limit + 1] if safe_limit is not None else queryset.order_by("-occurred_at", "-id"))
+    has_more = safe_limit is not None and len(rows) > safe_limit
+    page = rows[:safe_limit] if safe_limit is not None else rows
     events: list[dict[str, Any]] = []
-    for item in queryset.order_by("-occurred_at", "-id"):
+    for item in page:
         timeline_event = item.payload.get("timeline") if isinstance(item.payload, dict) else None
         if not isinstance(timeline_event, dict):
             continue
@@ -572,4 +583,6 @@ def list_project_operational_timeline(
         "task_id": task_id,
         "activity_id": activity_id,
         "events": events,
+        "has_more": has_more,
+        "next_cursor": next_read_cursor(page[-1], scope=scope, timestamp="occurred_at") if has_more else None,
     }
