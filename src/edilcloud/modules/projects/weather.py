@@ -116,12 +116,12 @@ def cached_post_weather(project, language):
         return None
 
 
-def current_weather(project, language):
+def current_weather(project, language, *, refresh_before_seconds=0):
     key = _key(project, language, "current")
     if key is None:
         return None
     entry = cache.get(key)
-    if entry and entry["refresh_after"] > time.time():
+    if entry and entry["refresh_after"] > time.time() + refresh_before_seconds:
         return _for_project(entry["weather"], project)
     if cache.get(key + ":failure"):
         if entry:
@@ -235,7 +235,9 @@ def refresh_active_project_weather(*, active_days=7):
     for project in projects.iterator():
         try:
             language = project.created_by.language if project.created_by else "it"
-            current_weather(project, language)
+            # Avoid skipping an entire scheduled interval because of the
+            # timer's small randomized delay or clock scheduling jitter.
+            current_weather(project, language, refresh_before_seconds=60)
             forecast_weather(project, language)
             result["projects"] += 1
         except WeatherUnavailable:

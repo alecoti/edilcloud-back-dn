@@ -530,7 +530,7 @@ jobs:
             exit 1
           fi
 
-          if [ "${DEPLOY_STRATEGY}" = "blue_green" ]; then
+          if run_priv test -f "${APP_DIR}/.runtime/active-slot"; then
             run_priv bash "${APP_DIR}/scripts/install_weather_timer.sh" "${APP_DIR}"
           fi
           compose_cmd ps

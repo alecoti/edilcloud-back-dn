@@ -12,7 +12,7 @@ Project permission checks happen before cache access or provider requests.
 
 Configure `GOOGLE_WEATHER_API_KEY` on the backend (falls back to the server Maps key). Keep the value out of clients and Git. The production environment secret must include the same setting to preserve it across deployments.
 
-Blue/green deployments install `edilcloud-weather-refresh.timer`. The timer invokes `refresh_project_weather` in the active web container every three hours. Only real, open, unarchived projects with posts in the last seven days are warmed. Requests in the overview also populate the cache for new or less active projects.
+Deployments with the existing active-slot file install `edilcloud-weather-refresh.timer`, including rolling updates of a named slot. The timer invokes `refresh_project_weather` in the active web container every three hours. Only real, open, unarchived projects with posts in the last seven days are warmed. Requests in the overview also populate the cache for new or less active projects. Scheduled refreshes allow 60 seconds of timer jitter to avoid skipping an entire three-hour interval.
 
 The deployment installer and runner are in `scripts/install_weather_timer.sh` and `scripts/run_weather_refresh.sh`. The runner uses the existing production container names `back-dn-web-blue-1` / `back-dn-web-green-1`; adapt these if the Compose project name changes.
 
