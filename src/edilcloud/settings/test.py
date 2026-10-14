@@ -33,6 +33,7 @@ CACHES = {
         "LOCATION": "edilcloud-back-dn-test-cache",
     }
 }
+CACHES["weather"] = {**CACHES["default"]}
 
 CHANNEL_LAYERS = {
     "default": {

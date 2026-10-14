@@ -7,6 +7,7 @@ Project permission checks happen before cache access or provider requests.
 - Forecasts: one ten-day provider response per location, language and calendar day; clients receive seven days. `pageSize=10` avoids the provider's default five-day page. The cached response expires after 24 hours.
 - Both clients refresh the visible overview every six hours. Live weather cards are absent from the feed. Historical post weather remains visible.
 - Publishing reads cached observations only. An empty or unavailable cache does not block publication. Explicit weather from existing offline clients remains accepted.
+- Weather has its own Redis connection pool with 0.2-second connection and socket timeouts, so optional post metadata cannot wait on a slow cache connection. Provider keys are sent in request headers and stay out of URL logs.
 - Cache identities include rounded coordinates and language. Projects at the same coordinates share provider responses; project IDs and place IDs are attached after reading the shared cache.
 - A Redis lease coalesces concurrent cold requests; failures have a 60-second backoff. Stale forecasts are filtered to remove dates before today.
 

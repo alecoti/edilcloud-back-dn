@@ -6,10 +6,27 @@ import time
 import pytest
 from django.core.cache import cache
 from django.test import Client
+from django.test import override_settings
 from django.utils import timezone
 
 from edilcloud.modules.projects import weather
 from tests.test_projects_api import auth_headers, create_project_fixture, create_workspace_profile
+
+
+@override_settings(GOOGLE_WEATHER_API_KEY="weather-test-key")
+def test_provider_key_is_sent_in_headers_and_cannot_enter_url_logs(site, monkeypatch):
+    _, project, _, _ = site
+    requests = []
+    def get(url, **options):
+        requests.append((url, options))
+        return type("Reply", (), {"raise_for_status": lambda self: None,
+                                  "json": lambda self: {"temperature": {"degrees": 22}}})()
+    monkeypatch.setattr(weather.httpx, "get", get)
+    assert weather.current_weather(project, "it")["temperatureC"] == 22
+    url, options = requests[0]
+    assert "key=" not in url and "key" not in options["params"]
+    assert options["headers"] == {"X-Goog-Api-Key": "weather-test-key"}
+    assert options["timeout"] == 5
 
 
 @pytest.fixture

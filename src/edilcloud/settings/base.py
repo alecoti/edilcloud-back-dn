@@ -210,6 +210,10 @@ CACHES = {
         "TIMEOUT": int(get_env("CACHE_DEFAULT_TIMEOUT_SECONDS", "300")),
     }
 }
+CACHES["weather"] = {
+    **CACHES["default"],
+    "OPTIONS": {"socket_connect_timeout": 0.2, "socket_timeout": 0.2},
+}
 
 CHANNEL_LAYERS = {
     "default": {

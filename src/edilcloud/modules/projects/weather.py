@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import httpx
 from django.conf import settings
-from django.core.cache import cache
+from django.core.cache import caches
 from django.utils import timezone
 
 
@@ -16,6 +16,7 @@ CURRENT_REFRESH_SECONDS = 3 * 60 * 60
 SNAPSHOT_RETENTION_SECONDS = 48 * 60 * 60
 FORECAST_CACHE_SECONDS = 24 * 60 * 60
 SUPPORTED_LANGUAGES = {"it", "en", "fr", "ro", "ru", "ar"}
+cache = caches["weather"]
 
 
 class WeatherUnavailable(ValueError):
@@ -48,13 +49,13 @@ def _request(project, language, endpoint, **parameters):
     if not api_key:
         raise WeatherUnavailable("Servizio meteo non configurato.")
     params = {
-        "key": api_key,
         "location.latitude": f"{float(project.latitude):.4f}",
         "location.longitude": f"{float(project.longitude):.4f}",
         "languageCode": _language(language), "unitsSystem": "METRIC", **parameters,
     }
     try:
-        response = httpx.get(f"https://weather.googleapis.com/v1/{endpoint}", params=params, timeout=5)
+        response = httpx.get(f"https://weather.googleapis.com/v1/{endpoint}", params=params,
+                             headers={"X-Goog-Api-Key": api_key}, timeout=5)
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict):
