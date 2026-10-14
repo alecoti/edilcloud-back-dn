@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from django.http import HttpResponse
 from django.http.multipartparser import MultiPartParser
 from ninja import Router
 from ninja.errors import HttpError
@@ -1414,3 +1415,35 @@ def download_photo_file_endpoint(request, photo_id: int):
         )
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
+
+
+@router.get("/{project_id}/weather", response=dict[str, Any], auth=auth)
+def project_weather_endpoint(request, response: HttpResponse, project_id: int, language: str | None = None):
+    from edilcloud.modules.projects.services import get_project_for_profile
+    from edilcloud.modules.projects.weather import WeatherUnavailable, current_weather
+    profile = current_profile(request)
+    try:
+        project = get_project_for_profile(profile=profile, project_id=project_id)
+    except ValueError as exc:
+        raise HttpError(404, "Cantiere non disponibile.") from exc
+    response["Cache-Control"] = "private, no-store"
+    try:
+        return {"weather": current_weather(project, language or profile.language)}
+    except WeatherUnavailable as exc:
+        raise HttpError(502, str(exc)) from exc
+
+
+@router.get("/{project_id}/forecast", response=dict[str, Any], auth=auth)
+def project_forecast_endpoint(request, response: HttpResponse, project_id: int, language: str | None = None, days: int = 7):
+    from edilcloud.modules.projects.services import get_project_for_profile
+    from edilcloud.modules.projects.weather import WeatherUnavailable, forecast_weather
+    profile = current_profile(request)
+    try:
+        project = get_project_for_profile(profile=profile, project_id=project_id)
+    except ValueError as exc:
+        raise HttpError(404, "Cantiere non disponibile.") from exc
+    response["Cache-Control"] = "private, no-store"
+    try:
+        return {"forecastDays": forecast_weather(project, language or profile.language, days)}
+    except WeatherUnavailable as exc:
+        raise HttpError(502, str(exc)) from exc

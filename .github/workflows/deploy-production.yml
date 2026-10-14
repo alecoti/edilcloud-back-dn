@@ -530,6 +530,9 @@ jobs:
             exit 1
           fi
 
+          if [ "${DEPLOY_STRATEGY}" = "blue_green" ]; then
+            run_priv bash "${APP_DIR}/scripts/install_weather_timer.sh" "${APP_DIR}"
+          fi
           compose_cmd ps
           cleanup
           EOS

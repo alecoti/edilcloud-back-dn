@@ -53,6 +53,7 @@ EMAIL_DELIVERY_MODE = get_env("EMAIL_DELIVERY_MODE", "threaded").strip().lower()
 EMAIL_THREAD_POOL_SIZE = int(get_env("EMAIL_THREAD_POOL_SIZE", "2"))
 GOOGLE_OAUTH_CLIENT_ID = get_env("GOOGLE_OAUTH_CLIENT_ID", "")
 OPENAI_API_KEY = get_env("OPENAI_API_KEY", "")
+GOOGLE_WEATHER_API_KEY = get_env("GOOGLE_WEATHER_API_KEY", get_env("GOOGLE_MAPS_API_KEY", ""))
 OPENAI_API_BASE_URL = get_env("OPENAI_API_BASE_URL", "https://api.openai.com/v1").rstrip("/")
 AI_ASSISTANT_MODEL = get_env(
     "AI_ASSISTANT_MODEL",

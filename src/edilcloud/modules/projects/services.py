@@ -5259,6 +5259,11 @@ def record_project_client_mutation(
             raise ValueError("Client mutation id gia utilizzato per un'altra operazione.")
 
 
+def _cached_weather_for_post(project, language):
+    from edilcloud.modules.projects.weather import cached_post_weather
+    return cached_post_weather(project, language)
+
+
 @transaction.atomic
 def create_task_post(
     *,
@@ -5314,7 +5319,7 @@ def create_task_post(
         display_language=normalize_text(source_language),
         alert=bool(alert),
         is_public=bool(is_public),
-        weather_snapshot=weather_payload or {},
+        weather_snapshot=weather_payload or _cached_weather_for_post(project, profile.language) or {},
     )
     save_post_attachments(post, files or [])
     post = (
@@ -5449,7 +5454,7 @@ def create_activity_post(
         display_language=normalize_text(source_language),
         alert=bool(alert),
         is_public=bool(is_public),
-        weather_snapshot=weather_payload or {},
+        weather_snapshot=weather_payload or _cached_weather_for_post(project, profile.language) or {},
     )
     save_post_attachments(post, files or [])
     post = (

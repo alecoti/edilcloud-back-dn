@@ -25,6 +25,7 @@ PROJECT_CONTENT_TRANSLATION_ASYNC = False
 # Tests must explicitly opt in and mock providers; a developer .env must never
 # turn regression tests into billable network calls.
 OPENAI_API_KEY = ""
+GOOGLE_WEATHER_API_KEY = ""
 
 CACHES = {
     "default": {
