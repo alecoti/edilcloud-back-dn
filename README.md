@@ -25,7 +25,7 @@ Compatibility matrix: [docs/FRONTEND_COMPATIBILITY_MATRIX.md](docs/FRONTEND_COMP
 - pgvector
 - Redis
 - Channels / ASGI
-- OpenAI `gpt-4o-mini`
+- OpenAI `gpt-6-luna`
 - OpenAI embeddings `text-embedding-3-large`
 
 ## Quickstart

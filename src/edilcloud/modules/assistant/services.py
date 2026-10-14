@@ -17,6 +17,7 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 import httpx
+from edilcloud.openai_models import resolve_text_model, resolve_transcription_model, responses_generation_options
 from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Count, Q, Sum
@@ -749,7 +750,7 @@ def build_project_container_tag(project_id: int) -> str:
 
 
 def assistant_chat_model() -> str:
-    return getattr(settings, "AI_ASSISTANT_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
+    return resolve_text_model(getattr(settings, "AI_ASSISTANT_MODEL", "gpt-6-luna"))
 
 
 def assistant_embedding_model() -> str:
@@ -2320,7 +2321,7 @@ def resolve_project_assistant_settings(
             if project_settings and normalize_text(project_settings.custom_instructions)
             else normalize_text(default_settings.custom_instructions)
         ),
-        preferred_model=resolve_value("preferred_model", assistant_chat_model()),
+        preferred_model=resolve_text_model(resolve_value("preferred_model", assistant_chat_model())),
         monthly_token_limit=max(default_settings.monthly_token_limit or assistant_monthly_token_limit(), 1),
     )
     return default_settings, project_settings, resolved
@@ -2733,7 +2734,8 @@ def build_openai_responses_payload(
                 "content": [{"type": "input_text", "text": user_prompt}],
             },
         ],
-        "temperature": 0.35,
+        **responses_generation_options(model=assistant_chat_model(), temperature=0.35,
+                                       reasoning_effort=getattr(settings, "AI_ASSISTANT_REASONING_EFFORT", "low")),
         "store": False,
         "max_output_tokens": max_output_tokens,
         "stream": stream,
@@ -4906,11 +4908,11 @@ def transcribe_project_audio(
                 "Authorization": f"Bearer {api_key}",
             },
             data={
-                "model": getattr(
+                "model": resolve_transcription_model(getattr(
                     settings,
                     "OPENAI_AUDIO_TRANSCRIPTION_MODEL",
-                    "gpt-4o-mini-transcribe",
-                ),
+                    "gpt-4o-transcribe",
+                )),
                 "language": normalized_language,
                 **({"prompt": normalized_prompt} if normalized_prompt else {}),
             },
@@ -4951,11 +4953,11 @@ def transcribe_project_audio(
     return {
         "text": text,
         "language": payload.get("language") or normalized_language,
-        "model": getattr(
+        "model": resolve_transcription_model(getattr(
             settings,
             "OPENAI_AUDIO_TRANSCRIPTION_MODEL",
-            "gpt-4o-mini-transcribe",
-        ),
+            "gpt-4o-transcribe",
+        )),
     }
 
 

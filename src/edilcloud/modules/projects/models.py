@@ -5,6 +5,7 @@ from django.db import models
 from django.utils import timezone
 
 from edilcloud.modules.workspaces.models import Profile, TimestampedModel, Workspace, WorkspaceRole
+from edilcloud.modules.projects.gantt_storage import project_schedule_storage
 
 
 class StoredFileMetadata(TimestampedModel):
@@ -536,6 +537,7 @@ class ProjectTask(TimestampedModel):
     alert = models.BooleanField(default=False)
     starred = models.BooleanField(default=False)
     note = models.TextField(blank=True)
+    schedule_metadata = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ("date_start", "id")
@@ -566,6 +568,7 @@ class ProjectActivity(TimestampedModel):
     alert = models.BooleanField(default=False)
     starred = models.BooleanField(default=False)
     note = models.TextField(blank=True)
+    schedule_metadata = models.JSONField(default=dict, blank=True)
     workers = models.ManyToManyField(
         Profile,
         related_name="project_activities",
@@ -623,6 +626,7 @@ class ProjectScheduleLink(TimestampedModel):
     )
     lag_days = models.SmallIntegerField(default=0)
     origin = models.CharField(max_length=32, default="manual")
+    schedule_metadata = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ("project_id", "id")
@@ -636,6 +640,27 @@ class ProjectScheduleLink(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.project_id}:{self.link_type}:{self.id}"
+
+
+class ProjectSchedulePlan(TimestampedModel):
+    """Lossless source and calendar context, loaded only by planning tools."""
+
+    project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name="schedule_plan")
+    source_xml = models.TextField(blank=True)
+    original_file = models.FileField(upload_to="projects/gantt-originals/", blank=True, storage=project_schedule_storage)
+    source_sha256 = models.CharField(max_length=64, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+
+class ProjectScheduleVersion(TimestampedModel):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="schedule_versions")
+    label = models.CharField(max_length=255)
+    snapshot = models.JSONField(default=dict)
+    source_xml = models.TextField(blank=True)
+    created_by = models.ForeignKey(Profile, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        ordering = ("-id",)
 
 
 class ProjectPost(TimestampedModel):

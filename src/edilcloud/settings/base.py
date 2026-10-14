@@ -10,6 +10,7 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 
 load_dotenv(BASE_DIR / ".env")
 load_dotenv(BASE_DIR / ".env.local")
+PRIVATE_STORAGE_ROOT = Path(get_env("PRIVATE_STORAGE_ROOT", str(BASE_DIR / "private-storage")))
 
 APP_ENV = get_env("APP_ENV", "local")
 SECRET_KEY = get_env("SECRET_KEY", "change-me")
@@ -55,19 +56,18 @@ GOOGLE_OAUTH_CLIENT_ID = get_env("GOOGLE_OAUTH_CLIENT_ID", "")
 OPENAI_API_KEY = get_env("OPENAI_API_KEY", "")
 GOOGLE_WEATHER_API_KEY = get_env("GOOGLE_WEATHER_API_KEY", get_env("GOOGLE_MAPS_API_KEY", ""))
 OPENAI_API_BASE_URL = get_env("OPENAI_API_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-AI_ASSISTANT_MODEL = get_env(
+from edilcloud.openai_models import resolve_text_model, resolve_transcription_model
+
+AI_ASSISTANT_MODEL = resolve_text_model(get_env(
     "AI_ASSISTANT_MODEL",
-    get_env("OPENAI_CHAT_MODEL", get_env("OPENAI_MODEL", "gpt-4o-mini")),
-).strip() or "gpt-4o-mini"
-AI_DRAFT_MODEL = get_env("AI_DRAFT_MODEL", AI_ASSISTANT_MODEL).strip() or AI_ASSISTANT_MODEL
-OPENAI_AUDIO_TRANSCRIPTION_MODEL = (
-    get_env("OPENAI_AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe").strip()
-    or "gpt-4o-mini-transcribe"
-)
-PROJECT_CONTENT_TRANSLATION_MODEL = (
-    get_env("PROJECT_CONTENT_TRANSLATION_MODEL", get_env("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini")).strip()
-    or "gpt-4o-mini"
-)
+    get_env("OPENAI_CHAT_MODEL", get_env("OPENAI_MODEL", "gpt-6-luna")),
+))
+AI_DRAFT_MODEL = resolve_text_model(get_env("AI_DRAFT_MODEL", AI_ASSISTANT_MODEL))
+AI_ASSISTANT_REASONING_EFFORT = get_env("AI_ASSISTANT_REASONING_EFFORT", "low")
+AI_DRAFT_REASONING_EFFORT = get_env("AI_DRAFT_REASONING_EFFORT", "low")
+PROJECT_CONTENT_TRANSLATION_REASONING_EFFORT = get_env("PROJECT_CONTENT_TRANSLATION_REASONING_EFFORT", "none")
+OPENAI_AUDIO_TRANSCRIPTION_MODEL = resolve_transcription_model(get_env("OPENAI_AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-transcribe"))
+PROJECT_CONTENT_TRANSLATION_MODEL = resolve_text_model(get_env("PROJECT_CONTENT_TRANSLATION_MODEL", get_env("OPENAI_TRANSLATION_MODEL", "gpt-6-luna")))
 AI_ASSISTANT_MONTHLY_TOKEN_LIMIT = int(get_env("AI_ASSISTANT_MONTHLY_TOKEN_LIMIT", "100000"))
 AI_TOKEN_QUOTA_ENFORCED = get_bool_env("AI_TOKEN_QUOTA_ENFORCED", True)
 AI_ASSISTANT_MAX_OUTPUT_TOKENS = int(get_env("AI_ASSISTANT_MAX_OUTPUT_TOKENS", "3200"))

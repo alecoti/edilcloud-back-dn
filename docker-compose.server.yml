@@ -72,6 +72,7 @@ services:
       - "${BACKEND_BIND_IP}:${BACKEND_BLUE_PORT:-18001}:8001"
     volumes:
       - ./media:/app/media
+      - ./.runtime/gantt-private:/app/private-storage
       - ./staticfiles:/app/staticfiles
       - ./.tmp/test-center:/app/.tmp/test-center
     command:
@@ -113,6 +114,7 @@ services:
       - "${BACKEND_BIND_IP}:${BACKEND_GREEN_PORT:-18002}:8001"
     volumes:
       - ./media:/app/media
+      - ./.runtime/gantt-private:/app/private-storage
       - ./staticfiles:/app/staticfiles
       - ./.tmp/test-center:/app/.tmp/test-center
     command:
@@ -150,6 +152,7 @@ services:
         condition: service_healthy
     volumes:
       - ./media:/app/media
+      - ./.runtime/gantt-private:/app/private-storage
       - ./staticfiles:/app/staticfiles
     command:
       - sh
@@ -174,6 +177,7 @@ services:
         condition: service_healthy
     volumes:
       - ./media:/app/media
+      - ./.runtime/gantt-private:/app/private-storage
       - ./staticfiles:/app/staticfiles
     command:
       - sh

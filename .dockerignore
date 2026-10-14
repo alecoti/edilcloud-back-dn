@@ -10,3 +10,4 @@ venv/
 media/
 staticfiles/
 tests/
+private-storage/

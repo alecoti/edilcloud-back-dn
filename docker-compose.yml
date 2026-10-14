@@ -54,6 +54,7 @@ services:
         condition: service_healthy
     volumes:
       - ./media:/app/media
+      - ./private-storage:/app/private-storage
       - ./staticfiles:/app/staticfiles
       - ./src:/app/src:ro
     command:
@@ -96,6 +97,7 @@ services:
         condition: service_healthy
     volumes:
       - ./media:/app/media
+      - ./private-storage:/app/private-storage
       - ./staticfiles:/app/staticfiles
       - ./src:/app/src:ro
     command:

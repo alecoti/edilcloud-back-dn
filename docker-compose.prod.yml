@@ -26,6 +26,7 @@ services:
       SUPERMEMORY_BASE_URL: ""
     volumes:
       - media_data:/app/media
+      - gantt_private_data:/app/private-storage
       - staticfiles_data:/app/staticfiles
       - test_center_artifacts:/app/.tmp/test-center
 
@@ -43,6 +44,7 @@ services:
       SUPERMEMORY_BASE_URL: ""
     volumes:
       - media_data:/app/media
+      - gantt_private_data:/app/private-storage
       - staticfiles_data:/app/staticfiles
 
   loadtest-runner:
@@ -67,5 +69,6 @@ volumes:
   postgres_data:
   redis_data:
   media_data:
+  gantt_private_data:
   staticfiles_data:
   test_center_artifacts:

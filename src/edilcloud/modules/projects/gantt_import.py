@@ -13,6 +13,8 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 from xml.etree import ElementTree
 
+from edilcloud.modules.projects.gantt_contract import extract_project_xml
+
 
 SUPPORTED_GANTT_IMPORT_EXTENSIONS = {".csv", ".txt", ".xlsx", ".xls", ".xml", ".mpp"}
 CSV_EXTENSIONS = {".csv", ".txt"}
@@ -109,6 +111,7 @@ class ImportedLink:
     target_ref: str
     link_type: str = "e2s"
     lag_days: int = 0
+    schedule_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -120,6 +123,7 @@ class ImportedActivity:
     progress: int = 0
     description: str = ""
     note: str = ""
+    schedule_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -132,6 +136,7 @@ class ImportedPhase:
     company_label: str = ""
     note: str = ""
     activities: list[ImportedActivity] = field(default_factory=list)
+    schedule_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -142,6 +147,8 @@ class ImportedPlan:
     links: list[ImportedLink]
     warnings: list[ImportWarning]
     detected_company_labels: list[str] = field(default_factory=list)
+    source_xml: str = ""
+    schedule_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -150,6 +157,7 @@ class _PendingLink:
     target_ref: str
     link_type: str
     lag_days: int
+    schedule_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def parse_gantt_import_file(uploaded_file) -> ImportedPlan:
@@ -232,6 +240,8 @@ def _parse_xls_import(file_bytes: bytes) -> ImportedPlan:
 
 def _parse_ms_project_xml_import(file_bytes: bytes) -> ImportedPlan:
     decoded = _decode_text(file_bytes)
+    schedule = extract_project_xml(decoded)
+    schedule_by_uid = {row["uid"]: row for row in schedule["rows"]}
     root = ElementTree.fromstring(decoded)
     namespace = _xml_namespace(root.tag)
     ns = {"m": namespace} if namespace else {}
@@ -262,7 +272,7 @@ def _parse_ms_project_xml_import(file_bytes: bytes) -> ImportedPlan:
             predecessors.append(
                 (
                     predecessor_uid,
-                    MS_PROJECT_LINK_TYPE_MAP.get(raw_type or 1, "e2s"),
+                    MS_PROJECT_LINK_TYPE_MAP.get(raw_type if raw_type is not None else 1, "e2s"),
                     _msp_link_lag_to_days(lag_raw, lag_format, minutes_per_day),
                 )
             )
@@ -283,23 +293,34 @@ def _parse_ms_project_xml_import(file_bytes: bytes) -> ImportedPlan:
                     or find_text(task_element, "Text3")
                 ),
                 "predecessors": predecessors,
+                "schedule_metadata": schedule_by_uid.get(uid, {}),
             }
         )
 
     if not raw_tasks:
         raise ValueError("Nessun task Microsoft Project trovato nel file XML.")
 
-    return _build_microsoft_project_plan(
+    plan = _build_microsoft_project_plan(
         raw_tasks,
         minutes_per_day=minutes_per_day,
         detected_format="ms-project-xml",
     )
+    plan.source_xml = decoded
+    plan.schedule_metadata = schedule
+    return plan
 
 
 def _parse_ms_project_mpp_import(file_bytes: bytes) -> ImportedPlan:
-    raw_tasks, minutes_per_day = _read_mpp_raw_tasks_with_worker(file_bytes)
+    raw_tasks, minutes_per_day, source_xml = _read_mpp_raw_tasks_with_worker(file_bytes)
     if not raw_tasks:
         raise ValueError("Nessun task Microsoft Project trovato nel file MPP.")
+    if source_xml:
+        plan = _parse_ms_project_xml_import(source_xml.encode("utf-8"))
+        flags_by_uid = {row["uid"]: row.get("source_flags", {}) for row in raw_tasks}
+        for row in plan.schedule_metadata["rows"]:
+            row.update(flags_by_uid.get(row["uid"], {}))
+        plan.detected_format = "ms-project-mpp"
+        return plan
     return _build_microsoft_project_plan(
         raw_tasks,
         minutes_per_day=minutes_per_day,
@@ -307,7 +328,7 @@ def _parse_ms_project_mpp_import(file_bytes: bytes) -> ImportedPlan:
     )
 
 
-def _read_mpp_raw_tasks_with_worker(file_bytes: bytes) -> tuple[list[dict[str, Any]], int]:
+def _read_mpp_raw_tasks_with_worker(file_bytes: bytes) -> tuple[list[dict[str, Any]], int, str]:
     with NamedTemporaryFile(delete=False, suffix=".mpp") as temp_file:
         temp_file.write(file_bytes)
         temp_path = Path(temp_file.name)
@@ -316,6 +337,7 @@ def _read_mpp_raw_tasks_with_worker(file_bytes: bytes) -> tuple[list[dict[str, A
         worker_path = Path(__file__).with_name("mpp_reader_worker.py")
         command = [
             sys.executable,
+            "-X", "utf8",
             str(worker_path),
             str(temp_path),
         ]
@@ -324,6 +346,7 @@ def _read_mpp_raw_tasks_with_worker(file_bytes: bytes) -> tuple[list[dict[str, A
                 command,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=45,
                 check=False,
             )
@@ -359,7 +382,7 @@ def _read_mpp_raw_tasks_with_worker(file_bytes: bytes) -> tuple[list[dict[str, A
         )
 
     minutes_per_day = _parse_int(payload.get("minutes_per_day")) or 480
-    return raw_tasks, minutes_per_day
+    return raw_tasks, minutes_per_day, payload.get("source_xml", "")
 
 
 def _parse_tabular_import(
@@ -435,6 +458,10 @@ def _build_microsoft_project_plan(
             name_to_ref[normalized_name] = ref
 
     for raw_task in raw_tasks:
+        schedule_metadata = raw_task.get("schedule_metadata", {})
+        if schedule_metadata and (not raw_task.get("start") or not raw_task.get("end")):
+            schedule_metadata["dates_inferred"] = True
+            warnings.append(ImportWarning(code="missing-source-dates", level="warning", message=f"Date mancanti per '{raw_task['name']}': il piano originale è conservato; le date operative provvisorie richiedono verifica."))
         level = raw_task["outline_level"]
         while summary_stack and summary_stack[-1][0] >= level:
             summary_stack.pop()
@@ -458,14 +485,23 @@ def _build_microsoft_project_plan(
                     progress=raw_task["progress"],
                     company_label=company_label,
                     note=raw_task["note"],
+                    schedule_metadata=schedule_metadata,
                 )
                 phases.append(phase)
                 summary_stack.append((level, phase))
                 register_reference(raw_task["uid"], phase.ref, phase.name)
+                for predecessor_uid, link_type, lag_days in raw_task["predecessors"]:
+                    exact = next((item for item in schedule_metadata.get("predecessors", [])
+                                  if item["uid"] == predecessor_uid and item["type"] == link_type), {})
+                    pending_links.append(_PendingLink(predecessor_uid, phase.ref, link_type, lag_days, exact))
             else:
                 top_phase = summary_stack[0][1]
-                register_reference(raw_task["uid"], top_phase.ref, raw_task["name"])
                 summary_stack.append((level, top_phase))
+                warnings.append(ImportWarning(
+                    code="source-hierarchy-preserved",
+                    message=f"Sottofase '{raw_task['name']}': gerarchia e vincoli conservati nel piano originale; le lavorazioni operative appartengono alla fase superiore.",
+                    level="info",
+                ))
             continue
 
         if summary_stack:
@@ -477,6 +513,7 @@ def _build_microsoft_project_plan(
                 date_end=end,
                 progress=raw_task["progress"],
                 note=raw_task["note"],
+                schedule_metadata=schedule_metadata,
             )
             phase.activities.append(activity)
             phase.date_start = min(phase.date_start, start)
@@ -492,18 +529,22 @@ def _build_microsoft_project_plan(
                 progress=raw_task["progress"],
                 company_label=company_label,
                 note=raw_task["note"],
+                schedule_metadata=schedule_metadata,
             )
             phases.append(phase)
             register_reference(raw_task["uid"], phase.ref, phase.name)
             target_ref = phase.ref
 
         for predecessor_uid, link_type, lag_days in raw_task["predecessors"]:
+            exact = next((item for item in schedule_metadata.get("predecessors", [])
+                          if item["uid"] == predecessor_uid and item["type"] == link_type), {})
             pending_links.append(
                 _PendingLink(
                     source_token=predecessor_uid,
                     target_ref=target_ref,
                     link_type=link_type,
                     lag_days=lag_days,
+                    schedule_metadata=exact,
                 )
             )
 
@@ -884,6 +925,7 @@ def _resolve_pending_links(
             )
             continue
         if source_ref == pending_link.target_ref:
+            warnings.append(ImportWarning(code="self-predecessor", message="Relazione con se stessa esclusa dal piano operativo.", level="error"))
             continue
         key = (source_ref, pending_link.target_ref, pending_link.link_type, pending_link.lag_days)
         if key in seen_pairs:
@@ -895,6 +937,7 @@ def _resolve_pending_links(
                 target_ref=pending_link.target_ref,
                 link_type=pending_link.link_type,
                 lag_days=pending_link.lag_days,
+                schedule_metadata=pending_link.schedule_metadata,
             )
         )
 

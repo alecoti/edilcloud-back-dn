@@ -171,6 +171,23 @@ class CreateProjectGanttLinkRequestSchema(Schema):
     target: str
     type: str = "e2s"
     lag_days: int = 0
+    lag_value: float | None = None
+    lag_unit: str = "days"
+
+
+class ProjectScheduleRevisionRequestSchema(Schema):
+    expected_revision: str
+
+
+class ProjectScheduleRuleRequestSchema(ProjectScheduleRevisionRequestSchema):
+    constraint_type: str = "asap"
+    constraint_date: str | None = None
+    deadline: str | None = None
+    mode: str = "auto"
+    actual_start: str | None = None
+    actual_end: str | None = None
+    actual_duration_minutes: float | None = None
+    remaining_duration_minutes: float | None = None
 
 
 class UpdateProjectGanttLinkRequestSchema(Schema):
@@ -178,6 +195,8 @@ class UpdateProjectGanttLinkRequestSchema(Schema):
     target: str | None = None
     type: str | None = None
     lag_days: int | None = None
+    lag_value: float | None = None
+    lag_unit: str = "days"
 
 
 class UpdatePostRequestSchema(Schema):

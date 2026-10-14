@@ -403,7 +403,7 @@ class AssistantProfileSettings(TimestampedModel):
         default=AssistantCitationMode.STANDARD,
     )
     custom_instructions = models.TextField(blank=True)
-    preferred_model = models.CharField(max_length=64, blank=True, default="gpt-4o-mini")
+    preferred_model = models.CharField(max_length=64, blank=True, default="gpt-6-luna")
     monthly_token_limit = models.PositiveIntegerField(default=100_000)
 
     class Meta:

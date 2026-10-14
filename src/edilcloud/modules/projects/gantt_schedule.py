@@ -13,6 +13,7 @@ from edilcloud.modules.projects.models import (
     ProjectActivity,
     ProjectScheduleLink,
     ProjectScheduleLinkType,
+    ProjectSchedulePlan,
     ProjectTask,
 )
 
@@ -136,7 +137,13 @@ def create_project_schedule_link_record(
     lag_days: int | None = None,
     origin: str = "manual",
     apply_constraints: bool = True,
+    lag_value: float | None = None,
+    lag_unit: str = "days",
 ) -> ProjectScheduleLink:
+    if link_type is not None and link_type not in ProjectScheduleLinkType.values:
+        raise ValueError("Tipo di dipendenza Gantt non valido.")
+    from edilcloud.modules.projects.gantt_contract import precise_lag_metadata
+    metadata = precise_lag_metadata(lag_value, lag_unit) if lag_value is not None else {}
     source_task, source_activity, target_task, target_activity = resolve_project_schedule_endpoints(
         project=project,
         source_ref=source_ref,
@@ -162,7 +169,10 @@ def create_project_schedule_link_record(
         link_type=normalize_schedule_link_type(link_type),
         lag_days=normalize_schedule_link_lag_days(lag_days),
         origin=(origin or "manual").strip() or "manual",
+        schedule_metadata=metadata,
     )
+    if metadata:
+        ProjectSchedulePlan.objects.get_or_create(project=project)
     if apply_constraints:
         propagate_project_schedule_delays(project=project, seed_refs=[source_ref])
     return link
@@ -176,7 +186,11 @@ def update_project_schedule_link_record(
     link_type: str | None = None,
     lag_days: int | None = None,
     apply_constraints: bool = True,
+    lag_value: float | None = None,
+    lag_unit: str = "days",
 ) -> ProjectScheduleLink:
+    if link_type is not None and link_type not in ProjectScheduleLinkType.values:
+        raise ValueError("Tipo di dipendenza Gantt non valido.")
     next_source_ref = source_ref or schedule_link_entity_ref(task=link.source_task, activity=link.source_activity)
     next_target_ref = target_ref or schedule_link_entity_ref(task=link.target_task, activity=link.target_activity)
     if not next_source_ref or not next_target_ref:
@@ -211,6 +225,11 @@ def update_project_schedule_link_record(
     link.link_type = normalize_schedule_link_type(link_type or link.link_type)
     if lag_days is not None:
         link.lag_days = normalize_schedule_link_lag_days(lag_days)
+        link.schedule_metadata = {}
+    if lag_value is not None:
+        from edilcloud.modules.projects.gantt_contract import precise_lag_metadata
+        link.schedule_metadata = precise_lag_metadata(lag_value, lag_unit)
+        ProjectSchedulePlan.objects.get_or_create(project=link.project)
     link.save()
     if apply_constraints:
         propagate_project_schedule_delays(project=link.project, seed_refs=[next_source_ref])
@@ -251,6 +270,10 @@ def sync_task_bounds_to_activities(*, task_id: int) -> str | None:
 
 
 def propagate_project_schedule_delays(*, project: Project, seed_refs: list[str] | tuple[str, ...]) -> list[str]:
+    # A professional plan uses calendar-aware CPM previews. Never round imported lags
+    # or move hard/manual constraints through the legacy calendar-day propagation.
+    if ProjectSchedulePlan.objects.filter(project=project).exists():
+        return []
     queue = deque[str]()
     queued: set[str] = set()
     affected_refs: list[str] = []

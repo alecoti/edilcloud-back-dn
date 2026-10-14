@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.http.multipartparser import MultiPartParser
 from ninja import Router
 from ninja.errors import HttpError
@@ -27,6 +27,8 @@ from edilcloud.modules.projects.schemas import (
     CreateDemoMasterSnapshotRequestSchema,
     DemoProjectVisibilityRequestSchema,
     CreateProjectGanttLinkRequestSchema,
+    ProjectScheduleRevisionRequestSchema,
+    ProjectScheduleRuleRequestSchema,
     CreateProjectFolderRequestSchema,
     CreateProjectDrawingPinRequestSchema,
     CreateProjectModelPinRequestSchema,
@@ -1014,6 +1016,89 @@ def get_project_gantt_endpoint(request, project_id: int, compact: bool = False, 
         raise HttpError(404, str(exc)) from exc
 
 
+@router.get("/{project_id}/gantt/planning", response=dict[str, Any], auth=auth)
+def get_project_planning_endpoint(request, project_id: int):
+    from edilcloud.modules.projects.gantt_planning import get_project_planning
+    try:
+        return get_project_planning(profile=current_profile(request), project_id=project_id)
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.patch("/{project_id}/gantt/planning/rules/{entity_ref}", response=dict[str, Any], auth=auth)
+def update_project_planning_rule_endpoint(request, project_id: int, entity_ref: str, payload: ProjectScheduleRuleRequestSchema):
+    from edilcloud.modules.projects.gantt_planning import update_project_schedule_rule
+    try:
+        return update_project_schedule_rule(profile=current_profile(request), project_id=project_id,
+                                            entity_ref=entity_ref, payload=payload.model_dump(exclude_unset=True), expected_revision=payload.expected_revision)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/{project_id}/gantt/planning/simulate", response=dict[str, Any], auth=auth)
+def simulate_project_planning_endpoint(request, project_id: int, payload: ProjectScheduleRevisionRequestSchema):
+    from edilcloud.modules.projects.gantt_planning import simulate_project_schedule
+    try:
+        result = simulate_project_schedule(profile=current_profile(request), project_id=project_id, expected_revision=payload.expected_revision)
+        result.pop("source_xml", None)
+        return result
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/{project_id}/gantt/planning/apply", response=dict[str, Any], auth=auth)
+def apply_project_planning_endpoint(request, project_id: int, payload: ProjectScheduleRevisionRequestSchema):
+    from edilcloud.modules.projects.gantt_planning import apply_project_schedule_simulation
+    try:
+        return apply_project_schedule_simulation(profile=current_profile(request), project_id=project_id, expected_revision=payload.expected_revision)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/{project_id}/gantt/planning/versions/{version_id}/restore", response=dict[str, Any], auth=auth)
+def restore_project_planning_endpoint(request, project_id: int, version_id: int, payload: ProjectScheduleRevisionRequestSchema):
+    from edilcloud.modules.projects.gantt_planning import restore_project_schedule_version
+    try:
+        return restore_project_schedule_version(profile=current_profile(request), project_id=project_id,
+                                                version_id=version_id, expected_revision=payload.expected_revision)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.get("/{project_id}/gantt/planning/source", auth=auth)
+def download_project_planning_source_endpoint(request, project_id: int):
+    from pathlib import Path
+    from edilcloud.modules.projects.gantt_planning import _authorized_project
+    from edilcloud.modules.projects.models import ProjectSchedulePlan
+    try:
+        project, _ = _authorized_project(current_profile(request), project_id, edit=True)
+        plan = ProjectSchedulePlan.objects.filter(project=project).first()
+        if plan is None or not plan.original_file:
+            raise ValueError("File originale non disponibile.")
+        response = FileResponse(plan.original_file.open("rb"), as_attachment=True, filename=Path(plan.original_file.name).name)
+        response["Cache-Control"] = "private, no-store"
+        return response
+    except (ValueError, OSError) as exc:
+        raise HttpError(404, "File originale non disponibile per questo progetto.") from exc
+
+
+@router.get("/{project_id}/gantt/planning/versions/{version_id}/download", auth=auth)
+def download_project_planning_version_endpoint(request, project_id: int, version_id: int):
+    from edilcloud.modules.projects.gantt_planning import _authorized_project
+    try:
+        project, _ = _authorized_project(current_profile(request), project_id, edit=True)
+        version = project.schedule_versions.filter(id=version_id).first()
+        if version is None:
+            raise ValueError("Versione non disponibile.")
+        response = HttpResponse(json.dumps({"contract_version": 3, "project_id": project.id, "label": version.label,
+                                            "snapshot": version.snapshot, "source_xml": version.source_xml}, ensure_ascii=False), content_type="application/json")
+        response["Content-Disposition"] = f'attachment; filename="gantt-backup-{project.id}-{version.id}.json"'
+        response["Cache-Control"] = "private, no-store"
+        return response
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
 @router.post("/{project_id}/gantt/import/preview", response=dict[str, Any], auth=auth)
 def preview_project_gantt_import_endpoint(request, project_id: int):
     try:
@@ -1055,6 +1140,8 @@ def create_project_gantt_link_endpoint(
             target_ref=payload.target,
             link_type=payload.type,
             lag_days=payload.lag_days,
+            lag_value=payload.lag_value,
+            lag_unit=payload.lag_unit,
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
@@ -1077,6 +1164,8 @@ def update_project_gantt_link_endpoint(
             target_ref=payload.target,
             link_type=payload.type,
             lag_days=payload.lag_days,
+            lag_value=payload.lag_value,
+            lag_unit=payload.lag_unit,
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc

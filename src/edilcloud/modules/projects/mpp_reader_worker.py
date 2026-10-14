@@ -102,7 +102,7 @@ def _lag_to_days(lag_value, minutes_per_day: int) -> int:
     return int(round(value))
 
 
-def _read_project(path: Path) -> tuple[list[dict[str, Any]], int]:
+def _read_project(path: Path) -> tuple[list[dict[str, Any]], int, str]:
     try:
         import mpxj  # noqa: F401
         import jpype
@@ -114,12 +114,22 @@ def _read_project(path: Path) -> tuple[list[dict[str, Any]], int]:
         jpype.startJVM(convertStrings=True)
 
     from org.mpxj.reader import UniversalProjectReader
+    from org.mpxj.mspdi import MSPDIWriter
+    from java.io import ByteArrayOutputStream
 
     project_file = UniversalProjectReader().read(str(path))
     if project_file is None:
         raise RuntimeError(
             "Impossibile leggere il file MPP. Verifica che non sia corrotto o protetto da password."
         )
+
+    xml_output = ByteArrayOutputStream()
+    writer = MSPDIWriter()
+    writer.setMicrosoftProjectCompatibleOutput(False)
+    writer.write(project_file, xml_output)
+    from edilcloud.modules.projects.gantt_contract import preserve_task_uids
+    source_xml = preserve_task_uids(str(xml_output.toString("UTF-8")),
+                                    {str(task.getID()): str(task.getUniqueID()) for task in project_file.getTasks()})
 
     minutes_per_day = 480
     try:
@@ -132,7 +142,7 @@ def _read_project(path: Path) -> tuple[list[dict[str, Any]], int]:
     raw_tasks: list[dict[str, Any]] = []
     tasks = project_file.getTasks()
     if tasks is None:
-        return raw_tasks, minutes_per_day
+        return raw_tasks, minutes_per_day, source_xml
 
     for index in range(tasks.size()):
         task = tasks.get(index)
@@ -169,10 +179,13 @@ def _read_project(path: Path) -> tuple[list[dict[str, Any]], int]:
                 "note": _clean_text(task.getNotes()),
                 "company": _first_non_empty(_read_task_text_fields(task)),
                 "predecessors": predecessors,
+                "source_flags": {"split": bool(task.getWorkSplits()), "recurring": bool(task.getRecurring() or task.getRecurringTask()),
+                                 "external": bool(task.getExternalTask() or task.getExternalProject()),
+                                 "inactive": not task.getActive()},
             }
         )
 
-    return raw_tasks, minutes_per_day
+    return raw_tasks, minutes_per_day, source_xml
 
 
 def main(argv: list[str]) -> int:
@@ -186,7 +199,7 @@ def main(argv: list[str]) -> int:
         return 1
 
     try:
-        raw_tasks, minutes_per_day = _read_project(mpp_path)
+        raw_tasks, minutes_per_day, source_xml = _read_project(mpp_path)
     except Exception as exc:  # noqa: BLE001
         print(_clean_text(exc) or "Errore durante lettura file MPP.", file=sys.stderr)
         return 1
@@ -194,6 +207,7 @@ def main(argv: list[str]) -> int:
     payload = {
         "minutes_per_day": minutes_per_day,
         "raw_tasks": raw_tasks,
+        "source_xml": source_xml,
     }
     print(json.dumps(payload, ensure_ascii=False))
     return 0

@@ -19,6 +19,7 @@ from urllib.parse import quote
 import uuid
 
 import httpx
+from edilcloud.openai_models import resolve_text_model, responses_generation_options
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -609,8 +610,8 @@ def resolve_project_content_language(
 def project_content_translation_model() -> str:
     configured = getattr(settings, "PROJECT_CONTENT_TRANSLATION_MODEL", "").strip()
     if configured:
-        return configured
-    return getattr(settings, "AI_DRAFT_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
+        return resolve_text_model(configured)
+    return resolve_text_model(getattr(settings, "AI_DRAFT_MODEL", "gpt-6-luna"))
 
 
 def extract_openai_output_text(payload: dict[str, Any]) -> str:
@@ -720,7 +721,8 @@ def generate_project_content_translation(
                     ],
                 },
             ],
-            "temperature": 0.1,
+            **responses_generation_options(model=project_content_translation_model(), temperature=0.1,
+                                           reasoning_effort=getattr(settings, "PROJECT_CONTENT_TRANSLATION_REASONING_EFFORT", "none")),
             "max_output_tokens": 1600,
         },
         timeout=30.0,
@@ -2370,6 +2372,7 @@ def serialize_schedule_link(link: ProjectScheduleLink) -> dict:
         "type": link.link_type,
         "lag_days": link.lag_days,
         "origin": link.origin or None,
+        "schedule_metadata": link.schedule_metadata,
     }
 
 
@@ -2391,6 +2394,8 @@ def create_project_gantt_link(
     target_ref: str,
     link_type: str | None = None,
     lag_days: int | None = None,
+    lag_value: float | None = None,
+    lag_unit: str = "days",
 ) -> dict:
     project, membership, _members = get_project_with_team_context(
         profile=profile, project_id=project_id
@@ -2398,6 +2403,9 @@ def create_project_gantt_link(
     if not can_edit_project(membership):
         raise ValueError("Non hai permessi per modificare i vincoli del Gantt.")
 
+    from edilcloud.modules.projects.gantt_planning import capture_schedule_version
+    Project.objects.select_for_update().get(id=project.id)
+    capture_schedule_version(project=project, profile=profile, label="Prima della nuova dipendenza")
     link = create_project_schedule_link_record(
         project=project,
         source_ref=source_ref,
@@ -2406,6 +2414,8 @@ def create_project_gantt_link(
         lag_days=lag_days,
         origin="manual",
         apply_constraints=True,
+        lag_value=lag_value,
+        lag_unit=lag_unit,
     )
     emit_project_realtime_event(
         event_type="schedule.link.created",
@@ -2438,6 +2448,8 @@ def update_project_gantt_link(
     target_ref: str | None = None,
     link_type: str | None = None,
     lag_days: int | None = None,
+    lag_value: float | None = None,
+    lag_unit: str = "days",
 ) -> dict:
     project, membership, _members = get_project_with_team_context(
         profile=profile, project_id=project_id
@@ -2450,12 +2462,17 @@ def update_project_gantt_link(
         raise ValueError("Vincolo Gantt non trovato.")
 
     previous_payload = serialize_schedule_link(link)
+    from edilcloud.modules.projects.gantt_planning import capture_schedule_version
+    Project.objects.select_for_update().get(id=project.id)
+    capture_schedule_version(project=project, profile=profile, label="Prima della modifica della dipendenza")
     link = update_project_schedule_link_record(
         link=link,
         source_ref=source_ref,
         target_ref=target_ref,
         link_type=link_type,
         lag_days=lag_days,
+        lag_value=lag_value,
+        lag_unit=lag_unit,
         apply_constraints=True,
     )
     emit_project_realtime_event(
@@ -2517,6 +2534,9 @@ def delete_project_gantt_link(
     if link is None:
         raise ValueError("Vincolo Gantt non trovato.")
 
+    from edilcloud.modules.projects.gantt_planning import capture_schedule_version
+    Project.objects.select_for_update().get(id=project.id)
+    capture_schedule_version(project=project, profile=profile, label="Prima della rimozione della dipendenza")
     payload = serialize_schedule_link(link)
     delete_project_schedule_link_record(link=link)
     emit_project_realtime_event(
@@ -2901,11 +2921,11 @@ def get_project_team_compliance(*, profile: Profile, project_id: int) -> dict:
 
 def project_tasks_queryset(project: Project):
     return (
-        project.tasks.select_related("project", "assigned_company")
+        project.tasks.select_related("project", "assigned_company").defer("schedule_metadata")
         .prefetch_related(
             Prefetch(
                 "activities",
-                queryset=ProjectActivity.objects.order_by("datetime_start", "id").prefetch_related(
+                queryset=ProjectActivity.objects.defer("schedule_metadata").order_by("datetime_start", "id").prefetch_related(
                     Prefetch("workers", queryset=Profile.objects.select_related("workspace", "user"))
                 ),
             )
@@ -3012,6 +3032,7 @@ def serialize_gantt_import_phase(phase: ImportedPhase) -> dict:
         "company_label": phase.company_label or None,
         "note": phase.note or None,
         "activity_count": len(phase.activities),
+        "schedule_metadata": phase.schedule_metadata,
         "activities": [
             {
                 "ref": activity.ref,
@@ -3021,6 +3042,7 @@ def serialize_gantt_import_phase(phase: ImportedPhase) -> dict:
                 "progress": activity.progress,
                 "description": activity.description or None,
                 "note": activity.note or None,
+                "schedule_metadata": activity.schedule_metadata,
             }
             for activity in phase.activities
         ],
@@ -3033,6 +3055,7 @@ def serialize_gantt_import_link(link: ImportedLink) -> dict:
         "target_ref": link.target_ref,
         "type": link.link_type,
         "lag_days": link.lag_days,
+        "schedule_metadata": link.schedule_metadata,
     }
 
 
@@ -3074,6 +3097,12 @@ def build_project_gantt_import_preview(
         "detected_companies": imported_plan.detected_company_labels,
         "unresolved_companies": unresolved_company_labels,
         "replace_supported": True,
+        "planning": {"contract_version": 3,
+                     "source_preserved": bool(imported_plan.source_xml),
+                     "constraints": sum(row.get("constraint_type", "asap") not in {"asap", "alap"} for row in imported_plan.schedule_metadata.get("rows", [])),
+                     "deadlines": sum(bool(row.get("deadline")) for row in imported_plan.schedule_metadata.get("rows", [])),
+                     "calendars": len(imported_plan.schedule_metadata.get("calendars", [])),
+                     "source_rows": len(imported_plan.schedule_metadata.get("rows", []))},
     }
 
 
@@ -3083,21 +3112,21 @@ def create_project_schedule_link(
     imported_link: ImportedLink,
     ref_to_task: dict[str, ProjectTask],
     ref_to_activity: dict[str, ProjectActivity],
-) -> None:
+) -> bool:
     source_task = ref_to_task.get(imported_link.source_ref)
     source_activity = ref_to_activity.get(imported_link.source_ref)
     target_task = ref_to_task.get(imported_link.target_ref)
     target_activity = ref_to_activity.get(imported_link.target_ref)
     if (source_task is None) == (source_activity is None):
-        return
+        return False
     if (target_task is None) == (target_activity is None):
-        return
+        return False
     source_ref = schedule_link_entity_ref(task=source_task, activity=source_activity)
     target_ref = schedule_link_entity_ref(task=target_task, activity=target_activity)
     if not source_ref or not target_ref:
-        return
+        return False
     try:
-        create_project_schedule_link_record(
+        record = create_project_schedule_link_record(
             project=project,
             source_ref=source_ref,
             target_ref=target_ref,
@@ -3110,8 +3139,11 @@ def create_project_schedule_link(
             origin="import",
             apply_constraints=False,
         )
+        record.schedule_metadata = imported_link.schedule_metadata
+        record.save(update_fields=("schedule_metadata",))
     except ValueError:
-        return
+        return False
+    return True
 
 
 def preview_project_gantt_import(*, profile: Profile, project_id: int, uploaded_file) -> dict:
@@ -3150,6 +3182,17 @@ def apply_project_gantt_import(
     )
     company_lookup = build_project_gantt_company_lookup(project=project, members=members)
 
+    from edilcloud.modules.projects.gantt_planning import capture_schedule_version
+    from edilcloud.modules.projects.models import ProjectSchedulePlan
+    Project.objects.select_for_update().get(id=project.id)
+    if imported_plan.source_xml and not replace_existing and ProjectSchedulePlan.objects.filter(project=project).exclude(source_xml="").exists():
+        raise ValueError("Questo progetto ha già un piano importato: usa la sostituzione dopo aver verificato il backup, oppure modifica il piano esistente.")
+    if replace_existing and (project.posts.filter(Q(task__isnull=False) | Q(activity__isnull=False)).exists()
+                             or project.tasks.filter(progress__gt=0).exists()
+                             or ProjectActivity.objects.filter(task__project=project, progress__gt=0).exists()):
+        raise ValueError("Il piano contiene lavoro già registrato. La sostituzione non può cancellare lavorazioni o post: modifica il piano esistente.")
+    capture_schedule_version(project=project, profile=profile, label="Prima dell'importazione del Gantt")
+
     if replace_existing:
         project.schedule_links.all().delete()
         project.tasks.all().delete()
@@ -3169,6 +3212,7 @@ def apply_project_gantt_import(
             date_end=phase.date_end,
             progress=normalize_project_progress(phase.progress),
             note=normalize_text(phase.note),
+            schedule_metadata=phase.schedule_metadata,
         )
         ref_to_task[phase.ref] = task
         created_tasks.append(task)
@@ -3190,6 +3234,12 @@ def apply_project_gantt_import(
                 datetime.combine(activity_end_date, datetime.min.time()),
                 timezone.get_current_timezone(),
             )
+            if activity_seed.schedule_metadata.get("start"):
+                precise = datetime.fromisoformat(activity_seed.schedule_metadata["start"])
+                start_at = timezone.make_aware(precise) if timezone.is_naive(precise) else precise
+            if activity_seed.schedule_metadata.get("end"):
+                precise = datetime.fromisoformat(activity_seed.schedule_metadata["end"])
+                end_at = timezone.make_aware(precise) if timezone.is_naive(precise) else precise
             activity = ProjectActivity.objects.create(
                 task=task,
                 title=normalize_text(activity_seed.title) or "Attivita importata",
@@ -3199,18 +3249,41 @@ def apply_project_gantt_import(
                 datetime_start=start_at,
                 datetime_end=end_at,
                 note=normalize_text(activity_seed.note),
+                schedule_metadata=activity_seed.schedule_metadata,
             )
             ref_to_activity[activity_seed.ref] = activity
             created_activity_count += 1
 
     project_company_colors_for_context(project=project, members=members, tasks=created_tasks)
+    applied_link_count = 0
     for imported_link in imported_plan.links:
-        create_project_schedule_link(
+        applied = create_project_schedule_link(
             project=project,
             imported_link=imported_link,
             ref_to_task=ref_to_task,
             ref_to_activity=ref_to_activity,
         )
+        applied_link_count += bool(applied)
+        if not applied:
+            preview["warnings"].append({"code": "operational-link-not-applied", "level": "warning",
+                                        "message": f"Relazione {imported_link.source_ref} → {imported_link.target_ref} non applicata al piano operativo; verificare il piano originale conservato."})
+    preview["summary"]["links"] = applied_link_count
+    preview["summary"]["warnings"] = len(preview["warnings"])
+    if imported_plan.source_xml:
+        import hashlib
+        from django.core.files.base import ContentFile
+        uploaded_file.seek(0)
+        source_bytes = uploaded_file.read()
+        plan, _ = ProjectSchedulePlan.objects.get_or_create(project=project)
+        plan.source_xml = imported_plan.source_xml
+        plan.metadata = {**imported_plan.schedule_metadata, "import_warnings": preview["warnings"],
+                         "entity_map": {str(entity.schedule_metadata["uid"]): f"{kind}-{entity.id}"
+                                        for kind, entities in (("task", ref_to_task.values()), ("activity", ref_to_activity.values()))
+                                        for entity in entities if entity.schedule_metadata.get("uid")}}
+        plan.source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+        plan.original_file.save(Path(uploaded_file.name).name, ContentFile(source_bytes), save=False)
+        plan.save()
+        capture_schedule_version(project=project, profile=profile, label="Piano originale importato")
 
     emit_project_realtime_event(
         event_type="gantt.imported",
@@ -3222,7 +3295,7 @@ def apply_project_gantt_import(
             "replace_existing": replace_existing,
             "phase_count": len(created_tasks),
             "activity_count": created_activity_count,
-            "link_count": len(imported_plan.links),
+            "link_count": applied_link_count,
             "detected_format": imported_plan.detected_format,
             "source_system": imported_plan.source_system,
         },
@@ -4487,6 +4560,9 @@ def update_project_task(
     previous_starred = task.starred
     previous_assigned_company_id = task.assigned_company_id
     previous_assigned_company_name = task.assigned_company.name if task.assigned_company else None
+    dates_changed = task.date_start != date_start or task.date_end != date_end
+    from edilcloud.modules.projects.gantt_planning import prepare_professional_date_edit, validate_professional_entity_dates, anchor_professional_date_edit
+    professional_edit = prepare_professional_date_edit(project=project, profile=profile) if dates_changed else False
 
     task.name = normalize_text(name) or task.name
     task.date_start = date_start
@@ -4510,7 +4586,16 @@ def update_project_task(
         shifted_activity_refs = shift_task_activities_only(
             task_id=task.id, delta_days=shift_delta_days
         )
+        if professional_edit:
+            for child in ProjectActivity.objects.filter(task=task):
+                validate_professional_entity_dates(child)
+                anchor_professional_date_edit(child)
     sync_task_bounds_to_activities(task_id=task.id)
+    if professional_edit:
+        task.refresh_from_db()
+        validate_professional_entity_dates(task)
+        if not task.activities.exists():
+            anchor_professional_date_edit(task)
     propagate_project_schedule_delays(
         project=project,
         seed_refs=[
@@ -4779,6 +4864,9 @@ def update_task_activity(
     previous_starred = activity.starred
     previous_worker_ids = set(activity.workers.values_list("id", flat=True))
     previous_worker_names = [profile_display_name(worker) for worker in activity.workers.all()]
+    dates_changed = activity.datetime_start != datetime_start or activity.datetime_end != datetime_end
+    from edilcloud.modules.projects.gantt_planning import prepare_professional_date_edit, validate_professional_entity_dates, anchor_professional_date_edit
+    professional_edit = prepare_professional_date_edit(project=activity.task.project, profile=profile) if dates_changed else False
 
     next_progress = (
         normalize_project_progress(progress)
@@ -4800,12 +4888,18 @@ def update_task_activity(
     activity.note = normalize_text(note)
     activity.alert = bool(alert)
     activity.starred = bool(starred)
+    if professional_edit:
+        validate_professional_entity_dates(activity)
     activity.save()
+    if professional_edit:
+        anchor_professional_date_edit(activity)
     activity.workers.set(
         resolve_project_member_profile_ids(project=activity.task.project, ids=workers or [])
     )
     activity.refresh_from_db()
     expanded_task_ref = sync_task_bounds_to_activities(task_id=activity.task_id)
+    if professional_edit and expanded_task_ref:
+        validate_professional_entity_dates(ProjectTask.objects.get(id=activity.task_id))
     propagate_seed_refs = [
         schedule_link_entity_ref(activity=activity),
         expanded_task_ref,

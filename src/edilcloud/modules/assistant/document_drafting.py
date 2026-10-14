@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 import httpx
+from edilcloud.openai_models import resolve_text_model, responses_generation_options
 from django.conf import settings
 
 from edilcloud.modules.assistant.services import (
@@ -455,14 +456,14 @@ PRINT_JSON_SYSTEM_PROMPTS: dict[DocumentType, str] = {
 def document_draft_model() -> str:
     configured = normalize_text(getattr(settings, "AI_DRAFT_MODEL", ""))
     if configured:
-        return configured
-    return normalize_text(getattr(settings, "AI_ASSISTANT_MODEL", "")) or "gpt-4o-mini"
+        return resolve_text_model(configured)
+    return resolve_text_model(normalize_text(getattr(settings, "AI_ASSISTANT_MODEL", "")))
 
 
 def document_translation_model() -> str:
     configured = normalize_text(getattr(settings, "PROJECT_CONTENT_TRANSLATION_MODEL", ""))
     if configured:
-        return configured
+        return resolve_text_model(configured)
     return document_draft_model()
 
 
@@ -2537,7 +2538,7 @@ def invoke_openai_text(
             "Content-Type": "application/json",
         },
         json={
-            "model": model,
+            "model": resolve_text_model(model),
             "input": [
                 {
                     "role": "system",
@@ -2548,7 +2549,8 @@ def invoke_openai_text(
                     "content": [{"type": "input_text", "text": user_prompt}],
                 },
             ],
-            "temperature": temperature,
+            **responses_generation_options(model=model, temperature=temperature,
+                                           reasoning_effort=getattr(settings, "AI_DRAFT_REASONING_EFFORT", "low")),
             "max_output_tokens": max_output_tokens,
         },
         timeout=45.0,

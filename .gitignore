@@ -42,5 +42,6 @@ firebase-admin*.json
 service-account*.json
 
 # IDE
+private-storage/
 .idea/
 .vscode/

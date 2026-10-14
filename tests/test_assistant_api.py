@@ -845,9 +845,9 @@ def test_project_audio_transcription_allows_empty_openai_text(monkeypatch, setti
     assert result == {
         "text": "",
         "language": "it",
-        "model": "gpt-4o-mini-transcribe",
+        "model": "gpt-4o-transcribe",
     }
-    assert captured["data"]["model"] == "gpt-4o-mini-transcribe"
+    assert captured["data"]["model"] == "gpt-4o-transcribe"
     assert captured["data"]["language"] == "it"
     assert captured["data"]["prompt"] == "nota cantiere"
 
