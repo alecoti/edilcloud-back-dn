@@ -235,8 +235,8 @@ jobs:
             KEEP_PREVIOUS_SLOT_HOT="${KEEP_PREVIOUS_SLOT_HOT:-false}"
 
             if [ "${DEPLOY_STRATEGY}" = "blue_green" ] && [ "${PROXY_SWITCH_STRATEGY}" = "none" ]; then
-              echo "Blue/green requested but proxy switching is disabled. Falling back to rolling deploy."
-              DEPLOY_STRATEGY="rolling"
+              echo "Blue/green requires a configured proxy switch. Refusing to interrupt the live slot." >&2
+              return 1
             fi
           }
 
@@ -374,12 +374,12 @@ jobs:
 
           start_slot_worker() {
             local slot="$1"
-            compose_cmd up -d "$(slot_worker_service "${slot}")"
+            compose_cmd up -d "$(slot_worker_service "${slot}")" || return 1
             if compose_cmd config --services | grep -Fxq "$(slot_push_worker_service "${slot}")"; then
-              compose_cmd up -d "$(slot_push_worker_service "${slot}")"
+              compose_cmd up -d "$(slot_push_worker_service "${slot}")" || return 1
             fi
             if compose_cmd config --services | grep -Fxq "$(slot_document_worker_service "${slot}")"; then
-              compose_cmd up -d "$(slot_document_worker_service "${slot}")"
+              compose_cmd up -d "$(slot_document_worker_service "${slot}")" || return 1
             fi
           }
 
@@ -460,15 +460,15 @@ jobs:
           }
 
           deploy_blue_green() {
-            build_slot "${NEXT_SLOT}"
-            start_slot_web "${NEXT_SLOT}"
+            build_slot "${NEXT_SLOT}" || return 1
+            start_slot_web "${NEXT_SLOT}" || return 1
 
             if ! healthcheck "$(slot_port "${NEXT_SLOT}")"; then
               return 1
             fi
 
-            switch_live_backend "$(slot_port "${NEXT_SLOT}")"
-            start_slot_worker "${NEXT_SLOT}"
+            switch_live_backend "$(slot_port "${NEXT_SLOT}")" || return 1
+            start_slot_worker "${NEXT_SLOT}" || return 1
             compose_cmd stop "$(slot_worker_service "${ACTIVE_SLOT}")" "$(slot_push_worker_service "${ACTIVE_SLOT}")" || true
             if compose_cmd config --services | grep -Fxq "$(slot_document_worker_service "${ACTIVE_SLOT}")"; then
               compose_cmd stop "$(slot_document_worker_service "${ACTIVE_SLOT}")" || true

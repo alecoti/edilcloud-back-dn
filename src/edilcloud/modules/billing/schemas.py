@@ -65,6 +65,7 @@ class BillingStorageMetricSchema(Schema):
 
 
 class BillingAITokensMetricSchema(Schema):
+    unlimited: bool = False
     monthly_included: int
     topup_balance: int
     total_available: int

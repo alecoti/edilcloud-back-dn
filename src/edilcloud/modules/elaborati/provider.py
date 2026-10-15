@@ -48,13 +48,15 @@ def structured_response(
     budget = len(json.dumps(body, ensure_ascii=False).encode()) + max_output_tokens
     job.refresh_from_db(fields=("consumed_tokens", "reserved_tokens"))
     remaining = job.reserved_tokens - job.consumed_tokens
+    from edilcloud.modules.billing.services import ai_quota_is_unlimited, get_workspace_billing_account
+    unlimited = ai_quota_is_unlimited(get_workspace_billing_account(job.revision.elaborato.project.workspace))
     from .jobs import renew_lease
 
     renew_lease(job)
     try:
         # Do not automatically retry billable requests after ambiguous timeouts.
         with httpx.Client(timeout=httpx.Timeout(240, connect=15), follow_redirects=False) as client:
-            if budget > remaining:
+            if budget > remaining and not unlimited:
                 # Count precisely before rejecting a source-rich weekly report.
                 count = client.post(
                     f"{settings.OPENAI_API_BASE_URL.rstrip('/')}/responses/input_tokens",

@@ -572,6 +572,12 @@ def calculate_account_ai_usage(account: BillingAccount, *, reference: datetime |
     }
 
 
+def ai_quota_is_unlimited(account: BillingAccount) -> bool:
+    """Administrative override, never writable through customer APIs."""
+    metadata = getattr(account, "metadata", None)
+    return isinstance(metadata, dict) and metadata.get("ai_quota_unlimited") is True
+
+
 def entitlement_snapshot(account: BillingAccount) -> dict[str, Any]:
     workspaces_used = active_workspace_count(account)
     seats_used = active_seat_count(account)
@@ -607,6 +613,7 @@ def entitlement_snapshot(account: BillingAccount) -> dict[str, Any]:
             "remaining_bytes": max(storage_limit - storage_used, 0),
         },
         "ai_tokens": {
+            "unlimited": ai_quota_is_unlimited(account),
             "monthly_included": int(account.monthly_ai_tokens_base),
             "topup_balance": int(account.ai_token_balance_topup),
             "total_available": ai_total,
@@ -740,6 +747,8 @@ def assert_ai_request_headroom(workspace: Workspace, *, minimum_headroom: int = 
     if not settings.AI_TOKEN_QUOTA_ENFORCED:
         return
     account = get_workspace_billing_account(workspace)
+    if ai_quota_is_unlimited(account):
+        return
     snapshot = entitlement_snapshot(account)
     if snapshot["ai_tokens"]["remaining_this_period"] < max(minimum_headroom, 1):
         raise ValueError(
@@ -750,6 +759,8 @@ def assert_ai_request_headroom(workspace: Workspace, *, minimum_headroom: int = 
 
 def apply_ai_usage_to_billing(*, workspace: Workspace, total_tokens: int, reference_id: str) -> None:
     account = get_workspace_billing_account(workspace)
+    if ai_quota_is_unlimited(account):
+        return  # Actual provider usage remains recorded; no purchased credits are deducted.
     included = int(account.monthly_ai_tokens_base)
     ai_usage = calculate_account_ai_usage(account)
     current_used = int(ai_usage["used"])

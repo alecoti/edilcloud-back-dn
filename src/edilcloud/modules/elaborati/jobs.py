@@ -4,7 +4,8 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import close_old_connections, transaction
-from django.db.models import F, Sum
+from django.db.models import F, Sum, Value
+from django.db.models.functions import Greatest
 from django.utils import timezone
 from ninja.errors import HttpError
 
@@ -40,6 +41,7 @@ def queue_job(*, revision, profile, action, key, payload=None, input_version=Non
         account_workspace_ids,
         entitlement_snapshot,
         get_workspace_billing_account,
+        ai_quota_is_unlimited,
     )
 
     workspace = revision.elaborato.project.workspace
@@ -49,11 +51,11 @@ def queue_job(*, revision, profile, action, key, payload=None, input_version=Non
         DocumentJob.objects.filter(
             revision__elaborato__project__workspace_id__in=account_workspace_ids(account),
             state__in=("queued", "running"),
-        ).aggregate(total=Sum(F("reserved_tokens") - F("consumed_tokens")))["total"]
+        ).aggregate(total=Sum(Greatest(F("reserved_tokens") - F("consumed_tokens"), Value(0))))["total"]
         or 0
     )
     tokens = 90_000 if action == "generate" else 45_000
-    if settings.AI_TOKEN_QUOTA_ENFORCED:
+    if settings.AI_TOKEN_QUOTA_ENFORCED and not ai_quota_is_unlimited(account):
         remaining = entitlement_snapshot(account)["ai_tokens"]["remaining_this_period"]
         if remaining - reserved < tokens:
             raise HttpError(

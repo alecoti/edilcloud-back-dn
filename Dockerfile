@@ -6,6 +6,12 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 COPY pyproject.toml README.md /app/
+
+# Cache heavy system dependencies independently from frequently changing source.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg openjdk-21-jre-headless chromium fonts-noto-core fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY demo-assets /app/demo-assets
 COPY docs /app/docs
 COPY loadtests /app/loadtests
@@ -14,10 +20,6 @@ COPY scripts /app/scripts
 COPY manage.py /app/manage.py
 
 RUN mkdir -p /app/media /app/staticfiles
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg openjdk-21-jre-headless chromium fonts-noto-core fonts-noto-cjk \
-    && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip && pip install -e .
 
