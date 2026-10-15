@@ -48,6 +48,9 @@ jobs:
             sleep $((attempt * 10))
           done
 
+      - name: Install PDF test browser
+        run: python -m playwright install --with-deps chromium
+
       - name: Migration drift check
         run: python manage.py makemigrations --dry-run --check --settings=edilcloud.settings.test
 
@@ -261,6 +264,10 @@ jobs:
             printf 'notification-worker-%s\n' "$1"
           }
 
+          slot_document_worker_service() {
+            printf 'elaborati-worker-%s\n' "$1"
+          }
+
           other_slot() {
             if [ "$1" = "blue" ]; then
               printf 'green\n'
@@ -354,6 +361,9 @@ jobs:
             if compose_cmd config --services | grep -Fxq "$(slot_push_worker_service "${slot}")"; then
               services+=("$(slot_push_worker_service "${slot}")")
             fi
+            if compose_cmd config --services | grep -Fxq "$(slot_document_worker_service "${slot}")"; then
+              services+=("$(slot_document_worker_service "${slot}")")
+            fi
             compose_cmd build "${services[@]}"
           }
 
@@ -367,6 +377,9 @@ jobs:
             compose_cmd up -d "$(slot_worker_service "${slot}")"
             if compose_cmd config --services | grep -Fxq "$(slot_push_worker_service "${slot}")"; then
               compose_cmd up -d "$(slot_push_worker_service "${slot}")"
+            fi
+            if compose_cmd config --services | grep -Fxq "$(slot_document_worker_service "${slot}")"; then
+              compose_cmd up -d "$(slot_document_worker_service "${slot}")"
             fi
           }
 
@@ -404,6 +417,9 @@ jobs:
             compose_cmd stop "$(slot_worker_service "${slot}")" "$(slot_web_service "${slot}")" || true
             if compose_cmd config --services | grep -Fxq "$(slot_push_worker_service "${slot}")"; then
               compose_cmd stop "$(slot_push_worker_service "${slot}")" || true
+            fi
+            if compose_cmd config --services | grep -Fxq "$(slot_document_worker_service "${slot}")"; then
+              compose_cmd stop "$(slot_document_worker_service "${slot}")" || true
             fi
           }
 
@@ -454,6 +470,9 @@ jobs:
             switch_live_backend "$(slot_port "${NEXT_SLOT}")"
             start_slot_worker "${NEXT_SLOT}"
             compose_cmd stop "$(slot_worker_service "${ACTIVE_SLOT}")" "$(slot_push_worker_service "${ACTIVE_SLOT}")" || true
+            if compose_cmd config --services | grep -Fxq "$(slot_document_worker_service "${ACTIVE_SLOT}")"; then
+              compose_cmd stop "$(slot_document_worker_service "${ACTIVE_SLOT}")" || true
+            fi
 
             if [ "${KEEP_PREVIOUS_SLOT_HOT}" != "true" ]; then
               compose_cmd stop "$(slot_web_service "${ACTIVE_SLOT}")" || true

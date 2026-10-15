@@ -355,3 +355,43 @@ services:
       - ./.runtime/gantt-private:/app/private-storage
       - ./staticfiles:/app/staticfiles
     command: ["python", "manage.py", "process_notification_pushes", "--interval", "10"]
+
+  elaborati-worker-blue:
+    build:
+      context: .
+    restart: on-failure
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: edilcloud.settings.prod
+      DEBUG: "false"
+      DEPLOY_SLOT: blue
+    depends_on:
+      web-blue:
+        condition: service_healthy
+    volumes:
+      - ./media:/app/media
+      - ./.runtime/gantt-private:/app/private-storage
+      - ./staticfiles:/app/staticfiles
+    command: ["python", "manage.py", "process_elaborati", "--interval", "10"]
+
+  elaborati-worker-green:
+    build:
+      context: .
+    restart: on-failure
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: edilcloud.settings.prod
+      DEBUG: "false"
+      DEPLOY_SLOT: green
+    depends_on:
+      web-green:
+        condition: service_healthy
+    volumes:
+      - ./media:/app/media
+      - ./.runtime/gantt-private:/app/private-storage
+      - ./staticfiles:/app/staticfiles
+    command: ["python", "manage.py", "process_elaborati", "--interval", "10"]

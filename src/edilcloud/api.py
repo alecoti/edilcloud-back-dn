@@ -2,6 +2,7 @@ from ninja import NinjaAPI
 
 from edilcloud.modules.assistant.api import router as assistant_router
 from edilcloud.modules.billing.api import router as billing_router
+from edilcloud.modules.elaborati.api import router as elaborati_router
 from edilcloud.modules.identity.api import router as identity_router
 from edilcloud.modules.notifications.api import router as notifications_router
 from edilcloud.modules.projects.api import (
@@ -29,6 +30,7 @@ api.add_router("/health", health_router)
 api.add_router("/test-center", test_center_router)
 api.add_router("/auth", identity_router)
 api.add_router("/billing", billing_router)
+api.add_router("/elaborati", elaborati_router)
 api.add_router("/workspaces", workspaces_router)
 api.add_router("/companies", companies_router)
 api.add_router("/notifications", notifications_router)

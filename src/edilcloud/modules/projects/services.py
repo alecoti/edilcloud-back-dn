@@ -6789,6 +6789,8 @@ def update_project_document(
     )
     if document is None:
         raise ValueError("Documento non trovato.")
+    if getattr(document, "elaborato_revision", None) is not None:
+        raise ValueError("Questo PDF è una pubblicazione immutabile. Modificalo creando una nuova revisione in Elaborati.")
     _project, membership, _members = get_project_with_team_context(
         profile=profile, project_id=document.project_id
     )
@@ -6884,6 +6886,8 @@ def delete_project_document(*, profile: Profile, document_id: int) -> None:
     document = ProjectDocument.objects.select_related("project").filter(id=document_id).first()
     if document is None:
         raise ValueError("Documento non trovato.")
+    if getattr(document, "elaborato_revision", None) is not None:
+        raise ValueError("Il PDF appartiene allo storico di un elaborato e deve restare consultabile nelle sue revisioni.")
     _project, membership, _members = get_project_with_team_context(
         profile=profile, project_id=document.project_id
     )

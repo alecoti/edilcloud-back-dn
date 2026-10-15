@@ -50,6 +50,9 @@ jobs:
             sleep $((attempt * 10))
           done
 
+      - name: Install PDF test browser
+        run: python -m playwright install --with-deps chromium
+
       - name: Compile operational scripts
         run: python -m py_compile scripts/*.py
 

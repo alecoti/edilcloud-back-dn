@@ -27,6 +27,8 @@ dependencies = [
   "openpyxl>=3.1,<4",
   "xlrd>=2.0,<3",
   "Pillow>=11.2,<12",
+  "playwright>=1.59,<2",
+  "qrcode[pil]>=8.2,<9",
   "pypdfium2>=5.14,<6",
   "jpype1>=1.6,<2",
   "mpxj>=16.1,<17",
@@ -59,6 +61,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "edilcloud.modules.assistant" = ["data/*.json"]
+"edilcloud.modules.elaborati" = ["assets/*.ttf", "assets/*.txt"]
 "edilcloud.modules.identity" = ["templates/**/*.txt", "templates/**/*.html"]
 "edilcloud.modules.workspaces" = ["templates/**/*.txt", "templates/**/*.html"]
 

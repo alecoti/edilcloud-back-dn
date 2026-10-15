@@ -133,6 +133,33 @@ services:
       - ./src:/app/src:ro
     command: ["python", "manage.py", "process_notification_pushes", "--interval", "10"]
 
+  elaborati-worker:
+    image: edilcloud-back-dn-web
+    build:
+      context: .
+    env_file:
+      - .env.local
+    environment:
+      APP_ENV: local
+      DJANGO_SETTINGS_MODULE: edilcloud.settings.local
+      DEBUG: "true"
+      TIME_ZONE: Europe/Rome
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/edilcloud_dn
+      REDIS_URL: redis://redis:6379/0
+      BACKEND_PUBLIC_URL: http://localhost:8000
+      SUPERMEMORY_API_KEY: ""
+      SUPERMEMORY_BASE_URL: ""
+    depends_on:
+      web:
+        condition: service_healthy
+    volumes:
+      - ./media:/app/media
+      - ./private-storage:/app/private-storage
+      - ./staticfiles:/app/staticfiles
+      - ./src:/app/src:ro
+    command: ["python", "manage.py", "process_elaborati", "--interval", "10"]
+
+
 volumes:
   postgres_data:
   redis_data:

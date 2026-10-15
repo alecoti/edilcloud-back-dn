@@ -68,6 +68,7 @@ AI_DRAFT_REASONING_EFFORT = get_env("AI_DRAFT_REASONING_EFFORT", "low")
 PROJECT_CONTENT_TRANSLATION_REASONING_EFFORT = get_env("PROJECT_CONTENT_TRANSLATION_REASONING_EFFORT", "none")
 OPENAI_AUDIO_TRANSCRIPTION_MODEL = resolve_transcription_model(get_env("OPENAI_AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-transcribe"))
 PROJECT_CONTENT_TRANSLATION_MODEL = resolve_text_model(get_env("PROJECT_CONTENT_TRANSLATION_MODEL", get_env("OPENAI_TRANSLATION_MODEL", "gpt-6-luna")))
+ELABORATI_CHROMIUM_EXECUTABLE = get_env("ELABORATI_CHROMIUM_EXECUTABLE", "")
 AI_ASSISTANT_MONTHLY_TOKEN_LIMIT = int(get_env("AI_ASSISTANT_MONTHLY_TOKEN_LIMIT", "100000"))
 AI_TOKEN_QUOTA_ENFORCED = get_bool_env("AI_TOKEN_QUOTA_ENFORCED", True)
 AI_ASSISTANT_MAX_OUTPUT_TOKENS = int(get_env("AI_ASSISTANT_MAX_OUTPUT_TOKENS", "3200"))
@@ -155,6 +156,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "edilcloud.modules.assistant",
     "edilcloud.modules.billing",
+    "edilcloud.modules.elaborati",
     "edilcloud.modules.identity",
     "edilcloud.modules.notifications",
     "edilcloud.modules.projects",

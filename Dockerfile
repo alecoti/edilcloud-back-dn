@@ -16,10 +16,12 @@ COPY manage.py /app/manage.py
 RUN mkdir -p /app/media /app/staticfiles
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg openjdk-21-jre-headless \
+    && apt-get install -y --no-install-recommends ffmpeg openjdk-21-jre-headless chromium fonts-noto-core fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip && pip install -e .
+
+ENV ELABORATI_CHROMIUM_EXECUTABLE=/usr/bin/chromium
 
 EXPOSE 8001
 
