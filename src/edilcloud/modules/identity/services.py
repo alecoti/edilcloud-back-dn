@@ -411,6 +411,10 @@ def revoke_auth_session(auth_session: AuthTokenSession, *, reason: str = "revoke
     auth_session.revoked_at = django_timezone.now()
     auth_session.revoke_reason = reason[:64]
     auth_session.save(update_fields=["revoked_at", "revoke_reason", "updated_at"])
+    from edilcloud.modules.notifications.models import NotificationDevice
+    NotificationDevice.objects.filter(user_id=auth_session.user_id, auth_session_id=auth_session.session_token).update(
+        is_active=False, updated_at=django_timezone.now(),
+    )
     increment_counter("auth.session.revoked", reason=auth_session.revoke_reason)
     logger.info("auth.session.revoked", extra={"event": "auth.session.revoked", "user_id": auth_session.user_id, "reason": auth_session.revoke_reason})
 

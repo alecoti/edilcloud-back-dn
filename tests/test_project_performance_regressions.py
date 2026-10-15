@@ -1,5 +1,5 @@
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -156,7 +156,7 @@ def test_summary_previews_count_comments_without_materializing_threads(monkeypat
             assert len(rows) == 1
             assert rows[0]["comment_count"] == 120
             assert rows[0]["comment_set"] == []
-            assert rows[0]["last_activity_at"] == latest
+            assert datetime.fromisoformat(rows[0]["last_activity_at"]) == latest
     full = services.list_project_feed(profile=owner, project_id=project.id)
     assert len(full["items"][0]["comment_set"]) >= 120
 

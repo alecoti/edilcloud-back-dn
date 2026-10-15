@@ -257,6 +257,10 @@ jobs:
             printf 'assistant-worker-%s\n' "$1"
           }
 
+          slot_push_worker_service() {
+            printf 'notification-worker-%s\n' "$1"
+          }
+
           other_slot() {
             if [ "$1" = "blue" ]; then
               printf 'green\n'
@@ -346,7 +350,11 @@ jobs:
 
           build_slot() {
             local slot="$1"
-            compose_cmd build "$(slot_web_service "${slot}")" "$(slot_worker_service "${slot}")"
+            local services=("$(slot_web_service "${slot}")" "$(slot_worker_service "${slot}")")
+            if compose_cmd config --services | grep -Fxq "$(slot_push_worker_service "${slot}")"; then
+              services+=("$(slot_push_worker_service "${slot}")")
+            fi
+            compose_cmd build "${services[@]}"
           }
 
           start_slot_web() {
@@ -357,6 +365,9 @@ jobs:
           start_slot_worker() {
             local slot="$1"
             compose_cmd up -d "$(slot_worker_service "${slot}")"
+            if compose_cmd config --services | grep -Fxq "$(slot_push_worker_service "${slot}")"; then
+              compose_cmd up -d "$(slot_push_worker_service "${slot}")"
+            fi
           }
 
           start_observability() {
@@ -391,6 +402,9 @@ jobs:
           stop_slot() {
             local slot="$1"
             compose_cmd stop "$(slot_worker_service "${slot}")" "$(slot_web_service "${slot}")" || true
+            if compose_cmd config --services | grep -Fxq "$(slot_push_worker_service "${slot}")"; then
+              compose_cmd stop "$(slot_push_worker_service "${slot}")" || true
+            fi
           }
 
           rollback() {
@@ -439,7 +453,7 @@ jobs:
 
             switch_live_backend "$(slot_port "${NEXT_SLOT}")"
             start_slot_worker "${NEXT_SLOT}"
-            compose_cmd stop "$(slot_worker_service "${ACTIVE_SLOT}")" || true
+            compose_cmd stop "$(slot_worker_service "${ACTIVE_SLOT}")" "$(slot_push_worker_service "${ACTIVE_SLOT}")" || true
 
             if [ "${KEEP_PREVIOUS_SLOT_HOT}" != "true" ]; then
               compose_cmd stop "$(slot_web_service "${ACTIVE_SLOT}")" || true

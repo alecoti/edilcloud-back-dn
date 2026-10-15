@@ -7,6 +7,7 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone as datetime_timezone
 from pathlib import Path
+from email.utils import parsedate_to_datetime
 
 import httpx
 from django.conf import settings
@@ -28,13 +29,14 @@ logger = logging.getLogger(__name__)
 
 _FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 _FCM_CACHE_KEY = "notifications:fcm:access-token"
-_INVALID_TOKEN_CODES = {"UNREGISTERED", "INVALID_ARGUMENT"}
+_INVALID_TOKEN_CODES = {"UNREGISTERED"}
 
 
 class NotificationPushError(Exception):
-    def __init__(self, message: str = "", *, code: str = "") -> None:
+    def __init__(self, message: str = "", *, code: str = "", retry_after_seconds: int = 0) -> None:
         super().__init__(message)
         self.code = (code or "").strip().upper()
+        self.retry_after_seconds = max(0, retry_after_seconds)
 
 
 class NotificationPushInvalidToken(NotificationPushError):
@@ -198,8 +200,8 @@ def build_push_data_payload(notification: Notification) -> dict[str, str]:
         "event_id": _safe_payload_value(notification.event_id),
         "profile_id": _safe_payload_value(notification.recipient_profile_id),
         "kind": _safe_payload_value(notification.kind),
-        "subject": _safe_payload_value(notification.subject),
-        "body": _safe_payload_value(notification.body),
+        "subject": _safe_payload_value(notification.subject)[:120],
+        "body": _safe_payload_value(notification.body)[:240],
         "project_id": _safe_payload_value(notification.project_id),
         "task_id": _safe_payload_value(notification.task_id),
         "activity_id": _safe_payload_value(notification.activity_id),
@@ -319,7 +321,7 @@ def _send_push(*, device: NotificationDevice, notification: Notification) -> str
             timeout=10,
         )
     except httpx.HTTPError as exc:
-        raise NotificationPushError(str(exc)) from exc
+        raise NotificationPushError(type(exc).__name__, code="NETWORK_ERROR") from exc
     if response.status_code >= 200 and response.status_code < 300:
         try:
             payload = response.json()
@@ -343,9 +345,18 @@ def _send_push(*, device: NotificationDevice, notification: Notification) -> str
         if isinstance(error, dict):
             message = str(error.get("message") or "").strip()
     message = message or f"FCM error {response.status_code}"
-    if error_code in _INVALID_TOKEN_CODES:
+    invalid_registration = error_code == "INVALID_ARGUMENT" and "registration token" in message.lower()
+    if error_code in _INVALID_TOKEN_CODES or invalid_registration:
         raise NotificationPushInvalidToken(message, code=error_code)
-    raise NotificationPushError(message, code=error_code)
+    retry_after = response.headers.get("Retry-After", "")
+    try:
+        seconds = int(retry_after)
+    except (ValueError, TypeError):
+        try:
+            seconds = max(0, int((parsedate_to_datetime(retry_after) - timezone.now()).total_seconds()))
+        except (ValueError, TypeError, OverflowError):
+            seconds = 0
+    raise NotificationPushError(message, code=error_code, retry_after_seconds=seconds)
 
 
 def _register_delivery_attempt(*, notification: Notification, device: NotificationDevice) -> tuple[NotificationPushDelivery, dict]:
@@ -369,6 +380,7 @@ def _register_delivery_attempt(*, notification: Notification, device: Notificati
         failed_at=None,
         error_code="",
         error_message="",
+        retry_after_seconds=0,
         provider_message_id="",
         updated_at=now,
     )
@@ -395,6 +407,7 @@ def _mark_delivery_failed(
     status: str,
     error_code: str = "",
     error_message: str = "",
+    retry_after_seconds: int = 0,
 ) -> None:
     now = timezone.now()
     NotificationPushDelivery.objects.filter(id=delivery_id).update(
@@ -402,12 +415,18 @@ def _mark_delivery_failed(
         failed_at=now,
         error_code=(error_code or "").strip().upper()[:64],
         error_message=(error_message or "").strip()[:255],
+        retry_after_seconds=retry_after_seconds,
         provider_message_id="",
         updated_at=now,
     )
 
 
 def dispatch_notification_push(notification: Notification) -> int:
+    actor_user_id = notification.sender_user_id or getattr(notification.sender_profile, "user_id", None)
+    if (notification.sender_profile_id and notification.sender_profile_id == notification.recipient_profile_id) or (
+        actor_user_id and actor_user_id == notification.recipient_profile.user_id
+    ):
+        return 0
     if not push_enabled():
         return 0
 
@@ -429,6 +448,9 @@ def dispatch_notification_push(notification: Notification) -> int:
     now = timezone.now()
     sent = 0
     for device in devices:
+        # A worker retry must not resend to devices already accepted by FCM.
+        if NotificationPushDelivery.objects.filter(notification=notification, device=device, status=NotificationPushDeliveryStatus.SENT).exists():
+            continue
         delivery, _ = _register_delivery_attempt(notification=notification, device=device)
         try:
             provider_message_id = _send_push(device=device, notification=notification)
@@ -451,6 +473,7 @@ def dispatch_notification_push(notification: Notification) -> int:
                 status=NotificationPushDeliveryStatus.FAILED,
                 error_code=exc.code,
                 error_message=str(exc),
+                retry_after_seconds=exc.retry_after_seconds,
             )
             NotificationDevice.objects.filter(id=device.id).update(
                 last_push_error=str(exc)[:255],

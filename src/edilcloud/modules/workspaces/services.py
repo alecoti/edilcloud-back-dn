@@ -280,14 +280,20 @@ def list_workspace_options(user) -> list[dict]:
 
 
 def list_active_profiles(user) -> list[dict]:
+    from django.db.models import IntegerField, OuterRef, Subquery
+    from django.db.models.functions import Coalesce
+    from edilcloud.modules.notifications.models import Notification
+    from edilcloud.modules.projects.models import Project
+    unread = Notification.objects.filter(recipient_profile_id=OuterRef("pk"), read_at__isnull=True).exclude(
+        sender_profile_id=OuterRef("pk")
+    ).exclude(sender_user_id=OuterRef("user_id")).exclude(sender_profile__user_id=OuterRef("user_id")).exclude(
+        recipient_profile__demo_project_hidden=True,
+        project_id__in=Project.objects.filter(is_demo_master=True).values("id"),
+    ).order_by().values("recipient_profile_id").annotate(total=Count("id")).values("total")[:1]
     profiles = (
         Profile.objects.select_related("workspace")
         .annotate(
-            unread_notification_count=Count(
-                "notifications",
-                filter=Q(notifications__read_at__isnull=True),
-                distinct=True,
-            )
+            unread_notification_count=Coalesce(Subquery(unread, output_field=IntegerField()), 0)
         )
         .filter(user=user, is_active=True, workspace__is_active=True)
         .order_by("workspace__name", "id")

@@ -294,8 +294,8 @@ FCM_PUSH_ENABLED = get_bool_env("FCM_PUSH_ENABLED", False)
 FCM_PROJECT_ID = get_env("FCM_PROJECT_ID", "").strip()
 FCM_SERVICE_ACCOUNT_JSON = get_env("FCM_SERVICE_ACCOUNT_JSON", "")
 FCM_SERVICE_ACCOUNT_FILE = get_env("FCM_SERVICE_ACCOUNT_FILE", "").strip()
-FCM_ANDROID_CHANNEL_ID = get_env("FCM_ANDROID_CHANNEL_ID", "edilcloud_notifications").strip() or (
-    "edilcloud_notifications"
+FCM_ANDROID_CHANNEL_ID = get_env("FCM_ANDROID_CHANNEL_ID", "edilcloud_notifications_v3").strip() or (
+    "edilcloud_notifications_v3"
 )
 
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"

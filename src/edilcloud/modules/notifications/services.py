@@ -10,7 +10,7 @@ from edilcloud.modules.notifications.models import (
     NotificationDevice,
     NotificationDevicePlatform,
 )
-from edilcloud.modules.notifications.push import dispatch_notification_push
+from edilcloud.modules.notifications.outbox import enqueue_notification_push
 
 
 def file_url(file_field) -> str | None:
@@ -152,6 +152,7 @@ def build_notification_read_all_event(*, profile_id: int, user_id: int | None, u
     }
 
 
+@transaction.atomic
 def create_notification(
     *,
     recipient_profile,
@@ -172,7 +173,14 @@ def create_notification(
     folder_id: int | None = None,
     document_id: int | None = None,
     data: dict | None = None,
-) -> Notification:
+) -> Notification | None:
+    # A person may belong to the same project through several workspace profiles.
+    # Excluding only the actor profile still sends their own action to their phone.
+    actor_user_id = getattr(sender_user, "id", None) or getattr(sender_profile, "user_id", None)
+    if (sender_profile is not None and sender_profile.id == recipient_profile.id) or (
+        actor_user_id and actor_user_id == recipient_profile.user_id
+    ):
+        return None
     notification = Notification.objects.create(
         recipient_profile=recipient_profile,
         sender_user=sender_user,
@@ -201,9 +209,9 @@ def create_notification(
             profile_id=recipient_profile.id,
             payload=build_notification_event(notification),
         )
-        dispatch_notification_push(notification)
 
-    transaction.on_commit(_publish_notification_side_effects)
+    transaction.on_commit(_publish_notification_side_effects, robust=True)
+    enqueue_notification_push(notification)
     return notification
 
 
@@ -290,12 +298,20 @@ def register_notification_device(
 
     if device.installation_id:
         NotificationDevice.objects.filter(
-            user=user,
             installation_id=device.installation_id,
         ).exclude(id=device.id).update(
             is_active=False,
             updated_at=now,
         )
+
+    raw_session_id = claims.get("sid") or claims.get("session_id")
+    try:
+        session_id = uuid.UUID(str(raw_session_id)) if raw_session_id else None
+    except (ValueError, TypeError):
+        session_id = None
+    if device.auth_session_id != session_id:
+        device.auth_session_id = session_id
+        device.save(update_fields=["auth_session_id", "updated_at"])
 
     return serialize_notification_device(device)
 
@@ -327,7 +343,11 @@ def unregister_notification_device(
 
 
 def visible_notifications_queryset(profile):
+    from django.db.models import Q
     queryset = Notification.objects.filter(recipient_profile=profile)
+    if profile.user_id:
+        queryset = queryset.exclude(Q(sender_user_id=profile.user_id) | Q(sender_profile__user_id=profile.user_id))
+    queryset = queryset.exclude(sender_profile_id=profile.id)
     if profile.demo_project_hidden:
         from edilcloud.modules.projects.models import Project
 
@@ -335,7 +355,10 @@ def visible_notifications_queryset(profile):
     return queryset
 
 
-def list_notifications(*, user, claims: dict, limit: int = 80, count_only: bool = False) -> dict:
+def list_notifications(*, user, claims: dict, limit: int = 80, count_only: bool = False, offset: int = 0, cursor: str | None = None) -> dict:
+    from django.db.models import Q
+    from edilcloud.platform.pagination import decode_activity_cursor, encode_activity_cursor
+
     profile = resolve_notification_profile(user=user, claims=claims)
     if profile is None:
         return {"unread_count": 0, "results": []}
@@ -351,10 +374,51 @@ def list_notifications(*, user, claims: dict, limit: int = 80, count_only: bool 
         )
         .order_by("-created_at", "-id")
     )
+    unread_count = queryset.filter(read_at__isnull=True).count()
+    safe_offset = max(int(offset), 0)
+    if cursor:
+        timestamp, cursor_id = decode_activity_cursor(cursor)
+        queryset = queryset.filter(Q(created_at__lt=timestamp) | Q(created_at=timestamp, id__lt=cursor_id))
+    items = [] if count_only else list(queryset[(0 if cursor else safe_offset):(0 if cursor else safe_offset) + safe_limit + 1])
+    has_more = len(items) > safe_limit
+    items = items[:safe_limit]
     return {
-        "unread_count": queryset.filter(read_at__isnull=True).count(),
-        "results": [] if count_only else [serialize_notification(item) for item in queryset[:safe_limit]],
+        "unread_count": unread_count,
+        "results": [serialize_notification(item) for item in items],
+        "has_more": has_more,
+        "next_offset": safe_offset + safe_limit if has_more else None,
+        "next_cursor": encode_activity_cursor(items[-1].created_at, items[-1].id) if has_more else None,
     }
+
+
+@transaction.atomic
+def mark_notifications_read(*, user, claims: dict, notification_ids: list[int]) -> dict:
+    profile = resolve_notification_profile(user=user, claims=claims)
+    if profile is None:
+        raise ValueError("Profilo notifiche non disponibile.")
+    ids = {value for value in notification_ids if value > 0}
+    if len(ids) > 250:
+        raise ValueError("Massimo 250 notifiche per richiesta.")
+    queryset = visible_notifications_queryset(profile).filter(id__in=ids)
+    read_at = timezone.now()
+    updated = queryset.filter(read_at__isnull=True).update(read_at=read_at, updated_at=read_at)
+    items = list(queryset.select_related("sender_user", "sender_profile__workspace", "sender_profile__user"))
+    result = {
+        "results": [serialize_notification(item) for item in items],
+        "unread_count": visible_notifications_queryset(profile).filter(read_at__isnull=True).count(),
+    }
+    if updated:
+        payload = build_notification_read_all_event(profile_id=profile.id, user_id=profile.user_id, updated=updated)
+        payload["type"] = "notification.read_batch"
+        payload["data"].update({"notification_ids": [item.id for item in items], "read_at": read_at.isoformat(), "unread_count": result["unread_count"]})
+        transaction.on_commit(lambda: publish_notification_read_batch(profile.id, payload))
+    return result
+
+
+def publish_notification_read_batch(profile_id: int, payload: dict) -> None:
+    from edilcloud.platform.realtime.services import publish_notification_event
+
+    publish_notification_event(profile_id=profile_id, payload=payload)
 
 
 @transaction.atomic
@@ -391,7 +455,7 @@ def mark_notification_read(*, user, claims: dict, notification_id: int) -> dict:
 
         transaction.on_commit(_publish_notification_read_side_effect)
 
-    return serialize_notification(notification)
+    return {**serialize_notification(notification), "unread_count": visible_notifications_queryset(profile).filter(read_at__isnull=True).count()}
 
 
 @transaction.atomic
@@ -422,4 +486,4 @@ def mark_all_notifications_read(*, user, claims: dict) -> dict:
 
         transaction.on_commit(_publish_notification_read_all_side_effect)
 
-    return {"ok": True, "updated": updated}
+    return {"ok": True, "updated": updated, "unread_count": visible_notifications_queryset(profile).filter(read_at__isnull=True).count()}

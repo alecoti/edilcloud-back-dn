@@ -49,9 +49,22 @@ class NotificationSchema(Schema):
     sender: NotificationSenderSchema | None = None
     target: NotificationTargetSchema
     data: dict = {}
+    unread_count: int | None = None
 
 
 class NotificationCenterSchema(Schema):
+    unread_count: int
+    results: list[NotificationSchema]
+    has_more: bool = False
+    next_offset: int | None = None
+    next_cursor: str | None = None
+
+
+class NotificationBulkReadRequestSchema(Schema):
+    notification_ids: list[int]
+
+
+class NotificationBulkReadSchema(Schema):
     unread_count: int
     results: list[NotificationSchema]
 
@@ -59,6 +72,7 @@ class NotificationCenterSchema(Schema):
 class NotificationMarkAllSchema(Schema):
     ok: bool
     updated: int
+    unread_count: int = 0
 
 
 class NotificationDeviceRegisterInputSchema(Schema):

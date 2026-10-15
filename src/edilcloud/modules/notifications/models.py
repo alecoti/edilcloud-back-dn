@@ -2,6 +2,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from edilcloud.modules.workspaces.models import Profile, TimestampedModel
 
@@ -76,6 +77,7 @@ class NotificationPushDeliveryStatus(models.TextChoices):
 
 
 class NotificationDevice(TimestampedModel):
+    auth_session_id = models.UUIDField(null=True, blank=True, db_index=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -143,6 +145,7 @@ class NotificationPushDelivery(TimestampedModel):
     failed_at = models.DateTimeField(null=True, blank=True)
     error_code = models.CharField(max_length=64, blank=True)
     error_message = models.CharField(max_length=255, blank=True)
+    retry_after_seconds = models.PositiveIntegerField(default=0)
     provider_message_id = models.CharField(max_length=255, blank=True)
     payload_snapshot = models.JSONField(default=dict, blank=True)
 
@@ -165,3 +168,18 @@ class NotificationPushDelivery(TimestampedModel):
             f"notification:{self.notification_id} -> "
             f"device:{self.device_id} ({self.status})"
         )
+
+
+class NotificationPushJob(TimestampedModel):
+    """Durable outbox. The API never waits for the external push provider."""
+
+    notification = models.OneToOneField(Notification, on_delete=models.CASCADE, related_name="push_job", primary_key=True)
+    state = models.CharField(max_length=16, default="pending")
+    attempt_count = models.PositiveIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    lease = models.UUIDField(null=True, blank=True)
+    last_error = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=("state", "next_attempt_at"), name="notifications_job_due_idx")]

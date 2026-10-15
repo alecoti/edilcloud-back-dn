@@ -1806,6 +1806,10 @@ def create_project_notification(
     data: dict | None = None,
 ) -> None:
     from edilcloud.modules.notifications.services import create_notification
+    from edilcloud.modules.projects.notification_preferences import project_notification_allowed
+
+    if project_id and not project_notification_allowed(profile=recipient_profile, project_id=project_id, kind=kind):
+        return
 
     create_notification(
         recipient_profile=recipient_profile,
@@ -1985,11 +1989,16 @@ def mark_post_seen_for_profile(
     seen_at: datetime | None = None,
 ) -> ProjectPostSeenState:
     timestamp = seen_at or compute_post_last_activity_at(post=post) or timezone.now()
-    state, _created = ProjectPostSeenState.objects.update_or_create(
+    state, created = ProjectPostSeenState.objects.get_or_create(
         post=post,
         profile=profile,
         defaults={"seen_at": timestamp},
     )
+    if not created:
+        ProjectPostSeenState.objects.filter(pk=state.pk, seen_at__lt=timestamp).update(
+            seen_at=timestamp, updated_at=timezone.now(),
+        )
+        state.refresh_from_db(fields=["seen_at"])
     setattr(post, "_viewer_seen_states", [state])
     return state
 
@@ -2138,10 +2147,10 @@ def serialize_post(
         "sub_task": serialize_activity_context(post.activity),
         "published_date": post.published_date,
         "created_date": post.created_at,
-        "last_activity_at": last_activity_at,
-        "feed_seen_at": viewer_seen_at,
+        "last_activity_at": last_activity_at.isoformat() if last_activity_at else None,
+        "feed_seen_at": viewer_seen_at.isoformat() if viewer_seen_at else None,
         "feed_is_unread": (
-            bool(viewer_profile)
+            bool(viewer_profile) and not post.is_deleted
             and last_activity_at is not None
             and (viewer_seen_at is None or viewer_seen_at < last_activity_at)
         ),
@@ -2215,10 +2224,10 @@ def serialize_post_summary(
         "sub_task": serialize_activity_context(post.activity),
         "published_date": post.published_date,
         "created_date": post.created_at,
-        "last_activity_at": last_activity_at,
-        "feed_seen_at": viewer_seen_at,
+        "last_activity_at": last_activity_at.isoformat() if last_activity_at else None,
+        "feed_seen_at": viewer_seen_at.isoformat() if viewer_seen_at else None,
         "feed_is_unread": (
-            bool(viewer_profile)
+            bool(viewer_profile) and not post.is_deleted
             and last_activity_at is not None
             and (viewer_seen_at is None or viewer_seen_at < last_activity_at)
         ),
@@ -3791,19 +3800,33 @@ def list_project_feed(
     lightweight: bool = False,
     post_id: int | None = None,
     normalized: bool = False,
+    cursor: str | None = None,
+    count_only: bool = False,
 ) -> dict:
+    from edilcloud.modules.projects.feed_read_state import feed_unread_counts
+    from edilcloud.platform.pagination import decode_activity_cursor, encode_activity_cursor
+
     safe_limit = min(max(int(limit or 50), 1), 250)
     safe_offset = max(int(offset or 0), 0)
 
     queryset = accessible_feed_posts_queryset(profile=profile, lightweight=lightweight)
+    counts = feed_unread_counts(profile)
+    if count_only:
+        return {"items": [], "offset": 0, "limit": safe_limit, "has_more": False, "next_offset": None, **counts}
     if post_id is not None:
         queryset = queryset.filter(id=post_id)
     if project_id is not None:
         get_project_for_profile(profile=profile, project_id=project_id)
         queryset = queryset.filter(project_id=project_id)
+    if cursor:
+        activity, cursor_id = decode_activity_cursor(cursor)
+        queryset = queryset.filter(
+            Q(effective_last_activity_at__lt=activity)
+            | Q(effective_last_activity_at=activity, id__lt=cursor_id)
+        )
     posts = list(
         queryset.order_by("-effective_last_activity_at", "-id")[
-            safe_offset : safe_offset + safe_limit + 1
+            (0 if cursor else safe_offset) : (0 if cursor else safe_offset) + safe_limit + 1
         ]
     )
     page_posts = posts[:safe_limit]
@@ -3844,12 +3867,14 @@ def list_project_feed(
 
     has_more = len(posts) > safe_limit
     return {
+        **counts,
         "items": items,
         **({"included": {"profiles": list(profile_directory.values())}, "contract_version": 2} if normalized else {}),
         "offset": safe_offset,
         "limit": safe_limit,
         "has_more": has_more,
         "next_offset": safe_offset + safe_limit if has_more else None,
+        "next_cursor": encode_activity_cursor(page_posts[-1].effective_last_activity_at, page_posts[-1].id) if has_more and page_posts else None,
     }
 
 
@@ -3867,55 +3892,24 @@ def accessible_feed_posts_queryset(*, profile: Profile, lightweight: bool = Fals
 
 
 @transaction.atomic
-def mark_feed_post_seen(*, profile: Profile, post_id: int) -> dict:
+def mark_feed_post_seen(*, profile: Profile, post_id: int, seen_through: datetime | None = None) -> dict:
+    from edilcloud.modules.projects.feed_read_state import record_feed_receipts
+
     post, _membership = get_post_for_profile(profile=profile, post_id=post_id)
-    state = mark_post_seen_for_profile(post=post, profile=profile)
-    return {
-        "post_id": post.id,
-        "seen_at": state.seen_at,
-        "is_unread": False,
-    }
+    result = record_feed_receipts(profile=profile,
+        post_ids=[post_id] if seen_through is None else [],
+        receipts=[{"post_id": post_id, "seen_through": seen_through}] if seen_through else [])
+    if not result["items"]:
+        state = mark_post_seen_for_profile(post=post, profile=profile)
+        return {"post_id": post_id, "seen_at": state.seen_at.isoformat(), "is_unread": False, **{key: result[key] for key in ("unread_count", "unread_by_project")}}
+    return {**result["items"][0], **{key: result[key] for key in ("unread_count", "unread_by_project")}}
 
 
 @transaction.atomic
-def mark_feed_posts_seen(*, profile: Profile, post_ids: list[int] | None = None) -> dict:
-    normalized_ids: list[int] = []
-    seen_ids: set[int] = set()
-    for raw_value in post_ids or []:
-        try:
-            normalized_id = int(raw_value)
-        except (TypeError, ValueError):
-            continue
-        if normalized_id <= 0 or normalized_id in seen_ids:
-            continue
-        seen_ids.add(normalized_id)
-        normalized_ids.append(normalized_id)
+def mark_feed_posts_seen(*, profile: Profile, post_ids: list[int] | None = None, receipts: list[dict] | None = None) -> dict:
+    from edilcloud.modules.projects.feed_read_state import record_feed_receipts
 
-    if not normalized_ids:
-        return {"count": 0, "items": []}
-
-    posts = {
-        post.id: post
-        for post in accessible_feed_posts_queryset(profile=profile).filter(id__in=normalized_ids)
-    }
-    items: list[dict] = []
-    for post_id in normalized_ids:
-        post = posts.get(post_id)
-        if post is None:
-            continue
-        state = mark_post_seen_for_profile(post=post, profile=profile)
-        items.append(
-            {
-                "post_id": post.id,
-                "seen_at": state.seen_at,
-                "is_unread": False,
-            }
-        )
-
-    return {
-        "count": len(items),
-        "items": items,
-    }
+    return record_feed_receipts(profile=profile, post_ids=post_ids, receipts=receipts)
 
 
 def get_project_overview(
@@ -5215,8 +5209,8 @@ def notify_comment_created(
             ),
         )
 
-    participant_recipients = project_participant_recipients(
-        post,
+    participant_recipients = project_notification_recipients(
+        post.project,
         exclude_profile_ids=already_notified,
     )
     if participant_recipients:
@@ -5246,7 +5240,7 @@ def notify_post_change(
     category: str,
     action: str,
 ) -> None:
-    recipients = project_participant_recipients(post, exclude_profile_ids={actor_profile.id})
+    recipients = project_notification_recipients(post.project, exclude_profile_ids={actor_profile.id})
     if not recipients:
         recipients = project_notification_recipients(
             post.project, exclude_profile_ids={actor_profile.id}

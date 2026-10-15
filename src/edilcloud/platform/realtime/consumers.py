@@ -64,7 +64,7 @@ class NotificationRealtimeConsumer(BaseRealtimeConsumer):
     def resolve_group_names(self, payload: dict) -> list[str]:
         user_id = payload.get("user_id")
         if isinstance(user_id, int) and user_id > 0:
-            return [notification_user_group_name(user_id)]
+            return [notification_user_group_name(user_id), notification_group_name(int(payload["profile_id"]))]
         return [notification_group_name(int(payload["profile_id"]))]
 
 
@@ -75,3 +75,16 @@ class ProjectRealtimeConsumer(BaseRealtimeConsumer):
 
     def resolve_group_names(self, payload: dict) -> list[str]:
         return [project_group_name(int(payload["project_id"]))]
+
+    async def realtime_event(self, event):
+        # An already-connected socket must stop exposing content after revocation.
+        payload = self.scope.get("realtime", {})
+        def has_access():
+            from edilcloud.modules.projects.models import ProjectMember, ProjectMemberStatus
+            return ProjectMember.objects.filter(project_id=payload.get("project_id"),
+                profile_id=payload.get("profile_id"), status=ProjectMemberStatus.ACTIVE,
+                disabled=False, profile__is_active=True, profile__workspace__is_active=True, profile__user__is_active=True).exists()
+        if not await sync_to_async(has_access)():
+            await self.close(code=4403)
+            return
+        await super().realtime_event(event)

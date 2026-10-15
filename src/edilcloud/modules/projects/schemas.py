@@ -4,8 +4,22 @@ from datetime import date, datetime
 from typing import Any
 
 from ninja import Schema
+from pydantic import ConfigDict, StrictBool
+from typing import Literal
 
 from edilcloud.modules.notifications.schemas import RealtimeSocketSchema
+
+
+class ProjectSettingsPatchSchema(Schema):
+    model_config = ConfigDict(extra="forbid")
+    general: dict[str, Any] | None = None
+    notification_preferences: dict[str, StrictBool] | None = None
+
+
+class ProjectMemberSettingsPatchSchema(Schema):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["d", "m", "w"] | None = None
+    enabled: StrictBool | None = None
 
 
 class ProjectRealtimeSessionSchema(Schema):
@@ -22,21 +36,38 @@ class ProjectFeedPageSchema(Schema):
     limit: int
     has_more: bool
     next_offset: int | None = None
+    next_cursor: str | None = None
+    unread_count: int = 0
+    unread_by_project: dict[str, int] = {}
 
 
 class ProjectFeedSeenSchema(Schema):
     post_id: int
-    seen_at: datetime
+    seen_at: str
     is_unread: bool = False
+    unread_count: int | None = None
+    unread_by_project: dict[str, int] = {}
+
+
+class ProjectFeedReceiptSchema(Schema):
+    post_id: int
+    seen_through: datetime
+
+
+class ProjectFeedSeenRequestSchema(Schema):
+    seen_through: datetime | None = None
 
 
 class ProjectFeedBulkSeenRequestSchema(Schema):
     post_ids: list[int] = []
+    receipts: list[ProjectFeedReceiptSchema] = []
 
 
 class ProjectFeedBulkSeenSchema(Schema):
     count: int
     items: list[ProjectFeedSeenSchema]
+    unread_count: int = 0
+    unread_by_project: dict[str, int] = {}
 
 
 class ProjectSummarySchema(Schema):

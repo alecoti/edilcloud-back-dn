@@ -6,6 +6,8 @@ from ninja.errors import HttpError
 from edilcloud.modules.identity.auth import JWTAuth
 from edilcloud.modules.notifications.schemas import (
     NotificationCenterSchema,
+    NotificationBulkReadRequestSchema,
+    NotificationBulkReadSchema,
     NotificationDeviceRegisterInputSchema,
     NotificationDeviceSchema,
     NotificationDeviceUnregisterInputSchema,
@@ -18,6 +20,7 @@ from edilcloud.modules.notifications.services import (
     list_notifications,
     mark_all_notifications_read,
     mark_notification_read,
+    mark_notifications_read,
     register_notification_device,
     unregister_notification_device,
 )
@@ -37,14 +40,24 @@ def notification_realtime_session(request):
 
 
 @router.get("", response=NotificationCenterSchema, auth=auth)
-def get_notifications(request, limit: int = 80, count_only: bool = False):
+def get_notifications(request, limit: int = 80, count_only: bool = False, offset: int = 0, cursor: str | None = None):
     try:
         return list_notifications(
             user=request.auth.user,
             claims=request.auth.claims,
             limit=limit,
             count_only=count_only,
+            offset=offset,
+            cursor=cursor,
         )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.post("/read", response=NotificationBulkReadSchema, auth=auth)
+def mark_notifications_read_endpoint(request, payload: NotificationBulkReadRequestSchema):
+    try:
+        return mark_notifications_read(user=request.auth.user, claims=request.auth.claims, notification_ids=payload.notification_ids)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
 

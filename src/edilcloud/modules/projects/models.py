@@ -255,6 +255,7 @@ class ProjectMember(TimestampedModel):
     is_external = models.BooleanField(default=False)
     project_invitation_date = models.DateTimeField(default=timezone.now)
     project_role_codes = models.JSONField(default=list, blank=True)
+    notification_preferences = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ("project_id", "id")
@@ -764,6 +765,7 @@ class PostComment(TimestampedModel):
         ordering = ("created_at", "id")
         indexes = [
             models.Index(fields=("post", "created_at")),
+            models.Index(fields=("post", "-updated_at", "-id"), name="projects_comment_activity_idx"),
         ]
 
     def __str__(self) -> str:

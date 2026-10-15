@@ -13,6 +13,8 @@ from ninja.responses import Status
 
 from edilcloud.modules.identity.auth import JWTAuth
 from edilcloud.modules.projects.archive import export_project_archive
+from edilcloud.modules.projects.schemas import ProjectSettingsPatchSchema, ProjectMemberSettingsPatchSchema
+from edilcloud.modules.projects.settings_service import get_project_settings, update_project_settings, update_project_member_settings
 from edilcloud.modules.projects.demo_master_admin import (
     create_demo_master_snapshot,
     ensure_demo_master_project_for_profile,
@@ -42,6 +44,7 @@ from edilcloud.modules.projects.schemas import (
     GenerateProjectInviteCodeRequestSchema,
     ProjectFeedPageSchema,
     ProjectFeedSeenSchema,
+    ProjectFeedSeenRequestSchema,
     ProjectInviteCodeSchema,
     ProjectOverviewSchema,
     ProjectRealtimeSessionSchema,
@@ -407,7 +410,7 @@ def create_project_endpoint(request, payload: CreateProjectRequestSchema):
 
 
 @router.get("/feed", response=ProjectFeedPageSchema, auth=auth)
-def get_project_feed_endpoint(request, limit: int = 50, offset: int = 0, project_id: int | None = None, lightweight: bool = False, post_id: int | None = None, normalized: bool = False):
+def get_project_feed_endpoint(request, limit: int = 50, offset: int = 0, project_id: int | None = None, lightweight: bool = False, post_id: int | None = None, normalized: bool = False, cursor: str | None = None, count_only: bool = False):
     try:
         profile = current_profile(request)
         return list_project_feed(
@@ -419,6 +422,8 @@ def get_project_feed_endpoint(request, limit: int = 50, offset: int = 0, project
             target_language=request_locale(request),
             project_id=project_id,
             lightweight=lightweight,
+            cursor=cursor,
+            count_only=count_only,
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
@@ -430,6 +435,7 @@ def mark_feed_posts_seen_endpoint(request, payload: ProjectFeedBulkSeenRequestSc
         return mark_feed_posts_seen(
             profile=current_profile(request),
             post_ids=payload.post_ids,
+            receipts=[item.dict() for item in payload.receipts],
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
@@ -542,6 +548,32 @@ def get_project_overview_endpoint(request, project_id: int, compact: bool = Fals
         )
     except ValueError as exc:
         raise HttpError(404, str(exc)) from exc
+
+
+@router.get("/{project_id}/settings", response=dict[str, Any], auth=auth)
+def get_project_settings_endpoint(request, project_id: int):
+    try:
+        return get_project_settings(profile=current_profile(request), project_id=project_id)
+    except ValueError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.patch("/{project_id}/settings", response=dict[str, Any], auth=auth)
+def update_project_settings_endpoint(request, project_id: int, payload: ProjectSettingsPatchSchema):
+    try:
+        return update_project_settings(profile=current_profile(request), project_id=project_id,
+            general=payload.general, notification_preferences=payload.notification_preferences)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@router.patch("/{project_id}/settings/members/{member_id}", response=dict[str, Any], auth=auth)
+def update_project_member_settings_endpoint(request, project_id: int, member_id: int, payload: ProjectMemberSettingsPatchSchema):
+    try:
+        return update_project_member_settings(profile=current_profile(request), project_id=project_id,
+            member_id=member_id, role=payload.role, enabled=payload.enabled)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
 
 
 @router.get("/{project_id}/archive/export", auth=auth)
@@ -1383,7 +1415,9 @@ def create_comment_endpoint(request, post_id: int):
 @posts_router.post("/{post_id}/seen", response=ProjectFeedSeenSchema, auth=auth)
 def mark_post_seen_endpoint(request, post_id: int):
     try:
-        return mark_feed_post_seen(profile=current_profile(request), post_id=post_id)
+        payload = ProjectFeedSeenRequestSchema.model_validate_json(request.body) if request.body and request.content_type == "application/json" else None
+        return mark_feed_post_seen(profile=current_profile(request), post_id=post_id,
+                                   seen_through=payload.seen_through if payload else None)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
 
