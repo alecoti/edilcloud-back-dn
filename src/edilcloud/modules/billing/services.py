@@ -573,7 +573,9 @@ def calculate_account_ai_usage(account: BillingAccount, *, reference: datetime |
 
 
 def ai_quota_is_unlimited(account: BillingAccount) -> bool:
-    """Administrative override, never writable through customer APIs."""
+    """Global development switch or administrative account exemption."""
+    if not settings.AI_TOKEN_QUOTA_ENFORCED:
+        return True
     metadata = getattr(account, "metadata", None)
     return isinstance(metadata, dict) and metadata.get("ai_quota_unlimited") is True
 

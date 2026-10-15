@@ -27,6 +27,8 @@ PROJECT_CONTENT_TRANSLATION_ASYNC = False
 OPENAI_API_KEY = ""
 GOOGLE_WEATHER_API_KEY = ""
 FCM_PUSH_ENABLED = False
+# Exercise the paid-plan behavior independently of the development rollout default.
+AI_TOKEN_QUOTA_ENFORCED = True
 
 CACHES = {
     "default": {

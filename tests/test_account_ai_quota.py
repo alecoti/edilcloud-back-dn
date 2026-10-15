@@ -43,7 +43,8 @@ def test_unlimited_is_scoped_to_billing_owner_and_other_accounts_stay_limited(si
         assert_ai_request_headroom(site[3].workspace)
 
 
-def test_override_requires_real_boolean_and_management_command_is_audited_and_reversible(site):
+def test_override_requires_real_boolean_and_management_command_is_audited_and_reversible(site, settings):
+    settings.AI_TOKEN_QUOTA_ENFORCED = True
     account = get_workspace_billing_account(site[0].workspace)
     account.metadata = {"ai_quota_unlimited": "true", "other_setting": "preserved"}
     account.save()
@@ -68,14 +69,15 @@ def test_override_requires_real_boolean_and_management_command_is_audited_and_re
     assert not ai_quota_is_unlimited(account)
 
 
+@pytest.mark.parametrize("global_unlimited", [False, True])
 def test_unlimited_elaborato_keeps_real_usage_without_per_job_budget_rejection_or_credit_debit(
-    site, settings, monkeypatch
+    site, settings, monkeypatch, global_unlimited
 ):
-    settings.AI_TOKEN_QUOTA_ENFORCED = True
+    settings.AI_TOKEN_QUOTA_ENFORCED = not global_unlimited
     settings.OPENAI_API_KEY = "synthetic-not-a-real-key"
     settings.OPENAI_API_BASE_URL = "https://openai.example/v1"
     account = get_workspace_billing_account(site[0].workspace)
-    account.metadata = {"ai_quota_unlimited": True}
+    account.metadata = {} if global_unlimited else {"ai_quota_unlimited": True}
     account.monthly_ai_tokens_base = 0
     account.ai_token_balance_topup = 75
     account.save()
@@ -133,3 +135,25 @@ def test_unlimited_elaborato_keeps_real_usage_without_per_job_budget_rejection_o
     account.refresh_from_db()
     assert account.ai_token_balance_topup == 75
     assert not BillingTokenLedger.objects.filter(billing_account=account).exists()
+
+
+def test_global_disabled_quota_covers_existing_and_new_accounts_and_job_reservations(site, settings):
+    settings.AI_TOKEN_QUOTA_ENFORCED = False
+    for workspace in (site[0].workspace, site[3].workspace):
+        account = get_workspace_billing_account(workspace)
+        account.monthly_ai_tokens_base = 0
+        account.metadata = {"ai_quota_unlimited": False}
+        account.save()
+        assert ai_quota_is_unlimited(account)
+        assert_ai_request_headroom(workspace, minimum_headroom=10**12)
+        assert entitlement_snapshot(account)["ai_tokens"]["unlimited"] is True
+
+    # The second job must not be blocked by the first job's token reservation.
+    assert create(site).jobs.get().state == "queued"
+    assert create(site).jobs.get().state == "queued"
+    # Re-enabling quotas works without undoing per-account metadata changes.
+    settings.AI_TOKEN_QUOTA_ENFORCED = True
+    account.refresh_from_db()
+    assert not ai_quota_is_unlimited(account)
+    with pytest.raises(ValueError, match="Token AI insufficienti"):
+        assert_ai_request_headroom(site[3].workspace)

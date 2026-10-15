@@ -559,6 +559,7 @@ def test_large_input_is_counted_before_a_billable_request_instead_of_guessing_by
 
     settings.OPENAI_API_KEY = "test-private-key"
     revision = create(site)
+    settings.AI_TOKEN_QUOTA_ENFORCED = True
     job = revision.jobs.get()
     job.state = "running"
     job.lease_token = uuid.uuid4()
