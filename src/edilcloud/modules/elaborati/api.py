@@ -195,7 +195,9 @@ def job_status(request, job_id: UUID):
     services.authorize_revision(profile=profile, revision=job.revision)
     if job.action not in {"generate", "verify", "preview"} and job.requested_by_id != profile.pk:
         raise HttpError(403, "Questa proposta appartiene a un altro autore.")
-    return services.serialize_job(job, include_result=True)
+    return services.serialize_job(
+        job, include_result=True, include_thinking=job.requested_by_id == profile.pk
+    )
 
 
 def private_response(field, filename):

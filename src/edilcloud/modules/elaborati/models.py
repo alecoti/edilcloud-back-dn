@@ -136,6 +136,9 @@ class DocumentJob(TimestampedModel):
     lease_token = models.UUIDField(null=True, blank=True)
     lease_expires_at = models.DateTimeField(null=True, blank=True)
     result = models.JSONField(default=dict)
+    # Public provider summaries are separate from the final document/proposal.
+    # A database default permits old workers to insert during a rolling deploy.
+    thinking = models.JSONField(default=list, db_default=[], blank=True)
     error_code = models.CharField(max_length=40, blank=True)
     error_message = models.CharField(max_length=500, blank=True)
     reserved_tokens = models.PositiveIntegerField(default=0)

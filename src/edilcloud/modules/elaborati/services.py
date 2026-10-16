@@ -78,7 +78,15 @@ def ensure_editable(revision, version):
 
 def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_user_id=None):
     document = revision.elaborato
-    job = revision.jobs.defer("result", "payload").order_by("-created_at").first() if full else None
+    job = (
+        revision.jobs.select_related("requested_by")
+        .defer("result", "payload")
+        .order_by("-created_at")
+        .first()
+        if full
+        else None
+    )
+    own_thinking = bool(job and job.requested_by and job.requested_by.user_id == viewer_user_id)
     data = {
         "id": str(document.pk),
         "revision_id": str(revision.pk),
@@ -101,7 +109,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
         "pdf_hash": revision.pdf_hash,
         "drive_document_id": revision.drive_document_id,
         "source_count": revision.source_count,
-        "job": serialize_job(job) if job else None,
+        "job": serialize_job(job, include_thinking=own_thinking) if job else None,
     }
     if full:
         from .usage import document_token_usage
@@ -124,6 +132,20 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
             ).exists()
 
         data.update(
+            thinking=(
+                job.thinking
+                if own_thinking and job.thinking
+                else (
+                    revision.jobs.filter(requested_by__user_id=viewer_user_id)
+                    .exclude(thinking=[])
+                    .order_by("-created_at")
+                    .values_list("thinking", flat=True)
+                    .first()
+                    or []
+                )
+            )
+            if viewer_user_id is not None
+            else [],
             ai_usage=document_token_usage(document.pk),
             can_edit=viewer_can_edit,
             editor_doc=revision.editor_doc,
@@ -149,7 +171,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
     return data
 
 
-def serialize_job(job, *, include_result=False):
+def serialize_job(job, *, include_result=False, include_thinking=False):
     data = {
         "id": str(job.pk),
         "revision_id": str(job.revision_id),
@@ -160,6 +182,7 @@ def serialize_job(job, *, include_result=False):
         "error_code": job.error_code,
         "error_message": job.error_message,
         "result": job.result if include_result and job.state == "completed" else None,
+        "thinking": job.thinking if include_thinking else [],
     }
     if include_result:
         from .usage import document_token_usage

@@ -264,6 +264,8 @@ def structured_response(
             }
         },
     }
+    if effort != "none":
+        body["reasoning"]["summary"] = "auto"
     if images:
         if len(images) > 12:
             raise ValueError("Troppe immagini per una singola analisi documentale.")
@@ -301,6 +303,8 @@ def structured_response(
     renew_lease(job)
     started = time.monotonic()
     response_id = None
+    progress = None
+    payload = None
 
     def created(identifier):
         nonlocal response_id
@@ -347,21 +351,45 @@ def structured_response(
                         "Fonti troppo estese per il budget disponibile. Riduci il periodo o dividi l'elaborato."
                     )
             from .provider_stream import read_response
+            from .thinking import ReasoningProgress
 
-            with client.stream(
-                "POST",
-                f"{settings.OPENAI_API_BASE_URL.rstrip('/')}/responses",
-                json=body,
-                headers={
-                    "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-            ) as response:
-                if response.status_code >= 400:
-                    raise DocumentProviderError(
-                        f"Servizio AI temporaneamente non disponibile (HTTP {response.status_code})."
+            progress = ReasoningProgress(job, stage)
+            for attempt in range(2):
+                with client.stream(
+                    "POST",
+                    f"{settings.OPENAI_API_BASE_URL.rstrip('/')}/responses",
+                    json=body,
+                    headers={
+                        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                ) as response:
+                    if response.status_code >= 400:
+                        # An explicit pre-generation rejection of this optional
+                        # parameter is safe to fall back from. Never replay a
+                        # started response, timeout, generic 400 or rate limit.
+                        response.read()
+                        try:
+                            error = response.json().get("error") or {}
+                        except (ValueError, AttributeError):
+                            error = {}
+                        if not isinstance(error, dict):
+                            error = {}
+                        if (
+                            attempt == 0
+                            and response.status_code in {400, 403}
+                            and error.get("param") == "reasoning.summary"
+                            and "summary" in body["reasoning"]
+                        ):
+                            body["reasoning"].pop("summary")
+                            continue
+                        raise DocumentProviderError(
+                            f"Servizio AI temporaneamente non disponibile (HTTP {response.status_code})."
+                        )
+                    payload = read_response(
+                        response, on_created=created, on_summary=progress.summary
                     )
-                payload = read_response(response, on_created=created)
+                    break
     except (httpx.HTTPError, ValueError) as exc:
         if response_id:
             DocumentAudit.objects.create(
@@ -373,6 +401,9 @@ def structured_response(
         raise DocumentProviderError(
             "Il servizio AI non ha completato la richiesta. La bozza precedente resta disponibile."
         ) from exc
+    finally:
+        if progress:
+            progress.finish(payload.get("status") if payload else "interrupted")
     usage = payload.get("usage") or {}
     response_id = payload.get("id")
     if not response_id:
