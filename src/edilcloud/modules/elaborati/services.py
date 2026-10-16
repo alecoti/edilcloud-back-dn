@@ -150,6 +150,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
             quality=revision.quality,
             declarations=revision.declarations,
             signature_audit=revision.signature_audit,
+            source_manifest=revision.frozen_manifest,
             pdf_ready=preview_ready,
             preview_ready=preview_ready and revision.preview_signature.get("purpose", "publication") == "publication",
             preview_purpose=revision.preview_signature.get("purpose", "publication"),
@@ -369,9 +370,11 @@ def create_elaborato(*, profile, payload):
         raise HttpError(400, "Il rapporto giornaliero si riferisce a una sola giornata.")
     default = WorkspaceDocumentStyle.objects.filter(workspace=profile.workspace).first()
     style = payload.style or (default.style if default else "corporate")
+    from edilcloud.modules.projects.participations import actor_snapshot
     document = Elaborato.objects.create(
         project=project,
         created_by=profile,
+        author_snapshot=actor_snapshot(project=project, profile=profile, at=timezone.now()),
         document_type=payload.document_type,
         title=f"{template['label']} · {project.name}"[:255],
         period_start=payload.period_start,
@@ -549,12 +552,14 @@ def add_declaration(*, profile, revision_id, version, text):
     ensure_editable(revision, version)
     if not text.strip() or len(revision.declarations) >= 100:
         raise HttpError(400, "Dichiarazione vuota o limite raggiunto.")
+    from edilcloud.modules.projects.participations import actor_snapshot
     declaration = {
         "id": str(uuid.uuid4()),
         "text": text.strip(),
         "author": profile_display_name(profile),
         "profile_id": profile.pk,
         "at": timezone.now().isoformat(),
+        "source_actor": actor_snapshot(project=revision.elaborato.project, profile=profile, at=timezone.now()),
     }
     revision.declarations = [*revision.declarations, declaration]
     from .evidence import build_evidence

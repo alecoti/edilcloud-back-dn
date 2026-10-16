@@ -234,6 +234,8 @@ def evidence_bundle(job):
     value = {"schema_version": 3, "project_id": document.project_id, "period_start": str(document.period_start),
              "period_end": str(document.period_end), "captured_at": job.workflow_state.get("inventory_started_at"),
              "sources": sources, "truncated": False, "coverage_complete": complete}
+    value["census"] = {"total": len(sources), "selected": len(sources), "complete": True,
+                        "excluded_from_selection": 0}
     value["bundle_hash"] = digest(value)
     return value
 

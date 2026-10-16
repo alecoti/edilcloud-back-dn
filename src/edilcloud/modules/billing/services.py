@@ -530,6 +530,11 @@ def calculate_storage_usage_for_workspace_ids(workspace_ids: list[int]) -> int:
         # Preserve quota enforcement for legacy files until the offline backfill.
         for name in rows.filter(file_size__isnull=True).values_list(field, flat=True).iterator(chunk_size=100):
             total += storage_size_for_name(str(name))
+    # Cold evidence copies are private and deduplicated by project + SHA-256.
+    # They consume real storage even when the working image is much smaller.
+    from edilcloud.modules.projects.provenance_models import EvidenceBlob
+    total += EvidenceBlob.objects.filter(project__workspace_id__in=workspace_ids).aggregate(
+        total=Sum("size"))["total"] or 0
     return total
 
 

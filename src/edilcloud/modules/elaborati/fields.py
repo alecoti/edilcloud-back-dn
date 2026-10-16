@@ -128,6 +128,8 @@ def sync_field_declarations(*, revision, profile, doc):
     from django.utils import timezone
     from edilcloud.modules.projects.services import profile_display_name
     from .content import digest
+    from edilcloud.modules.projects.participations import actor_snapshot
+    from edilcloud.modules.projects.provenance import enrich_source
 
     prior = {d["field_id"]: d for d in revision.declarations if d.get("field_id")}
     declarations = [d for d in revision.declarations if not d.get("field_id")]
@@ -151,6 +153,7 @@ def sync_field_declarations(*, revision, profile, doc):
                 "author": profile_display_name(profile),
                 "profile_id": profile.pk,
                 "at": timezone.now().isoformat(),
+                "source_actor": actor_snapshot(project=revision.elaborato.project, profile=profile, at=timezone.now()),
                 "field_id": field["fieldId"],
                 "field_hash": fingerprint,
                 "field": deepcopy(field),
@@ -171,11 +174,14 @@ def sync_field_declarations(*, revision, profile, doc):
                 "text": declaration["text"],
                 "declared_by": declaration["author"],
                 "declared_at": declaration["at"],
+                "source_actor": declaration.get("source_actor", {}),
                 "nature": "reported",
                 "document_field": declaration["field"],
             },
         }
         source["hash"] = digest(source)
+        source["provenance_key"] = f"{revision.elaborato_id}:{declaration['id']}"
+        source = enrich_source(project=revision.elaborato.project, source=source)
         evidence["sources"].append(source)
     evidence.pop("bundle_hash", None)
     evidence["bundle_hash"] = digest(evidence)

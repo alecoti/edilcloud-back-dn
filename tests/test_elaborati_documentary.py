@@ -154,10 +154,17 @@ def test_image_analysis_is_cached_by_bytes_but_storage_authorization_is_rechecke
     assert first["bundle_hash"] == second["bundle_hash"]
     attachment.delete()
     third = enrich_media(job=job, bundle=bundle)
+    assert third["bundle_hash"] == second["bundle_hash"]
+    # Removing the live attachment does not destroy an archived revision, but
+    # revoking membership must still block even previously cached analyses.
+    from edilcloud.modules.projects.models import ProjectMember
+    ProjectMember.objects.filter(project=project, profile=owner).update(disabled=True)
+    inaccessible = enrich_media(job=job, bundle=bundle)
     assert any(
         w["reason"] == "image_unavailable_or_unsupported"
-        for w in third["media_analysis"]["warnings"]
+        for w in inaccessible["media_analysis"]["warnings"]
     )
+    assert len(calls) == 1
 
 
 def test_media_upload_date_is_not_substituted_for_post_event_date(site):

@@ -197,13 +197,18 @@ def test_a_replaced_photo_cannot_silently_replace_the_evidence_used_by_the_edito
     revision = baseline.create(site)
     bundle = build_evidence(profile=site[1], elaborato=revision.elaborato)
     source = next(s for s in bundle["sources"] if s.get("file_ref", {}).get("id") == attachment.pk)
-    assert (
-        resolve_evidence_file(profile=site[1], project_id=site[0].pk, source=source).name
-        == attachment.file.name
-    )
-    attachment.file.save("after.png", ContentFile(data.getvalue()))
-    with pytest.raises(ValueError, match="modificato"):
-        resolve_evidence_file(profile=site[1], project_id=site[0].pk, source=source)
+    with resolve_evidence_file(profile=site[1], project_id=site[0].pk, source=source).open("rb") as frozen:
+        assert frozen.read() == data.getvalue()
+    replacement = io.BytesIO()
+    Image.new("RGB", (20, 20), "red").save(replacement, "PNG")
+    attachment.file.save("after.png", ContentFile(replacement.getvalue()))
+    # The revision continues using the exact archived version, never today's file.
+    with resolve_evidence_file(profile=site[1], project_id=site[0].pk, source=source).open("rb") as frozen:
+        assert frozen.read() == data.getvalue()
+    refreshed = build_evidence(profile=site[1], elaborato=revision.elaborato)
+    current = next(s for s in refreshed["sources"] if s["id"] == source["id"])
+    assert current["source_uuid"] == source["source_uuid"]
+    assert current["file_sha256"] != source["file_sha256"]
 
 
 def test_editor_roundtrip_allows_default_null_column_widths_without_breaking_pdf(site, provider):

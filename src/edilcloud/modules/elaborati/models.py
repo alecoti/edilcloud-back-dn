@@ -24,6 +24,7 @@ class Elaborato(TimestampedModel):
         "projects.Project", on_delete=models.CASCADE, related_name="elaborati"
     )
     created_by = models.ForeignKey("workspaces.Profile", on_delete=models.SET_NULL, null=True)
+    author_snapshot = models.JSONField(default=dict, blank=True)
     document_type = models.CharField(max_length=32)
     title = models.CharField(max_length=255)
     period_start = models.DateField()
@@ -87,6 +88,7 @@ class ElaboratoRevision(TimestampedModel):
     )
     pdf_hash = models.CharField(max_length=64, blank=True)
     signature_audit = models.JSONField(default=dict)
+    frozen_manifest = models.JSONField(default=dict, blank=True)
     drive_document = models.OneToOneField(
         "projects.ProjectDocument",
         on_delete=models.SET_NULL,

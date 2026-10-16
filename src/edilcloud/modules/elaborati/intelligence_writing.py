@@ -39,7 +39,8 @@ def write_partition(job, *, key, section, facts, template, bundle, correction=No
         references = [r for fact in facts for r in fact.references if r.source_id == source_id]
         value["data"] = {
             key: content for key, content in value["data"].items()
-            if key in {"title", "filename", "author", "media_kind", "event_date_from_parent", "visual_analysis"}
+            if key in {"title", "filename", "author", "media_kind", "event_date_from_parent", "visual_analysis",
+                       "source_actor", "company", "qualification", "professional_roles", "professional_role_labels"}
         }
         value["data"]["excerpts"] = [
             {"text": r.quote, "page": r.page, "part_id": r.part_id} for r in references

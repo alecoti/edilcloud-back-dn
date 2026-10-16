@@ -11,7 +11,7 @@ ALIASES = {"inspection_report": "inspection", "coordination_minutes": "coordinat
 CANONICAL = {value: key for key, value in ALIASES.items()}
 SOURCE_KINDS = (
     "project", "request", "declaration", "member", "post", "comment", "attachment",
-    "image_attachment", "task", "activity", "photo", "document", "drawing", "drawing_pin",
+    "image_attachment", "task", "activity", "photo", "document", "drawing", "drawing_pin", "model_pin",
     "event", "previous_elaborato",
 )
 

@@ -19,6 +19,7 @@ from edilcloud.modules.projects.models import (
     ProjectMemberStatus,
     ProjectOperationalEvent,
     ProjectPhoto,
+    ProjectModelPin,
 )
 from edilcloud.modules.projects.services import get_project_for_profile, profile_display_name
 
@@ -46,7 +47,7 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
     used = 0
     candidates = []
 
-    def add(kind, pk, data, *, at=None, file_ref=None, parent_id=None):
+    def add(kind, pk, data, *, at=None, file_ref=None, parent_id=None, provenance_kind=None):
         nonlocal used
         source = {
             "id": f"{kind}:{pk}",
@@ -56,10 +57,16 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
             "at": at.isoformat() if at else None,
             "parent_id": parent_id,
         }
+        if kind == "declaration":
+            source["provenance_key"] = f"{elaborato.pk}:{pk}"
         if file_ref:
             source["file_ref"] = file_ref
             source["file_version"] = file_ref.get("version", "")
+        if provenance_kind:
+            source["provenance_kind"] = provenance_kind
         source["hash"] = digest({k: v for k, v in source.items() if k != "file_ref"})
+        from edilcloud.modules.projects.provenance import enrich_source
+        source = enrich_source(project=project, source=source)
         candidates.append(source)
 
     add(
@@ -85,6 +92,7 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
             "language": elaborato.language,
             "context": elaborato.context[:4000],
             "requested_by": profile_display_name(elaborato.created_by),
+            "source_actor": elaborato.author_snapshot,
             "declared_parameters": True,
         },
         at=elaborato.created_at,
@@ -97,6 +105,7 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
                 "text": declaration["text"],
                 "declared_by": declaration["author"],
                 "declared_at": declaration["at"],
+                "source_actor": declaration.get("source_actor", {}),
                 "nature": "reported",
                 **({"document_field": declaration["field"]} if declaration.get("field") else {}),
             },
@@ -117,8 +126,21 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
                 "company": member.profile.workspace.name,
                 "presence": "unknown",
                 "professional_roles": member.project_role_codes,
+                "qualification": member.profile.position,
+                "roles_are_current_catalogue": True,
             },
         )
+
+    from django.db.models import Q
+    from edilcloud.modules.projects.participations import serialize_participation
+    for assignment in project.participations.filter(valid_from__lt=end).filter(
+        Q(valid_to__isnull=True) | Q(valid_to__gt=start)).select_related("person"):
+        value = serialize_participation(assignment)
+        add("member", assignment.pk, {**value, "name": value["person_name"],
+            "company": value["company_name"], "professional_roles": value["role_codes"],
+            "professional_role_labels": value["role_labels"], "presence": "unknown",
+            "assignment_is_not_attendance": True}, at=assignment.created_at,
+            provenance_kind="participation")
 
     posts = list(
         project.posts.filter(is_deleted=False, published_date__gte=start, published_date__lt=end)
@@ -345,6 +367,10 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
             at=pin.created_at,
             parent_id=f"post:{pin.post_id}",
         )
+    for pin in ProjectModelPin.objects.filter(project=project, post_id__in=by_id).select_related("model").order_by("pk")[:81]:
+        add("model_pin", pin.pk, {"model": pin.model.title, "model_id": pin.model_id,
+            "label": pin.label, "x": pin.x, "y": pin.y, "z": pin.z},
+            at=pin.created_at, parent_id=f"post:{pin.post_id}")
     for event in ProjectOperationalEvent.objects.filter(
         project=project, occurred_at__gte=start, occurred_at__lt=end
     ).order_by("occurred_at", "pk")[:101]:
@@ -430,6 +456,20 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
     from .readiness import coverage_summary
 
     result["coverage"] = coverage_summary(result)
+    # The V1 prompt remains bounded; census is exhaustive and independently
+    # reports records not admitted to that legacy bounded selection.
+    from types import SimpleNamespace
+    from .inventory import raw_project_sources
+    from collections import Counter
+    census = {value["id"]: value["kind"] for value in raw_project_sources(
+        job=SimpleNamespace(revision=SimpleNamespace(elaborato=elaborato, declarations=list(declarations)),
+                            requested_by=profile), captured_at=timezone.now())}
+    census.update({value["id"]: value["kind"] for value in candidates})
+    selected = {value["id"] for value in result["sources"]}
+    result["census"] = {"total": len(census), "complete": True, "selected": len(selected),
+                        "by_kind": dict(Counter(census.values())),
+                        "excluded_from_selection": len(set(census) - selected),
+                        "selection_reason": "legacy_context_budget" if result["truncated"] else "document_scope"}
     result["bundle_hash"] = digest(result)
     return result
 
@@ -437,6 +477,20 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
 def resolve_evidence_file(*, profile, project_id, source):
     """Reauthorize every read; never fetch arbitrary URLs supplied by an editor."""
     get_project_for_profile(profile=profile, project_id=project_id)
+    if source.get("source_uuid") and source.get("version_hash"):
+        from edilcloud.modules.projects.provenance_models import ProjectSourceVersion
+        version = ProjectSourceVersion.objects.select_related("file_blob").filter(
+            source_id=source["source_uuid"], source__project_id=project_id,
+            hash=source["version_hash"]).first()
+        if not version or not version.file_blob:
+            raise ValueError("La copia conservata della fonte non è disponibile.")
+        if source.get("file_sha256") != version.file_blob.sha256:
+            raise ValueError("La versione conservata non corrisponde all'evidenza.")
+        import hashlib
+        with version.file_blob.file.open("rb") as incoming:
+            if hashlib.file_digest(incoming, "sha256").hexdigest() != version.file_blob.sha256:
+                raise ValueError("Il contenuto conservato non supera la verifica di integrità.")
+        return version.file_blob.file
     ref = source.get("file_ref", {})
     from edilcloud.modules.projects.models import PostAttachment
 

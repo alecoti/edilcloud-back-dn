@@ -16,6 +16,11 @@ class StoredFileMetadata(TimestampedModel):
         abstract = True
 
     def save(self, *args, **kwargs):
+        pending = getattr(self, self.metadata_file_field)
+        self._evidence_new_upload = bool(pending and not getattr(pending, "_committed", True))
+        if pending and not getattr(pending, "_committed", True):
+            self._evidence_original_blob_id = getattr(pending.file, "_evidence_original_blob_id", None)
+            self._evidence_capture_metadata = getattr(pending.file, "_evidence_capture_metadata", {})
         update_fields = kwargs.get("update_fields")
         if update_fields is None or self.metadata_file_field in update_fields:
             field = getattr(self, self.metadata_file_field)
@@ -380,6 +385,8 @@ class ProjectFolder(TimestampedModel):
 
 class ProjectDocument(StoredFileMetadata):
     metadata_file_field = "document"
+    uploaded_by = models.ForeignKey(Profile, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="uploaded_project_documents")
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
@@ -498,6 +505,8 @@ class ProjectModelPin(TimestampedModel):
 
 class ProjectPhoto(StoredFileMetadata):
     metadata_file_field = "photo"
+    uploaded_by = models.ForeignKey(Profile, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="uploaded_project_photos")
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
@@ -721,6 +730,8 @@ class ProjectPost(TimestampedModel):
 
 
 class PostAttachment(StoredFileMetadata):
+    uploaded_by = models.ForeignKey(Profile, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="uploaded_post_attachments")
     content_type = models.CharField(max_length=255, blank=True, default="")
     post = models.ForeignKey(
         ProjectPost,
@@ -863,6 +874,8 @@ class ProjectPostSeenState(TimestampedModel):
 
 
 class CommentAttachment(StoredFileMetadata):
+    uploaded_by = models.ForeignKey(Profile, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="uploaded_comment_attachments")
     content_type = models.CharField(max_length=255, blank=True, default="")
     comment = models.ForeignKey(
         PostComment,
@@ -915,3 +928,9 @@ class ProjectClientMutation(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.profile_id}:{self.operation}:{self.mutation_id}"
+
+
+# Register documentary identities in the existing projects application.
+from .provenance_models import (  # noqa: E402, F401
+    Company, Person, ProjectParticipation, ProjectSource, ProjectSourceVersion, EvidenceBlob,
+)

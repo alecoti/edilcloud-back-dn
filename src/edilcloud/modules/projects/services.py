@@ -31,7 +31,7 @@ from django.utils import timezone
 from PIL import Image, ImageOps, UnidentifiedImageError
 import pypdfium2 as pdfium
 
-from edilcloud.modules.files.media_optimizer import optimize_media_for_storage
+from edilcloud.modules.projects.provenance import prepare_upload
 from edilcloud.modules.files.image_storage import image_variant_payload
 from edilcloud.modules.notifications.catalog import (
     NotificationBlueprint,
@@ -5002,29 +5002,29 @@ def update_task_activity(
     )
 
 
-def save_post_attachments(post: ProjectPost, files: list[object]) -> None:
+def save_post_attachments(post: ProjectPost, files: list[object], *, actor=None) -> None:
     from edilcloud.modules.billing.services import assert_storage_quota_available
 
-    prepared_files = [optimize_media_for_storage(uploaded_file) for uploaded_file in files]
+    prepared_files = [prepare_upload(post.project, uploaded_file) for uploaded_file in files]
     incoming_bytes = sum(
         int(getattr(uploaded_file, "size", 0) or 0) for uploaded_file in prepared_files
     )
     assert_storage_quota_available(post.project.workspace, incoming_bytes=incoming_bytes)
     for uploaded_file in prepared_files:
-        PostAttachment.objects.create(post=post, file=uploaded_file,
+        PostAttachment.objects.create(post=post, uploaded_by=actor or post.author, file=uploaded_file,
             content_type=(getattr(uploaded_file, "content_type", "") or "")[:255])
 
 
-def save_comment_attachments(comment: PostComment, files: list[object]) -> None:
+def save_comment_attachments(comment: PostComment, files: list[object], *, actor=None) -> None:
     from edilcloud.modules.billing.services import assert_storage_quota_available
 
-    prepared_files = [optimize_media_for_storage(uploaded_file) for uploaded_file in files]
+    prepared_files = [prepare_upload(comment.post.project, uploaded_file) for uploaded_file in files]
     incoming_bytes = sum(
         int(getattr(uploaded_file, "size", 0) or 0) for uploaded_file in prepared_files
     )
     assert_storage_quota_available(comment.post.project.workspace, incoming_bytes=incoming_bytes)
     for uploaded_file in prepared_files:
-        CommentAttachment.objects.create(comment=comment, file=uploaded_file,
+        CommentAttachment.objects.create(comment=comment, uploaded_by=actor or comment.author, file=uploaded_file,
             content_type=(getattr(uploaded_file, "content_type", "") or "")[:255])
 
 
@@ -5409,7 +5409,7 @@ def create_task_post(
         is_public=bool(is_public),
         weather_snapshot=weather_payload or _cached_weather_for_post(project, profile.language) or {},
     )
-    save_post_attachments(post, files or [])
+    save_post_attachments(post, files or [], actor=profile)
     post = (
         ProjectPost.objects.select_related(
             "author",
@@ -5544,7 +5544,7 @@ def create_activity_post(
         is_public=bool(is_public),
         weather_snapshot=weather_payload or _cached_weather_for_post(project, profile.language) or {},
     )
-    save_post_attachments(post, files or [])
+    save_post_attachments(post, files or [], actor=profile)
     post = (
         ProjectPost.objects.select_related(
             "author",
@@ -5675,7 +5675,7 @@ def create_post_comment(
         source_language=normalize_text(source_language),
         display_language=normalize_text(source_language),
     )
-    save_comment_attachments(comment, files or [])
+    save_comment_attachments(comment, files or [], actor=profile)
     comment = (
         PostComment.objects.select_related("author", "author__workspace", "author__user")
         .prefetch_related("attachments", "replies__attachments")
@@ -5795,7 +5795,7 @@ def update_post(
 
     if remove_media_ids:
         PostAttachment.objects.filter(post=post, id__in=remove_media_ids).delete()
-    save_post_attachments(post, files or [])
+    save_post_attachments(post, files or [], actor=profile)
 
     refreshed = (
         ProjectPost.objects.select_related(
@@ -6017,7 +6017,7 @@ def update_comment(
 
     if remove_media_ids:
         CommentAttachment.objects.filter(comment=comment, id__in=remove_media_ids).delete()
-    save_comment_attachments(comment, files or [])
+    save_comment_attachments(comment, files or [], actor=profile)
 
     refreshed = (
         PostComment.objects.select_related("author", "author__workspace", "author__user")
@@ -6417,7 +6417,7 @@ def upload_project_document(
         else ProjectDocumentKind.DOCUMENT
     )
     _assert_project_document_upload_size(uploaded_file, max_bytes=max_upload_bytes)
-    prepared_file = optimize_media_for_storage(uploaded_file)
+    prepared_file = prepare_upload(project, uploaded_file)
     assert_storage_quota_available(
         project.workspace,
         incoming_bytes=int(getattr(prepared_file, "size", 0) or 0),
@@ -6446,6 +6446,7 @@ def upload_project_document(
 
     document = ProjectDocument.objects.create(
         project=project,
+        uploaded_by=profile,
         folder=folder,
         title=normalize_text(title) or Path(getattr(prepared_file, "name", "") or "Documento").stem,
         description=normalize_text(description),
@@ -6553,6 +6554,7 @@ def import_project_drawing(
         return serialize_document(existing)
     drawing = ProjectDocument.objects.create(
         project=project,
+        uploaded_by=profile,
         title=title,
         document=source_file.name,
         document_kind=ProjectDocumentKind.DRAWING,
@@ -6817,7 +6819,7 @@ def update_project_document(
             document.folder = folder
     if uploaded_file is not None:
         _assert_project_document_upload_size(uploaded_file)
-        document.document = optimize_media_for_storage(uploaded_file)
+        document.document = prepare_upload(document.project, uploaded_file)
     document.save()
     emit_project_realtime_event(
         event_type="document.updated",

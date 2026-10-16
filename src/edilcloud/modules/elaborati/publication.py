@@ -174,6 +174,7 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
     code = f"EL-{revision.elaborato.created_at.year}-{revision.elaborato.number:04d}"
     drive = ProjectDocument.objects.create(
         project=project,
+        uploaded_by=profile,
         folder=folder,
         title=f"{code} Rev.{revision.number} · {revision.elaborato.title}"[:255],
         description=f"Elaborato pubblicato · SHA-256 {preview_hash}",
@@ -181,6 +182,8 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
     )
     revision.drive_document = drive
     revision.pdf_hash = preview_hash
+    from .documentary_register import manifest
+    revision.frozen_manifest = manifest(revision, pdf_hash=preview_hash)
     revision.published_at = timezone.now()
     revision.published_by = profile
     revision.state = "signed" if signed else "published"

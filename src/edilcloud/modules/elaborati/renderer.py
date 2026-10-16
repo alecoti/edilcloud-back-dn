@@ -16,6 +16,8 @@ from django.utils import timezone
 from .evidence import resolve_evidence_file
 from .content import validate_editor
 from .pdf_labels import labels
+from .documentary_register import coverage, labels as register_labels, people_sources
+from ..projects.provenance import source_link
 
 
 def esc(value):
@@ -52,6 +54,7 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
     validate_editor(revision.editor_doc, revision.evidence, revision.template_snapshot)
     document = revision.elaborato
     words = labels(document.language)
+    register_words = register_labels(document.language)
     rendered_state = publication_state or revision.state
     sources = {s["id"]: s for s in revision.evidence["sources"]}
     company = document.created_by.workspace if document.created_by else document.project.workspace
@@ -72,6 +75,21 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
             index(child)
 
     index(revision.editor_doc)
+    appointments = people_sources(revision.evidence)
+    for source in appointments:
+        if source["id"] not in numbers:
+            numbers[source["id"]] = len(numbers) + 1
+        used.add(source["id"])
+
+    def actor_label(source):
+        actor = source.get("actor") or {}
+        parts = [actor.get("person_name"), actor.get("company_name"), actor.get("qualification"),
+                 ", ".join(actor.get("role_labels") or [])]
+        value = " · ".join(dict.fromkeys(part for part in parts if part))
+        value = value or register_words["unknown_actor"]
+        if actor.get("identity_state") == "reconstructed":
+            value += " · " + register_words["reconstructed"]
+        return value
 
     def citations(ids):
         return " ".join(
@@ -137,7 +155,8 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
 
             refs = list(
                 dict.fromkeys(
-                    [*refs, *[field_source_id(f) for f in fields_in(node) if f.get("value")]]
+                    [*refs, *[field_source_id(f) for f in fields_in(node) if f.get("value")],
+                     *[f["personSourceId"] for f in fields_in(node) if f.get("value") and f.get("personSourceId")]]
                 )
             )
             used.update(refs)
@@ -215,7 +234,20 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
                 uploaded = source.get("at") or ""
             if uploaded:
                 dates += f"{' · ' if dates else ''}{words['uploaded']}: {date_label(uploaded)}"
-            return f'<figure class="evidence-photo {esc(attrs.get("layout", "full"))}"><img src="{uri}" alt=""><figcaption><b>F{photo_count:02d} · {esc(title)}</b><br>{esc(caption)} {citations([source["id"], *attrs.get("sourceIds", [])])}<span class="photo-date">{esc(dates)}</span></figcaption></figure>'
+            capture = source.get("capture_metadata") or {}
+            image_date = capture.get("declared_content_date") or capture.get("exif_datetime_original")
+            date_origin = (register_words["declared_date"] if capture.get("declared_content_date") else register_words["exif_date"])
+            dates += (" · " if dates else "") + (f"{date_origin}: {image_date}" if image_date else register_words["image_date_unknown"])
+            reference = source.get("reference") or f"F{photo_count:02d}"
+            photographer = capture.get("photographer")
+            attribution = register_words["registered_by"] + ": " + actor_label(source)
+            if photographer:
+                attribution += " · " + register_words["photographer"] + ": " + " · ".join(str(value) for value in (
+                    photographer.get("person_name"), photographer.get("company_name"),
+                    photographer.get("qualification"), ", ".join(photographer.get("role_labels", []))) if value)
+            if capture.get("area"):
+                dates += " · " + capture["area"]
+            return f'<figure class="evidence-photo {esc(attrs.get("layout", "full"))}"><img src="{uri}" alt=""><figcaption><b>{esc(reference)} · {esc(title)}</b><br>{esc(caption)} {citations([source["id"], *attrs.get("sourceIds", [])])}<span class="photo-date">{esc(attribution)}<br>{esc(dates)}</span></figcaption></figure>'
         raise ValueError("Elemento editor non supportato dal renderer.")
 
     def date_label(value):
@@ -236,10 +268,13 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
         sid = field_source_id(field)
         if field.get("value") and sid in sources and sid not in numbers:
             numbers[sid] = len(numbers) + 1
+        person_sid = field.get("personSourceId")
+        if field.get("value") and person_sid in sources and person_sid not in numbers:
+            numbers[person_sid] = len(numbers) + 1
     content = render(revision.editor_doc)
     code = f"EL-{document.created_at.year}-{document.number:04d} · Rev.{revision.number}"
     created = timezone.localtime(document.created_at)
-    author = document.created_by.member_name if document.created_by else ""
+    author = (document.author_snapshot or {}).get("person_name") or (document.created_by.member_name if document.created_by else "")
     signature_html = ""
     if signature:
         signature_html = f'<section class="signature"><h2>{esc(words["signature"])}</h2><p><strong>{esc(signature["name"])}</strong><br>{esc(signature["role"])} · {esc(signature["company"])}</p><img src="{signature["image_data"]}" alt="{esc(words["signature"])}"><p>{esc(words["signed_via"])}<br>{esc(signature["confirmed_at"])}</p></section>'
@@ -254,11 +289,16 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
             or data.get("filename")
             or data.get("author")
             or data.get("name")
-            or sid
+            or source.get("reference") or words["source"]
         )
         description = f"<b>{esc(label)}</b>"
-        if source["kind"] != "request":
-            description += f"<br><small>{esc(sid)}</small>"
+        reference = source.get("reference") or f"{numbers[sid]:02d}"
+        description += f"<br><small>{esc(reference)} · {esc(actor_label(source))}</small>"
+        photographer = (source.get("capture_metadata") or {}).get("photographer")
+        if photographer:
+            description += f'<br><small>{esc(register_words["photographer"])}: {esc(photographer["person_name"])} · {esc(photographer["company_name"])}</small>'
+        if source.get("source_uuid") and source.get("version_hash"):
+            description += f'<br><a href="{esc(source_link(source, revision_id=revision.pk))}">{esc(register_words["open_evidence"])}</a>'
         at = date_label(source.get("at"))
         if data.get("uploaded_at_is_not_event_date"):
             at = f"{esc(words['content_date'])}: {esc(date_label(data.get('event_date_from_parent')))}<br>{esc(words['uploaded'])}: {esc(at)}"
@@ -267,7 +307,7 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
         pages = sorted({e["page"] for e in data.get("excerpts", []) if e.get("page")})
         if pages:
             description += "<br><small>p. " + esc(", ".join(map(str, pages))) + "</small>"
-        return f'<tr id="source-{numbers[sid]}"><td>[{numbers[sid]}]</td><td>{description}</td><td>{at}</td><td>{esc(source["hash"][:16])}</td></tr>'
+        return f'<tr id="source-{numbers[sid]}"><td>[{numbers[sid]}]<br>{esc(reference)}</td><td>{description}</td><td>{at}</td><td>{esc((source.get("version_hash") or source["hash"])[:16])}</td></tr>'
 
     references = "".join(
         source_row(sid) for sid in sorted(used, key=lambda sid: numbers[sid]) if sid in sources
@@ -278,13 +318,39 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
     )
     from .reference_layout import layout_html
 
-    reference_body = f"""{content}<p class="closing">{esc(revision.template_snapshot["closing"])}</p>{signature_html}
+    def appointment_row(source):
+        data = source["data"]
+        professional = ", ".join(data.get("professional_role_labels") or [])
+        reference = data.get("appointment_reference") or ""
+        if reference:
+            professional += " · " + reference
+        if data.get("status") == "reconstructed":
+            professional += " · " + register_words["reconstructed"]
+        validity = " — ".join(date_label(value) for value in (data.get("valid_from"), data.get("valid_to")) if value)
+        qualification = " · ".join(value for value in (data.get("qualification"), data.get("function")) if value)
+        return (f'<tr><td>{esc(data.get("name", ""))} {citations([source["id"]])}</td>'
+                f'<td>{esc(data.get("company", ""))}</td><td>{esc(qualification)}</td>'
+                f'<td>{esc(professional)}</td><td>{esc(validity)}</td></tr>')
+
+    people_html = ""
+    if appointments:
+        people_html = f'<h2>{esc(register_words["people"])}</h2><p class="closing">{esc(register_words["people_note"])}</p><table><thead><tr>'
+        people_html += "".join(f'<th>{esc(register_words[key])}</th>' for key in ("person", "company", "qualification", "roles", "validity"))
+        people_html += '</tr></thead><tbody>' + "".join(appointment_row(source) for source in appointments) + '</tbody></table>'
+    counts = coverage(revision.evidence, used)
+    coverage_html = f'<h2>{esc(register_words["coverage"])}</h2><p class="closing">'
+    coverage_html += " · ".join(f'{esc(register_words[key])}: {counts[key]}' for key in ("censused", "examined", "used", "excluded", "unreadable", "not_examined"))
+    coverage_html += '</p>'
+    if counts["selection_partial"] or not counts["census_complete"]:
+        coverage_html += f'<p class="closing">{esc(register_words["partial"])}</p>'
+
+    reference_body = f"""{people_html}{content}<p class="closing">{esc(revision.template_snapshot["closing"])}</p>{signature_html}{coverage_html}
       <h2 class="references-title">{esc(words["sources"])}</h2><p class="closing">{esc(words["used"])}: {len(used)} · {esc(words["captured"])}: {esc(date_label(revision.evidence["captured_at"]))}</p>
       <table class="source-table"><thead><tr><th>#</th><th>{esc(words["source"])}</th><th>{esc(words["recorded"])}</th><th>{esc(words["hash"])}</th></tr></thead><tbody>{references}</tbody></table>
       <h2>{esc(words["history"])}</h2><table><tbody>{history}</tbody></table><p class="closing">{esc(words["note"])}</p>"""
     return layout_html(
         language=document.language,
-        company=company.name,
+        company=(document.author_snapshot or {}).get("company_name") or company.name,
         logo=logo,
         title=(revision.editor_doc.get("attrs") or {}).get("documentTitle") or document.title,
         subtitle=(revision.editor_doc.get("attrs") or {}).get("subtitle", ""),

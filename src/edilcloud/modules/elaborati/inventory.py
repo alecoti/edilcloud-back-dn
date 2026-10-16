@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from edilcloud.modules.projects.models import (
     CommentAttachment, PostComment, ProjectActivity, ProjectDocument, ProjectDrawingPin,
-    ProjectMemberStatus, ProjectOperationalEvent, ProjectPhoto, PostAttachment,
+    ProjectMemberStatus, ProjectOperationalEvent, ProjectPhoto, PostAttachment, ProjectModelPin,
 )
 from edilcloud.modules.projects.services import get_project_for_profile, profile_display_name
 
@@ -66,6 +66,16 @@ def media_data(field, context, event_at):
 
 
 def project_sources(*, job, captured_at, batch_size=BATCH_SIZE):
+    from edilcloud.modules.projects.provenance import enrich_source
+    project = get_project_for_profile(profile=job.requested_by,
+                                      project_id=job.revision.elaborato.project_id)
+    for item in raw_project_sources(job=job, captured_at=captured_at, batch_size=batch_size):
+        if item["kind"] == "declaration":
+            item["provenance_key"] = f"{job.revision.elaborato_id}:{item['record_id']}"
+        yield enrich_source(project=project, source=item)
+
+
+def raw_project_sources(*, job, captured_at, batch_size=BATCH_SIZE):
     document = job.revision.elaborato
     scope = policy_for(document.document_type).scope_rules
     project = get_project_for_profile(profile=job.requested_by, project_id=document.project_id)
@@ -82,11 +92,13 @@ def project_sources(*, job, captured_at, batch_size=BATCH_SIZE):
         "period_end": str(document.period_end), "language": document.language,
         "context": document.context, "declared_parameters": True,
         "requested_by": profile_display_name(job.requested_by),
+        "source_actor": document.author_snapshot,
     }, at=document.created_at)
     for declaration in job.revision.declarations:
         yield source("declaration", declaration["id"], {
             "text": declaration["text"], "declared_by": declaration["author"],
             "declared_at": declaration["at"], "nature": "reported",
+            "source_actor": declaration.get("source_actor", {}),
             **({"document_field": declaration["field"]} if declaration.get("field") else {}),
         })
     members = project.members.filter(
@@ -97,7 +109,21 @@ def project_sources(*, job, captured_at, batch_size=BATCH_SIZE):
             "name": profile_display_name(member.profile), "profile_id": member.profile_id,
             "role": member.role, "professional_roles": member.project_role_codes,
             "company": member.profile.workspace.name, "presence": "unknown",
+            "qualification": member.profile.position, "roles_are_current_catalogue": True,
         })
+    # A participation is a dated assignment, never evidence of attendance.
+    from edilcloud.modules.projects.participations import serialize_participation
+    assignments = project.participations.filter(valid_from__lt=end).filter(
+        Q(valid_to__isnull=True) | Q(valid_to__gt=start)).select_related("person")
+    for assignment in pages(assignments, batch_size):
+        value = serialize_participation(assignment)
+        item = source("member", assignment.pk, {
+            **value, "name": value["person_name"], "company": value["company_name"],
+            "professional_roles": value["role_codes"], "professional_role_labels": value["role_labels"],
+            "presence": "unknown", "assignment_is_not_attendance": True,
+        }, at=assignment.created_at)
+        item["provenance_kind"] = "participation"
+        yield item
     period_comments = PostComment.objects.filter(
         post__project=project, post__is_deleted=False, is_deleted=False,
         created_at__gte=start, created_at__lt=end, created_at__lte=captured_at,
@@ -212,6 +238,11 @@ def project_sources(*, job, captured_at, batch_size=BATCH_SIZE):
             "code": pin.pin_code, "label": pin.label, "page": pin.page_number,
             "x": pin.x, "y": pin.y,
         }, at=pin.created_at, parent_id=f"post:{pin.post_id}")
+    for pin in pages(ProjectModelPin.objects.filter(project=project, post_id__in=posts.values("pk"),
+                     created_at__lte=captured_at).select_related("model"), batch_size):
+        yield source("model_pin", pin.pk, {"model": pin.model.title, "model_id": pin.model_id,
+            "label": pin.label, "x": pin.x, "y": pin.y, "z": pin.z},
+            at=pin.created_at, parent_id=f"post:{pin.post_id}")
     events = ProjectOperationalEvent.objects.filter(
         project=project, occurred_at__lt=end, created_at__lte=captured_at,
     )

@@ -431,6 +431,10 @@ def test_publication_preserves_exact_pdf_signature_confirmation_and_revision_his
         confirm_signature=True,
     )
     assert frozen.state == "signed" and frozen.signature_audit["user_id"] == owner.user_id
+    frozen_manifest = frozen.frozen_manifest
+    assert frozen_manifest["pdf_hash"] == frozen.pdf_hash
+    assert frozen_manifest["revision_uuid"] == str(frozen.pk)
+    assert frozen_manifest["sources"] and len(frozen_manifest["manifest_hash"]) == 64
     assert frozen.pdf_hash == hashlib.sha256(b"%PDF-test-exact-server-render").hexdigest()
     with frozen.drive_document.document.open("rb") as stream:
         assert stream.read() == b"%PDF-test-exact-server-render"
@@ -461,6 +465,7 @@ def test_publication_preserves_exact_pdf_signature_confirmation_and_revision_his
     )
     frozen.refresh_from_db()
     assert frozen.state == "superseded" and frozen.signature_audit
+    assert frozen.frozen_manifest == frozen_manifest
     assert "Storico" in frozen.drive_document.folder.path
     assert frozen.pdf_hash == hashlib.sha256(b"%PDF-test-exact-server-render").hexdigest()
 

@@ -15,6 +15,7 @@ from edilcloud.modules.projects.api import (
     router as projects_router,
     tasks_router,
 )
+from edilcloud.modules.projects.evidence_api import router as evidence_router
 from edilcloud.modules.search.api import router as search_router
 from edilcloud.modules.workspaces.api import companies_router, router as workspaces_router
 from edilcloud.platform.api.health import router as health_router
@@ -35,6 +36,7 @@ api.add_router("/workspaces", workspaces_router)
 api.add_router("/companies", companies_router)
 api.add_router("/notifications", notifications_router)
 api.add_router("/projects", projects_router)
+api.add_router("/projects", evidence_router)
 api.add_router("/projects", assistant_router)
 api.add_router("/search", search_router)
 api.add_router("/tasks", tasks_router)

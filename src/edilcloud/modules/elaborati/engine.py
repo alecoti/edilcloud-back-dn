@@ -27,6 +27,12 @@ di analisi visiva non consentono di descrivere ciò che mostrano. Puoi descriver
 documentato nel post. Un'analisi AI dell'immagine è un ausilio, non una verifica metrica o certificazione.
 Le trascrizioni automatiche vanno usate come dichiarazioni, senza dedurre identità o presenza dalla voce.
 Le fonti secondarie non sostituiscono la registrazione originale.
+Attribuisci fatti e dichiarazioni alla persona, azienda, qualifica e incarichi presenti in source_actor.
+Non confondere un ruolo applicativo (Owner, Manager) con incarichi professionali (RSPP, CSE, CSP).
+Usa gli incarichi solo nel loro intervallo valid_from/valid_to. Un'anagrafica corrente o ricostruita
+non dimostra un incarico nel passato, una nomina verificata, una presenza o un'approvazione.
+Le qualifiche e gli incarichi non autorizzano a inventare responsabilità o certificazioni.
+Gli ID tecnici servono solo a source_ids: non stamparli nella prosa né inventare codici di evidenza.
 Non aggiungere riferimenti normativi oltre quelli espressamente ammessi dal template.
 Se manca un dato usa un campo editabile esplicito oppure scrivi, nella lingua richiesta, che non è documentato nelle fonti disponibili, classificandolo
 unverified solo nel campo strutturato nature: non stampare MAI questa parola nel testo.
