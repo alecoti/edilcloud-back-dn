@@ -236,8 +236,9 @@ def process_job(job_id):
             )
     except Exception as exc:
         from .provider import DocumentProviderError
+        from .errors import IncompleteDocumentOutput
 
-        known = isinstance(exc, (ValueError, HttpError, DocumentProviderError))
+        known = isinstance(exc, (ValueError, HttpError, DocumentProviderError, IncompleteDocumentOutput))
         message = (
             str(exc) if known else "L'elaborazione non è riuscita. La bozza precedente è intatta."
         )
@@ -245,7 +246,7 @@ def process_job(job_id):
         DocumentJob.objects.filter(pk=job.pk, state="running", lease_token=token).update(
             state="failed",
             stage="failed",
-            error_code="DOCUMENT_REQUEST_FAILED",
+            error_code="INCOMPLETE_OUTPUT" if isinstance(exc, IncompleteDocumentOutput) else "DOCUMENT_REQUEST_FAILED",
             error_message=message[:500],
         )
     return True

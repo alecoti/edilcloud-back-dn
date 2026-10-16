@@ -180,6 +180,9 @@ def job_thinking(job):
 
 
 def job_resumable(job):
+    for step in job.steps.filter(state="incomplete_output"):
+        if step.kind != "document_section" or len(step.input.get("data", {}).get("facts", [])) < 2:
+            return False
     return bool(
         job.workflow_version.startswith("v3") and job.state == "failed"
         and not job.steps.filter(state__in=("unknown", "cancelled")).exists()
@@ -192,8 +195,12 @@ def serialize_job(job, *, include_result=False, include_thinking=False):
     workflow = dict(job.workflow_state)
     if job.workflow_version.startswith("v3"):
         from django.db.models import Count
+        from .inventory import inventory_counts
 
         workflow["steps"] = {r["state"]: r["n"] for r in job.steps.values("state").annotate(n=Count("pk"))}
+        workflow["reviews_completed"] = job.steps.filter(state="completed", kind__in=("document_factual", "document_complete")).count()
+        if workflow.get("inventory_started_at"):
+            workflow["inventory"] = inventory_counts(job)
     data = {
         "id": str(job.pk),
         "revision_id": str(job.revision_id),

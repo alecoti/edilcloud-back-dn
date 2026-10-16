@@ -91,7 +91,7 @@ def test_inventory_keeps_long_text_and_entire_thread_with_explicit_temporal_cont
     early = PostComment.objects.create(post=old, author=owner, text="Condizione iniziale")
     PostComment.objects.filter(pk=early.pk).update(created_at=timezone.now() - timedelta(days=9))
     late = PostComment.objects.create(post=old, author=owner, text="Esito di oggi")
-    job = inventory_job(site)
+    job = inventory_job(site, "periodic_report")
     build_inventory(job, batch_size=1)
     text = job.evidence_items.get(source_id=f"post:{original.pk}").payload["data"]["text"]
     assert text == original.text

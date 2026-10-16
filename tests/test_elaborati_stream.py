@@ -125,6 +125,6 @@ def test_stream_integration_keeps_128k_usage_and_safe_audit_without_replaying(
             "usage_unknown"
         ]
     assert len(calls) == 1 and calls[0]["stream"] is True and calls[0]["store"] is False
-    assert calls[0]["max_output_tokens"] == 128000
+    assert "max_output_tokens" not in calls[0]
     audit = json.dumps(list(DocumentAudit.objects.filter(revision=revision).values("detail")))
     assert "private reasoning" not in audit and "source contents" not in audit

@@ -21,24 +21,37 @@ def validate_factual_review(review, claims, facts):
         if set(row.represented_fact_ids) - set(known) or not row.explanation.strip():
             raise ValueError("Verifica fattuale con riferimenti o motivazioni non validi.")
         claim = expected[row.claim_id]
-        for fact_id in row.represented_fact_ids:
-            if not set(claim["source_ids"]) & {r.source_id for r in known[fact_id].references}:
-                raise ValueError("Il fatto rappresentato non corrisponde alle fonti citate nel blocco.")
+        invalid = [fact_id for fact_id in row.represented_fact_ids if (
+            not set(claim["source_ids"]) & {r.source_id for r in known[fact_id].references}
+            or (claim.get("fact_ids") and fact_id not in claim["fact_ids"])
+        )]
+        if invalid:
+            # An unreliable review association is a failed verdict, not a
+            # reason to discard the complete document or repeat a paid call.
+            row.status = "not_verifiable"
+            row.represented_fact_ids = []
+            row.explanation = "Associazione tra affermazione, fatto e fonte non verificata."
     return review
 
 
 def factual_review(job, editor, facts):
     claims = claim_blocks(editor)
+    known = {f.id: f for f in facts}
     def review(batch):
         source_ids = {sid for claim in batch for sid in claim["source_ids"]}
-        parts = job.evidence_items.filter(parent_source_id__in=source_ids, kind="source_part")
+        assigned = {fid for claim in batch for fid in claim.get("fact_ids", []) if fid in known}
+        part_ids = {ref.part_id for fid in assigned for ref in known[fid].references}
+        parts = job.evidence_items.filter(kind="source_part")
+        parts = parts.filter(source_id__in=part_ids) if assigned else parts.filter(parent_source_id__in=source_ids)
         originals = [row.payload for row in parts.iterator(chunk_size=50)]
         # Per-claim evidence can itself be a long document. Review in bounded
         # source windows, then aggregate adverse verdicts conservatively.
         evidence_windows = list(bounded_batches(originals, max_characters=36000, max_items=16)) or [[]]
         results = []
         for window_index, window in enumerate(evidence_windows):
-            relevant_facts = [f for f in facts if any(r.source_id in source_ids for r in f.references)]
+            window_parts = {part["part_id"] for part in window}
+            relevant_facts = [f for f in facts if (not assigned or f.id in assigned)
+                              and any(r.part_id in window_parts for r in f.references)]
             result = specialist(
                 job=job, key=f"factual:{digest(batch)[:24]}:{window_index}:{digest(window)[:12]}",
                 stage="document_factual", schema=FactualReview, effort="high",
@@ -48,6 +61,11 @@ def factual_review(job, editor, facts):
                               "riferimenti puntuali dei fatti. Restituisci ogni claim una volta: supported, "
                               "partially_supported, contradicted o not_verifiable. Non basta una citazione. "
                               "Elenca represented_fact_ids solo se il fatto compare davvero nel blocco. "
+                              "Se il blocco indica fact_ids, verifica proprio quelle associazioni; non accreditare "
+                              "un fatto soltanto perché condivide un post o una fonte con altri fatti. "
+                              "Per le celle usa table_column e table_row: un luogo o una lavorazione nella "
+                              "colonna oggetto non afferma da sola che l'attività sia eseguita. Controlla il "
+                              "significato della riga completa senza attribuire alla singola cella altri fatti. "
                               "Se il supporto è fuori dalla finestra usa not_verifiable e spiegalo; "
                               "non confondere placeholder e titoli di colonne con fatti inventati. "
                               "Controlla date, attribuzioni, condizioni, proposta/esecuzione/verifica e dati numerici."),
@@ -86,8 +104,11 @@ def completeness_review(job, editor, facts, policy, plan):
     originals = DocumentEvidenceItem.objects.filter(job=job, kind="source_part")
     def review(window):
         source_ids = {v["source_id"] for v in window}
-        local_facts = [f for f in facts if any(r.source_id in source_ids for r in f.references)]
-        referenced_blocks = [b for b in blocks if set(b["source_ids"]) & source_ids]
+        part_ids = {v["part_id"] for v in window}
+        local_facts = [f for f in facts if any(r.part_id in part_ids for r in f.references)]
+        local_ids = {f.id for f in local_facts}
+        referenced_blocks = [b for b in blocks if set(b.get("fact_ids", [])) & local_ids
+                             or (not b.get("fact_ids") and set(b["source_ids"]) & source_ids)]
         result = specialist(
             job=job, key=f"complete:{digest(window)[:24]}:{digest(editor)[:12]}",
             stage="document_complete", schema=CompletenessReview, effort="high",
@@ -134,6 +155,10 @@ def application_quality(editor, bundle, facts, plan, factual, completeness, poli
         if row["status"] != "supported" and block["nature"] != "unverified":
             issues.append({"section_key": block["section_key"], "text": block["text"],
                            "severity": "blocking", "explanation": row["explanation"]})
+    for block in blocks.values():
+        if block["nature"] != "unverified" and not block.get("fact_ids"):
+            issues.append({"section_key": block["section_key"], "text": block["text"],
+                           "severity": "blocking", "explanation": "Affermazione senza collegamento ai fatti documentali."})
     allocations = {a.fact_id: a for a in plan.allocations}
     for fact in facts:
         allocation = allocations[fact.id]
@@ -148,10 +173,19 @@ def application_quality(editor, bundle, facts, plan, factual, completeness, poli
         if not declared:
             issues.append({"section_key": "", "text": "", "severity": "blocking",
                            "explanation": "La visita o riunione deve essere dichiarata da una fonte pertinente; non può essere inferita dalla richiesta."})
-    if policy.storage_key == "photo_report" and not any(n["type"] == "evidencePhoto" for n in editor.get("content", [])):
+    actual_photographs = {s["id"] for s in bundle["sources"] if s["kind"] in {"photo", "image_attachment"}
+                          and s.get("data", {}).get("visual_analysis")
+                          and not s["data"]["visual_analysis"].get("is_document")}
+    if policy.storage_key == "photo_report" and not any(
+        n["type"] == "evidencePhoto" and n.get("attrs", {}).get("sourceId") in actual_photographs
+        for n in editor.get("content", [])
+    ):
         issues.append({"section_key": "", "text": "", "severity": "blocking", "explanation": "Mancano fotografie effettive nella relazione fotografica."})
     for row in completeness["issues"]:
-        issues.append({"section_key": "", "text": "", "severity": "blocking" if row["critical"] else "warning",
+        allocation = allocations.get(row["subject_id"])
+        section_key = allocation.section_key if allocation else (
+            row["subject_id"].removeprefix("section:") if row["subject_id"].startswith("section:") else "")
+        issues.append({"section_key": section_key, "text": "", "severity": "blocking" if row["critical"] else "warning",
                        "explanation": row["explanation"], "category": row["kind"], "subject_id": row["subject_id"]})
     return {"passed": not any(i["severity"] == "blocking" for i in issues), "issues": issues,
             "missing_data": [r.requirement_id for r in plan.requirements if r.status != "satisfied"],

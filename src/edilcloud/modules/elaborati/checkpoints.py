@@ -10,6 +10,7 @@ from django.db.models import Max
 from django.utils import timezone
 
 from .content import digest
+from .errors import IncompleteDocumentOutput
 from .models import DocumentJob, DocumentStep, DocumentStepAttempt
 
 CURRENT_STEP = ContextVar("elaborati_step", default=None)
@@ -68,6 +69,8 @@ def run_step(*, job, key, kind, data, execute, schema=None, contract_version="v3
             if digest(step.output) != step.output_hash:
                 raise StepUnavailable("Integrità del risultato della fase non verificata.")
             return schema.model_validate(step.output) if schema else step.output
+        if step.state == "incomplete_output":
+            raise IncompleteDocumentOutput("L'incarico ha esaurito l'output: occorre suddividerlo.")
         if step.state in {"unknown", "cancelled"}:
             raise AmbiguousProviderResult("Questa fase richiede una decisione esplicita prima di ripartire.")
         if step.state == "running" and step.lease_expires_at and step.lease_expires_at > timezone.now():
@@ -97,8 +100,8 @@ def run_step(*, job, key, kind, data, execute, schema=None, contract_version="v3
             state__in=("sent", "unknown"),
         ).exists()
         DocumentStep.objects.filter(pk=step.pk, state="running", lease_token=step.lease_token).update(
-            state="unknown" if ambiguous else "failed",
-            error_code="PROVIDER_RESULT_UNKNOWN" if ambiguous else "STEP_FAILED",
+            state="unknown" if ambiguous else "incomplete_output" if isinstance(exc, IncompleteDocumentOutput) else "failed",
+            error_code="PROVIDER_RESULT_UNKNOWN" if ambiguous else "INCOMPLETE_OUTPUT" if isinstance(exc, IncompleteDocumentOutput) else "STEP_FAILED",
             # Diagnostic errors must not copy arbitrary provider/source text.
             error_message=(
                 "Esito remoto non confermato: nessuna nuova chiamata è stata avviata."
@@ -133,6 +136,14 @@ class ProviderCheckpoint:
             if attempt.input_hash != self.step.input_hash:
                 raise StepUnavailable("La risposta salvata non corrisponde alla fase.")
             return attempt.response
+        # A crash may occur after persisting the terminal response, before the
+        # ledger commit. Restore it so accounting finishes once without HTTP.
+        attempt = self.step.attempts.filter(state="incomplete_output").order_by("-number").first()
+        if attempt:
+            self.attempt = attempt
+            if attempt.input_hash != self.step.input_hash:
+                raise StepUnavailable("La risposta salvata non corrisponde alla fase.")
+            return attempt.response
         if self.step.attempts.filter(state__in=("sent", "unknown")).exists():
             raise AmbiguousProviderResult("Esito remoto da verificare; retry automatico disabilitato.")
         return None
@@ -162,7 +173,7 @@ class ProviderCheckpoint:
                     # Keep its reservation until the ledger transaction commits,
                     # including recovery after a crash between these operations.
                     reserved_tokens__gt=0,
-                    state__in=("sent", "unknown", "completed"),
+                    state__in=("sent", "unknown", "completed", "incomplete_output"),
                 ).aggregate(n=Sum("reserved_tokens"))["n"] or 0
                 legacy = DocumentJob.objects.filter(
                     revision__elaborato__project__workspace_id__in=workspace_ids,
@@ -196,7 +207,7 @@ class ProviderCheckpoint:
             return
         # Store only the structured public answer and usage. Raw/private
         # reasoning items, encrypted contexts and tool internals are not saved.
-        public = {key: payload[key] for key in ("id", "status", "usage", "incomplete_details") if key in payload}
+        public = {key: payload[key] for key in ("id", "status", "usage", "incomplete_details", "max_output_tokens", "service_tier") if key in payload}
         public["output"] = [
             {"type": "message", "content": [
                 {"type": "output_text", "text": part["text"]}
@@ -204,7 +215,8 @@ class ProviderCheckpoint:
             ]}
             for item in payload.get("output", []) if item.get("type") == "message"
         ]
-        self.attempt.state = "completed"
+        truncated = payload.get("status") == "incomplete" and (payload.get("incomplete_details") or {}).get("reason") == "max_output_tokens"
+        self.attempt.state = "incomplete_output" if truncated else "completed"
         self.attempt.response_id = payload.get("id") or ""
         self.attempt.usage = payload.get("usage") or {}
         self.attempt.response = public

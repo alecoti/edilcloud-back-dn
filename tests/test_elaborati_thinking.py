@@ -189,7 +189,7 @@ def test_provider_requests_summaries_in_existing_call_and_safe_rejection_fallbac
         job=job, stage="document_reasoning", schema=ReasoningResult, instructions="test", data={}
     )
     assert result.facts == [] and calls[0]["reasoning"]["summary"] == "auto"
-    assert calls[0]["max_output_tokens"] == 128000
+    assert "max_output_tokens" not in calls[0]
     assert len(calls) == (2 if reject_summary else 1)
     if reject_summary:
         assert "summary" not in calls[1]["reasoning"]

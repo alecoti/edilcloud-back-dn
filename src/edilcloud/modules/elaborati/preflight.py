@@ -68,7 +68,8 @@ class DocumentPreflight:
                     data.get("alert") or data.get("outside_period_context")
                     or re.search(
                         r"\b(condizion\w*|purch[eé]|salvo|contradd\w*|riapert\w*|non conform\w*|"
-                        r"a patto|subject to|unless|provided that|reopen\w*|contradict\w*)\b",
+                        r"a patto|fino a\w*|in attesa|sospend\w*|sospens\w*|revoc\w*|rettific\w*|sment\w*|"
+                        r"subject to|unless|until|pending|provided that|reopen\w*|contradict\w*)\b",
                         text, re.IGNORECASE,
                     )
                 )
@@ -90,3 +91,17 @@ class DocumentPreflight:
         else:
             path, reason = DocumentPath.STANDARD, "ordinary_documentary_scope"
         return cls(path, reason, dict(kinds), significant, characters, days, policy.version)
+
+
+def fast_review_reason(facts, quality):
+    """Post-extraction guard: a cheap-looking input can reveal a complex case."""
+    if len(facts) > 6:
+        return "extracted_facts_exceed_simple_scope"
+    sensitive = {"decision", "condition", "outcome", "reopening", "interruption", "visit", "meeting"}
+    if any(f.nature in {"contradicted", "open"} or f.category in sensitive for f in facts):
+        return "critical_or_stateful_facts_require_independent_review"
+    if len({f.event_date for f in facts if f.event_date}) > 1:
+        return "multiple_event_dates_require_independent_review"
+    if any(issue["severity"] == "blocking" for issue in quality["issues"]):
+        return "application_validation_requires_independent_review"
+    return ""

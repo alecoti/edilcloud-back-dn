@@ -449,7 +449,7 @@ def test_wire_schema_requires_each_frozen_section_once_and_adapter_restores_orde
         section_schema = body["text"]["format"]["schema"]["properties"]["sections"]
         assert section_schema["type"] == "object" and section_schema["required"] == keys
         assert section_schema["additionalProperties"] is False
-        assert body["max_output_tokens"] == 128_000
+        assert "max_output_tokens" not in body
         value = {
             "title": "Rapporto giornaliero",
             "subtitle": "Verifiche del fronte B203",

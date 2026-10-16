@@ -67,6 +67,7 @@ def media_data(field, context, event_at):
 
 def project_sources(*, job, captured_at, batch_size=BATCH_SIZE):
     document = job.revision.elaborato
+    scope = policy_for(document.document_type).scope_rules
     project = get_project_for_profile(profile=job.requested_by, project_id=document.project_id)
     start = timezone.make_aware(datetime.combine(document.period_start, time.min))
     end = timezone.make_aware(datetime.combine(document.period_end + timedelta(days=1), time.min))
@@ -104,7 +105,7 @@ def project_sources(*, job, captured_at, batch_size=BATCH_SIZE):
     posts = project.posts.filter(
         is_deleted=False, published_date__lt=end, created_at__lte=captured_at,
     )
-    if document.document_type != "issue_report":
+    if scope.posts != "project_history_until_reference_end":
         posts = posts.filter(Q(published_date__gte=start) | Q(pk__in=period_comments.values("post_id")))
     post_rows = posts.select_related("author", "task", "activity")
     for post in pages(post_rows, batch_size):
@@ -134,6 +135,8 @@ def project_sources(*, job, captured_at, batch_size=BATCH_SIZE):
         post__in=posts.values("pk"), is_deleted=False, created_at__lt=end,
         created_at__lte=captured_at,
     ).select_related("author")
+    if scope.comments == "period_only":
+        comments = comments.filter(created_at__gte=start)
     for comment in pages(comments, batch_size):
         yield source("comment", comment.pk, {
             "text": comment.original_text or comment.text,
@@ -175,13 +178,14 @@ def project_sources(*, job, captured_at, batch_size=BATCH_SIZE):
             "description": activity.description, "note": activity.note,
             "status_current_snapshot": activity.status,
         }, at=activity.updated_at)
-    photos = ProjectPhoto.objects.filter(
-        project=project, created_at__gte=start, created_at__lt=end, created_at__lte=captured_at,
-    )
+    photos = ProjectPhoto.objects.filter(project=project, created_at__lt=end, created_at__lte=captured_at)
+    if scope.photographs == "period_uploads":
+        photos = photos.filter(created_at__gte=start)
     for photo in pages(photos, batch_size):
         yield source("photo", photo.pk, {
             "title": photo.title, "filename": PurePosixPath(photo.photo.name).name,
             "media_kind": "image", "visual_content_verified": False, "at_is_upload_date": True,
+            "outside_period_context": not start <= photo.created_at < end,
         }, at=photo.created_at, file_ref={
             "model": "project_photo", "id": photo.pk, "version": file_version(photo, "photo"),
         })
@@ -209,12 +213,15 @@ def project_sources(*, job, captured_at, batch_size=BATCH_SIZE):
             "x": pin.x, "y": pin.y,
         }, at=pin.created_at, parent_id=f"post:{pin.post_id}")
     events = ProjectOperationalEvent.objects.filter(
-        project=project, occurred_at__gte=start, occurred_at__lt=end, created_at__lte=captured_at,
+        project=project, occurred_at__lt=end, created_at__lte=captured_at,
     )
+    if scope.operational_events == "period_only":
+        events = events.filter(occurred_at__gte=start)
     for event in pages(events, batch_size):
         yield source("event", event.pk, {
             "type": event.event_type, "post_id": event.post_id_snapshot,
             "task_id": event.task_id_snapshot, "document_id": event.document_id_snapshot,
+            "outside_period_context": not start <= event.occurred_at < end,
         }, at=event.occurred_at)
 
 
@@ -230,6 +237,7 @@ def build_inventory(job, *, batch_size=BATCH_SIZE):
     state["inventory_started_at"] = captured
     DocumentJob.objects.filter(pk=job.pk, lease_token=job.lease_token).update(workflow_state=state)
     policy = policy_for(job.revision.elaborato.document_type)
+    state["document_policy"] = policy.snapshot(job.revision.template_snapshot["sections"])
     for index, item in enumerate(project_sources(
         job=job, captured_at=datetime.fromisoformat(captured), batch_size=batch_size,
     )):

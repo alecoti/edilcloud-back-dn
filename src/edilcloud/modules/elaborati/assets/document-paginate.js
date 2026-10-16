@@ -23,7 +23,7 @@
   let pending=[];
   for(let blockIndex=0;blockIndex<blocks.length;blockIndex++){
     const block=blocks[blockIndex];
-    if(/^H[123]$/.test(block.tagName)){pending.push(block);continue;}
+    if(/^H[1-6]$/.test(block.tagName)){pending.push(block);continue;}
     // Source-register metadata belongs with its title and first table row.
     // Keeping only H2 with the metadata stranded both above a page break.
     if(pending.length&&block.matches('p.closing')&&blocks[blockIndex+1]?.tagName==='TABLE'){

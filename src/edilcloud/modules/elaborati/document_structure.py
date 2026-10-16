@@ -271,6 +271,7 @@ def registers_for(template):
             for key, columns, widths, purpose in tables
         ]
         for section, tables in REGISTERS.get(template.get("key"), {}).items()
+        if section in {s["key"] for s in template.get("sections", [])}
     }
 
 
@@ -317,7 +318,7 @@ def deduplicate_initial_tables(composition, template):
             return "{{field_" + str(len(ordered)) + "}}"
 
         text = re.sub(r"\{\{([a-z][a-z0-9_.-]{0,99})\}\}", marker, claim.text)
-        return (text, tuple(sorted(claim.source_ids)), claim.nature, tuple(ordered))
+        return (text, tuple(sorted(claim.source_ids)), claim.nature, tuple(ordered), tuple(sorted(claim.fact_ids)))
 
     def table_key(table):
         return (

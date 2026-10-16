@@ -608,7 +608,7 @@ def test_provider_uses_exact_model_high_structured_schema_and_accounts_incomplet
         )
     assert captured[0]["model"] == "gpt-6-luna" and captured[0]["reasoning"]["effort"] == "high"
     assert captured[0]["store"] is False
-    assert captured[0]["max_output_tokens"] == 128_000
+    assert "max_output_tokens" not in captured[0]
     assert captured[0]["text"]["format"]["strict"] is True
     assert captured[0]["text"]["format"]["schema"]["additionalProperties"] is False
     assert DocumentAIUsage.objects.get(job=job).total_tokens == 50

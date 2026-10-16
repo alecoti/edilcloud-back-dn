@@ -18,6 +18,67 @@ def requirements(policy, template):
     ]
 
 
+def complete_plan(plan, facts, policy, template, *, reconciliation=None, job=None):
+    """Complete structural destinations, never invent facts or satisfied fields."""
+    from .intelligence_contracts import FactAllocation, RequirementDisposition
+
+    sections = {s["key"] for s in template["sections"]}
+    mappings = {
+        "daily_report": {"activity": 2, "person": 2, "decision": 3, "condition": 3, "outcome": 3, "weather": 4},
+        "inspection": {"person": 2, "finding": 3, "decision": 4, "proposal": 4, "condition": 5, "outcome": 5},
+        "coordination": {"person": 2, "finding": 3, "decision": 4, "proposal": 3, "condition": 5, "outcome": 5},
+        "periodic_report": {"activity": 2, "finding": 3, "condition": 3, "interruption": 3, "decision": 4, "outcome": 6},
+        "photo_report": {"person": 2, "date": 2, "finding": 3, "visual_limitation": 3, "condition": 3},
+        "issue_report": {"activity": 2, "finding": 2, "decision": 2, "condition": 4, "outcome": 4, "reopening": 4, "person": 3},
+    }
+    known = {f.id: f for f in facts}
+    proposed = {}
+    for row in plan.allocations:
+        if row.fact_id in known and row.fact_id not in proposed:
+            proposed[row.fact_id] = row.model_copy(deep=True)
+    repaired = []
+    allocations = []
+    for fact in facts:
+        row = proposed.get(fact.id)
+        fallback = f"section_{mappings.get(policy.storage_key, {}).get(fact.category, 1)}"
+        if fallback not in sections:
+            fallback = template["sections"][0]["key"]
+        if not row or not row.reason.strip() or (row.included and row.section_key not in sections):
+            row = FactAllocation(fact_id=fact.id, section_key=fallback,
+                included=fact.relevant or fact.critical,
+                reason="Destinazione applicativa per categoria; nessun fatto pertinente viene omesso." if fact.relevant or fact.critical
+                else fact.relevance_reason)
+            repaired.append(fact.id)
+        if not row.included and (fact.relevant or fact.critical):
+            target = row.reason.removeprefix("duplicate:") if row.reason.startswith("duplicate:") else ""
+            canonical = known.get(target)
+            approved = reconciliation and reconciliation.get("facts", {}).get(fact.id, {}).get("canonical_fact_id") == target
+            exact = canonical and " ".join(canonical.text.casefold().split()) == " ".join(fact.text.casefold().split())
+            equivalent = canonical and canonical.nature == fact.nature and canonical.event_date == fact.event_date and canonical.category == fact.category
+            if target == fact.id or not equivalent or not (approved or exact) or not proposed.get(target) or not proposed[target].included:
+                row.included, row.section_key = True, fallback
+                row.reason = "Fatto pertinente conservato: nessuna deduplicazione equivalente verificata."
+                repaired.append(fact.id)
+        allocations.append(row)
+    required = {row.requirement_id: row for row in plan.requirements}
+    completed = []
+    for definition in requirements(policy, template):
+        row = required.get(definition["id"])
+        if row is None or set(row.fact_ids) - set(known) or not row.reason.strip():
+            row = RequirementDisposition(requirement_id=definition["id"], status="requires_confirmation", fact_ids=[],
+                                         reason="Requisito da completare o confermare; nessun dato dedotto.")
+            repaired.append(definition["id"])
+        completed.append(row)
+    result = DocumentPlan(allocations=allocations, requirements=completed)
+    validate_plan(result, facts, policy, template)
+    if repaired and job:
+        from .models import DocumentAudit
+
+        DocumentAudit.objects.create(revision=job.revision, actor=job.requested_by, action="plan.completed_by_application",
+                                     detail={"items": list(dict.fromkeys(repaired))})
+    return result
+
+
 def reconcile(job, facts, policy):
     known = {fact.id: fact for fact in facts}
     resolved = {}
@@ -31,12 +92,13 @@ def reconcile(job, facts, policy):
                           "esattamente una volta. canonical_fact_id può indicare soltanto un fatto del lotto "
                           "equivalente per significato, data e natura; altrimenti usa lo stesso id. "
                           "Non unificare proposta, esecuzione, verifica o esito condizionato. "
-                          "Segnala contraddizioni tramite conflicts_with. Mantieni esiti e condizioni rilevanti."),
+                          "Segnala contraddizioni tramite conflicts_with. Collega gli sviluppi del medesimo "
+                          "evento con related_fact_ids, senza confonderli con duplicati. Mantieni esiti e condizioni rilevanti."),
         )
         if {r.fact_id for r in result.facts} != ids or len(result.facts) != len(ids):
             raise ValueError("La riconciliazione non rende conto di tutti i fatti.")
         for row in result.facts:
-            if row.canonical_fact_id not in ids or set(row.conflicts_with) - ids or not row.reason.strip():
+            if row.canonical_fact_id not in ids or (set(row.conflicts_with) | set(row.related_fact_ids)) - ids or not row.reason.strip():
                 raise ValueError("Riconciliazione con riferimenti o motivazioni non validi.")
             # A model may flag doubts; it cannot discard a critical/relevant
             # source fact solely to simplify the final document.
@@ -53,7 +115,9 @@ def reconcile(job, facts, policy):
             resolved[fact.id]["canonical_fact_id"] = exact[key]
         else:
             exact[key] = fact.id
-    return {"facts": resolved, "conflicts": conflicts}
+    from .intelligence_reconciliation import reconcile_global
+
+    return reconcile_global(job, facts, {"facts": resolved, "conflicts": conflicts}, policy)
 
 
 def validate_plan(plan, facts, policy, template):
@@ -81,6 +145,8 @@ def validate_plan(plan, facts, policy, template):
 
 
 def plan_document(job, facts, policy, template, reconciliation):
+    if not reconciliation.get("global_complete"):
+        raise ValueError("Il piano DEEP richiede la riconciliazione globale completata.")
     required = requirements(policy, template)
     allocations = []
     groups = defaultdict(list)
@@ -103,7 +169,11 @@ def plan_document(job, facts, policy, template, reconciliation):
                           "solo se la riconciliazione indica un altro canonical_fact_id; in tal caso reason deve "
                           "essere esattamente duplicate:<canonical_fact_id>. Per ogni requisito restituisci "
                           "uno stato, motivazione e fact_ids del lotto che lo documentano. "
-                          "Dato mancante richiede un campo o conferma, non un valore inferito dal team o dal programma."),
+                          "Dato mancante richiede un campo o conferma, non un valore inferito dal team o dal programma. "
+                          "Assegna subsection_path con titoli descrittivi per disciplina, area, piano o evento "
+                          "quando la sezione è articolata, ad esempio [Impianti elettrici, Piano primo]. "
+                          "Riusa lo stesso percorso per fatti dello stesso argomento. Non scrivere numeri di "
+                          "sezione né titoli tecnici di batch. Il backend suddividerà ulteriormente gli incarichi grandi."),
         )
 
     requirement_rows = defaultdict(list)
@@ -124,7 +194,7 @@ def plan_document(job, facts, policy, template, reconciliation):
             reason="; ".join(dict.fromkeys(r.reason for r in rows)) or "Dato da completare o confermare nell'editor.",
         ))
     plan = DocumentPlan(allocations=allocations, requirements=combined)
-    validate_plan(plan, facts, policy, template)
+    plan = complete_plan(plan, facts, policy, template, reconciliation=reconciliation, job=job)
     for allocation in plan.allocations:
         if not allocation.included and allocation.reason.startswith("duplicate:"):
             canonical = allocation.reason.removeprefix("duplicate:")

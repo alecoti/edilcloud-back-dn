@@ -51,10 +51,12 @@ BRIEFS = {
 }
 
 
-def editorial_contract(revision, *, for_review=False):
+def editorial_contract(revision, *, for_review=False, section_keys=None):
     from .document_structure import registers_for
 
     template = revision.template_snapshot
+    if section_keys is not None:
+        template = {**template, "sections": [s for s in template["sections"] if s["key"] in section_keys]}
     briefs = BRIEFS[revision.elaborato.document_type]
     result = {
         "version": VERSION,
@@ -63,7 +65,10 @@ def editorial_contract(revision, *, for_review=False):
             "table_contract": "required_tables contiene i registri obbligatori, ognuno con rows di celle nominate secondo columns. Ogni cella contiene paragraphs: affermazioni separate, ciascuna con le proprie fonti e nature. Se nello stesso punto ci sono una proposta, un piano e una decisione, usa paragrafi distinti nella cella, senza assegnare una sola natura a tutti. Il backend costruisce intestazioni e proporzioni. Compila tutte le celle con fatti citati o campi editabili specifici; nessuna presenza o misura inventata. Gli indici table nel layout partono dai registri obbligatori nell'ordine qui indicato, seguiti dalle eventuali tables aggiuntive. Puoi lasciare layout [] per l'ordine standard completo.",
             "block_order": "Ogni sezione può specificare layout con kind/index per alternare paragraph, list, table e photo (indici da 0 per ciascun tipo nella sezione). kind heading con label introduce un gruppo H3. Se layout è valorizzato deve comprendere ogni elemento della sezione esattamente una volta; lascia [] per l'ordine standard. Nelle relazioni fotografiche usa gruppi per area con foto e osservazioni vicine. Le tabelle possono indicare widths come pesi percentuali delle colonne; preferire 3–5 colonne leggibili e intestazioni/campi brevi.",
             "layout": "reference-20261015",
-            "required_elements": STRUCTURES[revision.elaborato.document_type],
+            "required_elements": STRUCTURES[revision.elaborato.document_type] if section_keys is None else [
+                "Redigere esclusivamente la porzione assegnata con i suoi registri e fatti; "
+                "le altre sezioni e la firma finale vengono assemblate dal backend."
+            ],
             "editable_fields": {
                 "syntax": "Nello schema API ogni affermazione contiene parts: elementi {text: testo} oppure {field: definizione del campo}. Non scrivere manualmente marcatori {{...}} né una lista separata delle definizioni. Il backend costruisce il formato portabile per l'editor.",
                 "kinds": [
@@ -102,7 +107,8 @@ def editorial_contract(revision, *, for_review=False):
         },
         "sections": [
             {"key": section["key"], "purpose": brief}
-            for section, brief in zip(template["sections"], briefs, strict=True)
+            for section in template["sections"]
+            for brief in [briefs[int(section["key"].removeprefix("section_")) - 1]]
         ],
         "writing": [
             "Aprire con l'esito operativo utile e le condizioni ancora aperte, evitando una prima frase che ripeta solo titolo o data. Se una fonte impone un prerequisito esplicito, conservarlo fra le condizioni di avanzamento; non negare genericamente ogni decisione perché mancano incarichi nominativi o termini.",
@@ -111,7 +117,7 @@ def editorial_contract(revision, *, for_review=False):
             "Densità editoriale dei documenti ideali: registri sintetici ma completi, con una riga per evento o azione operativa. Riunire i messaggi del medesimo thread e riportare separatamente solo i cambiamenti sostanziali. Non trascrivere il feed né ripetere gli stessi dettagli in sintesi, cronologia, tabella azioni e lacune.",
             "Titolo formale breve del tipo di elaborato, sottotitolo specifico sull'oggetto della commessa. Non ripetere il nome del progetto nel titolo, perché è già nell'intestazione. Non stampare istruzioni di redazione come sottotitolo.",
             "Esprimere le ore nel fuso time_zone del cantiere indicato nelle fonti (Europe/Rome per questi esempi), senza convertirle in UTC o confonderle con l'ora del server.",
-            "Sviluppare tutto il contenuto necessario, senza limiti editoriali di token, parole o pagine e senza abbreviare per risparmiare output. I 128.000 token disponibili includono il ragionamento e sono un massimo tecnico, non una lunghezza da raggiungere: completezza e pertinenza determinano l'estensione.",
+            "Sviluppare tutto il contenuto necessario, senza limiti editoriali di token, parole o pagine e senza abbreviare per risparmiare output. Completezza e pertinenza determinano l'estensione; non aggiungere ripetizioni o riempitivi.",
             "Il risultato deve essere operativo: cosa è successo, dove, quando, chi lo dichiara, quale decisione è stata presa, cosa resta aperto e quale riscontro serve. Non riempire sezioni con la sola anagrafica del progetto.",
             "Una data di fine prevista superata non è una criticità da ripetere ovunque: citarla solo quando pertinente a un confronto effettivo con il programma. Non assumere che il cantiere sia concluso da quella data.",
             "Non inventare dati integrativi per mostrare un documento ideale: le integrazioni dimostrative sono ammesse solo se dichiarate esplicitamente dall'utente e devono restare identificate come tali.",

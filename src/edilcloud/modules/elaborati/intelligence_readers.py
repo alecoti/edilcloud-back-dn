@@ -85,6 +85,9 @@ def read_batch(job, parts, *, policy, request):
             "declared è una dichiarazione attribuita; una proposta/condizione resta tale. "
             "Segna critical i fatti della policy, inclusi esiti/decisioni/condizioni; motivane la rilevanza. "
             "I metadati e il programma non attestano esecuzione, presenza o verifiche. Un'esclusione deve essere motivata."
+            "Le chiavi JSON vuote e presence=unknown non sono eventi operativi o criticità: "
+            "indicano campi mancanti da gestire nei requisiti, non fatti critici autonomi. "
+            "Richiesta del documento e lingua sono contesto amministrativo, non fatti da rendicontare."
         ),
     )
     validate_reader(result, parts)
@@ -101,6 +104,8 @@ def read_batch(job, parts, *, policy, request):
         row = job.evidence_items.get(source_id=item.part_id)
         related = [f.model_dump() for f in facts if any(r.part_id == item.part_id for r in f.references)]
         set_reading_state(row, item.status, item.reason, {"facts": related, "reader_step": f"reader:{identifier}"})
+    for source_id in {part["source_id"] for part in parts}:
+        finalize_root(job.evidence_items.get(source_id=source_id))
     return facts
 
 
@@ -108,6 +113,10 @@ def read_inventory(job, *, policy, request):
     facts = []
     for batch_facts in parallel_map(lambda parts: read_batch(job, parts, policy=policy, request=request), part_batches(job)):
         facts.extend(batch_facts)
+        from .pipeline_v3 import progress
+        from .inventory import inventory_counts
+
+        progress(job, "reading", facts=len(facts), inventory=inventory_counts(job))
     for item in DocumentEvidenceItem.objects.filter(job=job, parent_source_id="").iterator(chunk_size=50):
         item.refresh_from_db()
         if item.state == "pending":

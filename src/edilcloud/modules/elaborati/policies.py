@@ -6,7 +6,7 @@ requirements and admissible evidence; an LLM cannot waive those requirements.
 
 from dataclasses import asdict, dataclass
 
-POLICY_VERSION = "2026.10.16.v3.1"
+POLICY_VERSION = "2026.10.16.v3.2"
 ALIASES = {"inspection_report": "inspection", "coordination_minutes": "coordination"}
 CANONICAL = {value: key for key, value in ALIASES.items()}
 SOURCE_KINDS = (
@@ -21,6 +21,25 @@ def storage_type(value):
 
 
 @dataclass(frozen=True)
+class DocumentScopeRules:
+    """Inventory boundaries; antecedents are context, never period execution."""
+
+    posts: str = "period_and_parent_of_period_comments"
+    comments: str = "period_only"
+    photographs: str = "period_uploads"
+    operational_events: str = "period_only"
+    documents: str = "available_project_documents_excluding_generated_reports"
+    antecedents_are_context_only: bool = True
+    reference_end_is_exclusive: bool = True
+
+
+HISTORICAL_SCOPE = DocumentScopeRules(
+    posts="project_history_until_reference_end", comments="selected_threads_until_reference_end",
+    photographs="project_history_until_reference_end", operational_events="project_history_until_reference_end",
+)
+
+
+@dataclass(frozen=True)
 class DocumentTypePolicy:
     key: str
     storage_key: str
@@ -29,6 +48,7 @@ class DocumentTypePolicy:
     critical_facts: tuple[str, ...]
     completion_rules: tuple[str, ...]
     required_event: str = ""
+    scope_rules: DocumentScopeRules = DocumentScopeRules()
     allowed_sources: tuple[str, ...] = SOURCE_KINDS
     signature_rules: tuple[str, ...] = (
         "explicit_personal_consent", "revision_scoped", "never_infer_signature_or_attendance",
@@ -88,6 +108,7 @@ POLICIES = {
         ("current_progress_is_historical", "planned_is_executed", "assigned_is_closed"),
         ("activity", "decision", "outcome", "condition", "interruption"),
         ("whole_period_inventory", "preserve_evolution", "date_current_snapshots"),
+        scope_rules=HISTORICAL_SCOPE,
     ),
     "photo_report": DocumentTypePolicy(
         "photo_report", "photo_report",
@@ -103,6 +124,7 @@ POLICIES = {
         ("executed_is_verified", "conditional_is_closed", "request_is_execution"),
         ("finding", "decision", "request", "outcome", "condition", "reopening"),
         ("thread_until_reference_end", "preserve_outcomes", "preserve_open_conditions"),
+        scope_rules=HISTORICAL_SCOPE,
     ),
 }
 

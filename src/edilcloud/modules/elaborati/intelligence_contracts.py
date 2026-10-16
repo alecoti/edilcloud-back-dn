@@ -1,6 +1,7 @@
 """Typed documentary contracts: source -> fact -> requirement -> final block."""
 
 from typing import Literal
+import json
 from pydantic import Field
 
 from .content import Composition, StrictModel
@@ -47,6 +48,7 @@ class FactReconciliation(StrictModel):
     relevant: bool
     reason: str
     conflicts_with: list[str]
+    related_fact_ids: list[str] = Field(default_factory=list)
 
 
 class ReconciliationResult(StrictModel):
@@ -58,6 +60,7 @@ class FactAllocation(StrictModel):
     section_key: str
     included: bool
     reason: str
+    subsection_path: list[str] = Field(default_factory=list)
 
 
 class RequirementDisposition(StrictModel):
@@ -106,7 +109,6 @@ class FastDocumentResult(StrictModel):
     reading: ReaderResult
     composition: Composition
     plan: DocumentPlan
-    factual_review: FactualReview
 
 
 class StandardAnalysisResult(StrictModel):
@@ -129,12 +131,33 @@ def validate_reader(result, parts):
     for fact in result.facts:
         if not fact.relevance_reason.strip():
             raise ValueError("La pertinenza del fatto deve essere motivata.")
+        validated_references = []
         for ref in fact.references:
             part = by_id.get(ref.part_id)
             if not part or ref.source_id != part["source_id"] or ref.page != part.get("page"):
                 raise ValueError("Il riferimento non corrisponde alla fonte esaminata.")
             if normalize(ref.quote) not in normalize(part["text"]):
-                raise ValueError("Il passaggio citato non è presente nella fonte originale.")
+                # A reader may cite two exact metadata fields while omitting
+                # an intervening empty field. Preserve both literal passages
+                # independently, never accept a fabricated contiguous quote.
+                if part.get("origin_kind") not in {"project", "request", "member", "task", "activity"}:
+                    raise ValueError("Il passaggio citato non è presente nella fonte originale.")
+                try:
+                    original = json.loads(part["text"])
+                    selected = json.loads("{" + ref.quote.strip().strip("{}").strip() + "}")
+                    fragments = [json.dumps({key: value}, ensure_ascii=False, separators=(",", ":"))[1:-1]
+                                 for key, value in selected.items()]
+                    if not selected or any(key not in original or type(original[key]) is not type(value)
+                                           or original[key] != value for key, value in selected.items()):
+                        raise ValueError
+                    if any(fragment not in part["text"] for fragment in fragments):
+                        raise ValueError
+                except (ValueError, TypeError, AttributeError):
+                    raise ValueError("Il passaggio citato non è presente nella fonte originale.") from None
+                validated_references.extend(ref.model_copy(update={"quote": fragment}) for fragment in fragments)
+            else:
+                validated_references.append(ref)
+        fact.references = validated_references
     return result
 
 

@@ -169,6 +169,7 @@ class DocumentStep(TimestampedModel):
         RUNNING = "running", "In elaborazione"
         COMPLETED = "completed", "Completata"
         FAILED = "failed", "Errore recuperabile"
+        INCOMPLETE_OUTPUT = "incomplete_output", "Output incompleto da suddividere"
         UNKNOWN = "unknown", "Esito remoto sconosciuto"
         CANCELLED = "cancelled", "Annullata"
 
@@ -178,7 +179,7 @@ class DocumentStep(TimestampedModel):
     kind = models.CharField(max_length=40)
     contract_version = models.CharField(max_length=40)
     input_hash = models.CharField(max_length=64)
-    state = models.CharField(max_length=16, choices=State.choices, default=State.PENDING)
+    state = models.CharField(max_length=24, choices=State.choices, default=State.PENDING)
     dependencies = models.ManyToManyField("self", symmetrical=False, related_name="dependents")
     lease_token = models.UUIDField(null=True, blank=True)
     lease_expires_at = models.DateTimeField(null=True, blank=True)
@@ -205,11 +206,12 @@ class DocumentStepAttempt(TimestampedModel):
         REJECTED = "rejected", "Rifiutato prima dell'elaborazione"
         UNKNOWN = "unknown", "Esito remoto sconosciuto"
         FAILED = "failed", "Risposta non applicabile"
+        INCOMPLETE_OUTPUT = "incomplete_output", "Output incompleto"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     step = models.ForeignKey(DocumentStep, on_delete=models.CASCADE, related_name="attempts")
     number = models.PositiveIntegerField()
-    state = models.CharField(max_length=16, choices=State.choices, default=State.PREPARED)
+    state = models.CharField(max_length=24, choices=State.choices, default=State.PREPARED)
     input_hash = models.CharField(max_length=64)
     model = models.CharField(max_length=64, blank=True)
     effort = models.CharField(max_length=16, blank=True)

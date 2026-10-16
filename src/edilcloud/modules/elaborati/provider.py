@@ -13,9 +13,11 @@ from django.db.models import F
 from pydantic import BaseModel, ValidationError
 
 from .models import DocumentAIUsage, DocumentJob, DocumentAudit
+from .errors import IncompleteDocumentOutput
 
-# Full model allowance, shared by analysis, composition, review and editor actions.
-# Includes reasoning tokens; it is a ceiling, never a requested document length.
+# Published model maximum, used only to reserve finite account quotas when the
+# caller leaves output sizing to OpenAI. Not sent as an application output cap.
+# Source checked 2026-10-16: developers.openai.com/api/docs/models/gpt-6-luna
 LUNA_MAX_OUTPUT_TOKENS = 128_000
 
 
@@ -56,7 +58,7 @@ def provider_heartbeat(job):
         thread.join(timeout=2)
 
 
-def strict_response_schema(model, template=None, evidence=None):
+def strict_response_schema(model, template=None, evidence=None, data=None):
     """Responses requires every object property, including defaulted list fields."""
     schema = model.model_json_schema()
 
@@ -73,14 +75,29 @@ def strict_response_schema(model, template=None, evidence=None):
                 walk(child)
 
     walk(schema)
-    if template and model.__name__ == "Composition":
+    if model.__name__ == "ReconciliationResult" and data:
+        rows = data.get("canonical_facts") or data.get("facts") or []
+        ids = [row.get("fact_id") or row.get("id") for row in rows]
+        if ids:
+            definition = schema["$defs"]["FactReconciliation"]
+            definition["properties"].pop("fact_id")
+            definition["required"].remove("fact_id")
+            definition["properties"]["canonical_fact_id"]["enum"] = ids
+            for name in ("conflicts_with", "related_fact_ids"):
+                definition["properties"][name]["items"]["enum"] = ids
+            schema["properties"]["facts"] = {
+                "type": "object", "properties": {key: {"$ref": "#/$defs/FactReconciliation"} for key in ids},
+                "required": ids, "additionalProperties": False,
+            }
+    composition = schema if model.__name__ == "Composition" else schema.get("$defs", {}).get("Composition")
+    if template and composition:
         # Object keys, unlike an array plus prose instructions, require every
         # frozen section exactly once. The application supplies their order.
         section = schema["$defs"]["Section"]
         section["properties"].pop("key")
         section["required"].remove("key")
         keys = [s["key"] for s in template["sections"]]
-        schema["properties"]["sections"] = {
+        composition["properties"]["sections"] = {
             "type": "object",
             "properties": {key: {"$ref": "#/$defs/Section"} for key in keys},
             "required": keys,
@@ -121,7 +138,7 @@ def strict_response_schema(model, template=None, evidence=None):
                 "additionalProperties": False,
             }
             specific["required"].append("required_tables")
-            schema["properties"]["sections"]["properties"][key] = specific
+            composition["properties"]["sections"]["properties"][key] = specific
         # Inline fields are actual structured values on the wire. The model
         # must not coordinate a hand-written {{token}} with a separate list;
         # that redundant representation caused expensive valid drafts to fail.
@@ -132,7 +149,7 @@ def strict_response_schema(model, template=None, evidence=None):
         schema["$defs"]["Photograph"]["properties"]["caption"] = {"$ref": "#/$defs/PhotoCaption"}
         claim["properties"].pop("text")
         claim["properties"].pop("fields")
-        claim["required"] = ["source_ids", "nature", "parts"]
+        claim["required"] = ["source_ids", "nature", "fact_ids", "parts"]
         claim["properties"]["parts"] = {
             "type": "array",
             "minItems": 1,
@@ -185,6 +202,11 @@ def strict_response_schema(model, template=None, evidence=None):
             source_ids = definition.get("properties", {}).get("source_ids")
             if source_ids:
                 source_ids["items"] = {"$ref": "#/$defs/EvidenceSourceId"}
+            fact_ids = definition.get("properties", {}).get("fact_ids")
+            if fact_ids and evidence.get("fact_ids"):
+                fact_ids["items"] = {"type": "string", "enum": evidence["fact_ids"]}
+            elif fact_ids and model.__name__ != "FastDocumentResult":
+                fact_ids["maxItems"] = 0
         if "Photograph" in definitions:
             photo_ids = [
                 s["id"] for s in evidence["sources"] if s["kind"] in {"photo", "image_attachment"}
@@ -193,8 +215,30 @@ def strict_response_schema(model, template=None, evidence=None):
                 "type": "string",
                 "enum": photo_ids or ["__no_photographs_available__"],
             }
-            if not photo_ids:
-                schema["properties"]["photographs"]["maxItems"] = 0
+            if not photo_ids and composition:
+                composition["properties"]["photographs"]["maxItems"] = 0
+    # Identifiers are application-owned. Constrain them on the wire whenever
+    # the stage already knows their domain, rather than paying for typos.
+    if data:
+        definitions = schema.get("$defs", {})
+        def constrain(name, field, values, *, array=False):
+            prop = definitions.get(name, {}).get("properties", {}).get(field)
+            if prop is not None:
+                domain = list(dict.fromkeys(values))
+                if domain:
+                    target = prop["items"] if array else prop
+                    target["enum"] = domain
+                elif array:
+                    prop["maxItems"] = 0
+        parts = data.get("parts") or data.get("original_sources") or []
+        part_ids = [part["part_id"] for part in parts]
+        constrain("SourceReference", "part_id", part_ids)
+        constrain("SourceDisposition", "part_id", part_ids)
+        if "ClaimReview" in definitions:
+            constrain("ClaimReview", "claim_id", [c["claim_id"] for c in data.get("claims", [])])
+            constrain("ClaimReview", "represented_fact_ids", [f["id"] for f in data.get("facts", [])], array=True)
+        if model.__name__ == "CompletenessReview":
+            schema["properties"]["reviewed_source_ids"]["items"]["enum"] = part_ids
     return schema
 
 
@@ -244,7 +288,7 @@ def structured_response(
     instructions: str,
     data: dict,
     effort="high",
-    max_output_tokens=LUNA_MAX_OUTPUT_TOKENS,
+    max_output_tokens=None,
     images=(),
 ):
     from .checkpoints import ProviderCheckpoint
@@ -258,7 +302,6 @@ def structured_response(
         "store": False,
         "stream": True,
         "reasoning": {"effort": effort},
-        "max_output_tokens": max_output_tokens,
         "instructions": instructions,
         "input": json.dumps(data, ensure_ascii=False, separators=(",", ":")),
         "text": {
@@ -267,11 +310,15 @@ def structured_response(
                 "name": stage,
                 "strict": True,
                 "schema": strict_response_schema(
-                    schema, data.get("template"), data.get("evidence")
+                    schema, data.get("template"), data.get("evidence"), data
                 ),
             }
         },
     }
+    if max_output_tokens is not None:
+        if type(max_output_tokens) is not int or max_output_tokens <= 0:
+            raise ValueError("Il limite di output esplicito deve essere un intero positivo.")
+        body["max_output_tokens"] = max_output_tokens
     if effort != "none":
         body["reasoning"]["summary"] = "auto"
     if images:
@@ -295,7 +342,8 @@ def structured_response(
         ]
     # Conservative UTF-8 upper bound, including schema and reasoning output.
     # A large source set must be narrowed rather than silently overdrawing quota.
-    budget = len(json.dumps(body, ensure_ascii=False).encode()) + max_output_tokens
+    output_reservation = max_output_tokens if max_output_tokens is not None else LUNA_MAX_OUTPUT_TOKENS
+    budget = len(json.dumps(body, ensure_ascii=False).encode()) + output_reservation
     job.refresh_from_db(fields=("consumed_tokens", "reserved_tokens"))
     remaining = job.reserved_tokens - job.consumed_tokens
     from edilcloud.modules.billing.services import (
@@ -326,6 +374,7 @@ def structured_response(
                 "stage": stage,
                 "response_id": identifier,
                 "output_limit": max_output_tokens,
+                "output_policy": "provider_default" if max_output_tokens is None else "explicit",
                 "reasoning_effort": effort,
                 "transport": "stream",
             },
@@ -355,12 +404,12 @@ def structured_response(
                     if (
                         type(counted) is not int
                         or counted < 0
-                        or (not checkpoint.step and counted + max_output_tokens > remaining)
+                        or (not checkpoint.step and counted + output_reservation > remaining)
                     ):
                         raise DocumentProviderError(
                             "Fonti troppo estese per il budget disponibile. Riduci il periodo o dividi l'elaborato."
                         )
-                    budget = counted + max_output_tokens
+                    budget = counted + output_reservation
                 from .provider_stream import read_response
                 from .thinking import ReasoningProgress
 
@@ -470,12 +519,19 @@ def structured_response(
                         "cached_tokens", 0
                     ),
                     "output_limit": max_output_tokens,
+                    "output_policy": "provider_default" if max_output_tokens is None else "explicit",
+                    "provider_output_limit": payload.get("max_output_tokens"),
+                    "service_tier": payload.get("service_tier"),
                     "reasoning_effort": effort,
                     "status": payload.get("status"),
                     "duration_ms": round((time.monotonic() - started) * 1000),
                 },
             )
     renew_lease(job)
+    if payload.get("status") == "incomplete" and (payload.get("incomplete_details") or {}).get("reason") == "max_output_tokens":
+        raise IncompleteDocumentOutput(
+            "Output AI incompleto: la porzione deve essere suddivisa. Nessun testo troncato è stato applicato."
+        )
     if payload.get("status") != "completed":
         raise DocumentProviderError(
             "La redazione AI si è interrotta prima del completamento. Nessun testo incompleto è stato applicato."
@@ -489,19 +545,22 @@ def structured_response(
     ]
     try:
         value = json.loads("".join(texts))
-        if schema.__name__ == "Composition" and isinstance(value.get("sections"), dict):
-            value["sections"] = [
-                {**value["sections"][section["key"]], "key": section["key"]}
+        if schema.__name__ == "ReconciliationResult" and isinstance(value.get("facts"), dict):
+            value["facts"] = [{**row, "fact_id": key} for key, row in value["facts"].items()]
+        composition = value if schema.__name__ == "Composition" else value.get("composition")
+        if isinstance(composition, dict) and isinstance(composition.get("sections"), dict):
+            composition["sections"] = [
+                {**composition["sections"][section["key"]], "key": section["key"]}
                 for section in data["template"]["sections"]
             ]
             from .fields import fields_in
 
             decode_document_parts(
-                value, existing_field_ids=[f["fieldId"] for f in fields_in(job.revision.editor_doc)]
+                composition, existing_field_ids=[f["fieldId"] for f in fields_in(job.revision.editor_doc)]
             )
             from .document_structure import decode_registers
 
-            decode_registers(value, data["template"])
+            decode_registers(composition, data["template"])
         return schema.model_validate(value)
     except (ValueError, KeyError, TypeError) as exc:
         # Explain structural failures without storing provider text, hidden

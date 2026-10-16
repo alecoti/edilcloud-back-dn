@@ -44,6 +44,8 @@ def editor_equivalent(left, right):
     def normalized(node):
         result = {k: v for k, v in node.items() if k not in {"attrs", "content"}}
         attrs = {k: v for k, v in (node.get("attrs") or {}).items() if v is not None}
+        if attrs.get("factIds") == []:
+            attrs.pop("factIds")
         for key, value in {"colspan": 1, "rowspan": 1, "start": 1}.items():
             if attrs.get(key) == value:
                 attrs.pop(key)
@@ -77,6 +79,7 @@ class Claim(StrictModel):
     source_ids: list[str]
     nature: str = Field(pattern="^(observed|reported|proposed|decided|unverified)$")
     fields: list[EditableField] = Field(default_factory=list)
+    fact_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def placeholders_match(self):
@@ -136,6 +139,7 @@ class BlockPlacement(StrictModel):
     kind: Literal["paragraph", "list", "table", "photo", "heading"]
     index: int = Field(default=0, ge=0)
     label: str = Field(default="", max_length=180)
+    heading_level: Literal[3, 4, 5, 6] = 3
 
 
 class Section(StrictModel):
@@ -208,6 +212,7 @@ def editor_from_composition(composition: Composition, template: dict) -> dict:
                 "sectionKey": section_key,
                 "sourceIds": claim.source_ids,
                 "nature": claim.nature,
+                **({"factIds": claim.fact_ids} if claim.fact_ids else {}),
             },
             "content": inline,
         }
@@ -222,6 +227,7 @@ def editor_from_composition(composition: Composition, template: dict) -> dict:
                 "caption": photo.caption.text,
                 "sourceIds": photo.caption.source_ids,
                 "nature": photo.caption.nature,
+                **({"factIds": photo.caption.fact_ids} if photo.caption.fact_ids else {}),
                 "sectionKey": photo.section_key or None,
                 "title": photo.title,
                 "layout": photo.layout,
@@ -313,7 +319,7 @@ def editor_from_composition(composition: Composition, template: dict) -> dict:
                     arranged.append(
                         {
                             "type": "heading",
-                            "attrs": {"level": 3},
+                            "attrs": {"level": block.heading_level},
                             "content": [{"type": "text", "text": block.label}],
                         }
                     )
@@ -340,15 +346,18 @@ def editor_from_composition(composition: Composition, template: dict) -> dict:
 
 
 def validate_editor(doc: dict, evidence: dict, template: dict) -> dict:
+    from django.conf import settings
+
     if (
         not isinstance(doc, dict)
         or doc.get("type") != "doc"
         or not isinstance(doc.get("content"), list)
     ):
         raise ValueError("Formato editor non valido.")
-    if len(json.dumps(doc, ensure_ascii=False)) > 2_000_000:
+    if len(json.dumps(doc, ensure_ascii=False).encode("utf8")) > settings.ELABORATI_EDITOR_MAX_BYTES:
         raise ValueError("L'elaborato supera la dimensione consentita.")
     sources = {s["id"]: s for s in evidence.get("sources", [])}
+    fact_ids = set(evidence.get("fact_ids", []))
     sections = {s["key"] for s in template["sections"]}
     count = 0
     field_ids = set()
@@ -356,7 +365,7 @@ def validate_editor(doc: dict, evidence: dict, template: dict) -> dict:
     def walk(node, depth=0):
         nonlocal count
         count += 1
-        if depth > 12 or count > 20_000 or not isinstance(node, dict):
+        if depth > 12 or count > settings.ELABORATI_EDITOR_MAX_NODES or not isinstance(node, dict):
             raise ValueError("Struttura editor troppo complessa.")
         kind = node.get("type")
         if kind not in {
@@ -378,11 +387,11 @@ def validate_editor(doc: dict, evidence: dict, template: dict) -> dict:
             raise ValueError("Elemento editor non supportato.")
         attrs = node.get("attrs") or {}
         allowed_attrs = (
-            {"sectionKey", "sourceIds", "nature", "textAlign"}
+            {"sectionKey", "sourceIds", "factIds", "nature", "textAlign"}
             if kind == "paragraph"
             else {"level", "sectionKey", "textAlign"}
             if kind == "heading"
-            else {"sourceId", "caption", "sourceIds", "nature", "sectionKey", "title", "layout"}
+            else {"sourceId", "caption", "sourceIds", "factIds", "nature", "sectionKey", "title", "layout"}
             if kind == "evidencePhoto"
             else {"start", "type"}
             if kind == "orderedList"
@@ -416,6 +425,11 @@ def validate_editor(doc: dict, evidence: dict, template: dict) -> dict:
             not isinstance(attrs["sectionKey"], str) or attrs["sectionKey"] not in sections
         ):
             raise ValueError("Sezione sconosciuta.")
+        if "factIds" in attrs:
+            if not isinstance(attrs["factIds"], list) or any(
+                not isinstance(f, str) or f not in fact_ids for f in attrs["factIds"]
+            ):
+                raise ValueError("Riferimento a un fatto documentale non valido.")
         if "sourceIds" in attrs:
             if not isinstance(attrs["sourceIds"], list) or any(
                 not isinstance(s, str) or s not in sources for s in attrs["sourceIds"]
@@ -445,7 +459,7 @@ def validate_editor(doc: dict, evidence: dict, template: dict) -> dict:
         ):
             raise ValueError("Stile di numerazione dell'elenco non valido.")
         if kind == "heading" and (
-            type(attrs.get("level")) is not int or attrs["level"] not in {1, 2, 3}
+            type(attrs.get("level")) is not int or attrs["level"] not in {1, 2, 3, 4, 5, 6}
         ):
             raise ValueError("Livello titolo non valido.")
         if kind in {"tableCell", "tableHeader"}:
@@ -541,7 +555,7 @@ def validate_editor(doc: dict, evidence: dict, template: dict) -> dict:
     return doc
 
 
-def editor_claims(doc: dict) -> list[dict]:
+def editor_claims(doc: dict, *, include_context=False) -> list[dict]:
     result = []
 
     def text(node):
@@ -550,7 +564,7 @@ def editor_claims(doc: dict) -> list[dict]:
             return field.get("value") or f"[Da compilare: {field['label']}]"
         return node.get("text", "") + " ".join(text(c) for c in node.get("content", []))
 
-    def walk(node):
+    def walk(node, context=None):
         if node.get("type") == "tableHeader":
             # Column labels carry no factual assertion and must not inflate the
             # missing-data count or be sent to the verifier as unsupported facts.
@@ -587,6 +601,8 @@ def editor_claims(doc: dict) -> list[dict]:
                     if only_empty_fields
                     else attrs.get("nature", "reported"),
                     "document_fields": fields,
+                    **({"fact_ids": attrs["factIds"]} if attrs.get("factIds") else {}),
+                    **(context or {}),
                 }
             )
         if (
@@ -602,10 +618,21 @@ def editor_claims(doc: dict) -> list[dict]:
                         dict.fromkeys([attrs["sourceId"], *attrs.get("sourceIds", [])])
                     ),
                     "nature": attrs.get("nature", "reported"),
+                    **({"fact_ids": attrs["factIds"]} if attrs.get("factIds") else {}),
                 }
             )
+        if include_context and node.get("type") == "table":
+            rows = node.get("content", [])
+            headers = [text(cell).strip() for cell in rows[0].get("content", [])] if rows else []
+            for row in rows:
+                cells = row.get("content", [])
+                row_text = [text(cell).strip() for cell in cells]
+                for index, cell in enumerate(cells):
+                    walk(cell, {"table_column": headers[index] if index < len(headers) else "",
+                                "table_row": row_text})
+            return
         for child in node.get("content", []):
-            walk(child)
+            walk(child, context)
 
     walk(doc)
     return result
