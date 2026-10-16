@@ -367,7 +367,7 @@ def template_for(document_type: str, language="it") -> dict:
     return deepcopy(
         {
             "key": document_type,
-            "version": "2026.10.1",
+            "version": "2026.10.3",
             "country": "IT",
             "context": "Documentazione operativa di cantiere",
             "label": label,

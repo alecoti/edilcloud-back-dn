@@ -51,7 +51,9 @@ def queue_job(*, revision, profile, action, key, payload=None, input_version=Non
         DocumentJob.objects.filter(
             revision__elaborato__project__workspace_id__in=account_workspace_ids(account),
             state__in=("queued", "running"),
-        ).aggregate(total=Sum(Greatest(F("reserved_tokens") - F("consumed_tokens"), Value(0))))["total"]
+        ).aggregate(total=Sum(Greatest(F("reserved_tokens") - F("consumed_tokens"), Value(0))))[
+            "total"
+        ]
         or 0
     )
     tokens = 90_000 if action == "generate" else 45_000

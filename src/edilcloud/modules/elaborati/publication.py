@@ -71,7 +71,12 @@ def prepare_preview(job):
     from .jobs import set_stage
 
     set_stage(job, "rendering")
-    pdf = render_pdf(revision=revision, profile=job.requested_by, signature=signature)
+    pdf = render_pdf(
+        revision=revision,
+        profile=job.requested_by,
+        signature=signature,
+        publication_state="signed" if signature else "published",
+    )
     pdf_hash = hashlib.sha256(pdf).hexdigest()
     # FileField.save(save=False) writes an isolated immutable candidate. Only the
     # fenced job completion may attach it to a still-current revision.

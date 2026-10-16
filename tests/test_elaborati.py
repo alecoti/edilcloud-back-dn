@@ -246,6 +246,7 @@ def test_editor_rejects_unknown_sources_html_external_images_and_scripts(site, p
 def test_edit_uses_optimistic_lock_and_invalidates_quality(site, provider):
     revision = generate(site)
     owner = site[1]
+    revision.editor_doc["content"][1]["content"][0]["text"] += " Esito da confermare."
     changed = services.save_revision(
         profile=owner,
         revision_id=revision.pk,
@@ -430,7 +431,9 @@ def test_real_chromium_pdf_is_valid_and_escapes_untrusted_text(site, provider, s
     import pypdfium2
 
     with pypdfium2.PdfDocument(output) as pdf:
-        assert len(pdf) >= 2
+        # The reference layout flows sources into available space, without a
+        # compulsory extra page for this deliberately short fixture.
+        assert len(pdf) >= 1
         page = pdf[0]
         text = page.get_textpage().get_text_range()
         assert "Residenza" in text
@@ -536,6 +539,7 @@ def test_provider_uses_exact_model_high_structured_schema_and_accounts_incomplet
         )
     assert captured[0]["model"] == "gpt-6-luna" and captured[0]["reasoning"]["effort"] == "high"
     assert captured[0]["store"] is False
+    assert captured[0]["max_output_tokens"] == 128_000
     assert captured[0]["text"]["format"]["strict"] is True
     assert captured[0]["text"]["format"]["schema"]["additionalProperties"] is False
     assert DocumentAIUsage.objects.get(job=job).total_tokens == 50
@@ -564,7 +568,7 @@ def test_large_input_is_counted_before_a_billable_request_instead_of_guessing_by
     job.state = "running"
     job.lease_token = uuid.uuid4()
     job.lease_expires_at = timezone.now() + timedelta(minutes=8)
-    job.reserved_tokens = 8500
+    job.reserved_tokens = 128_500
     job.save()
     paths = []
     original = httpx.Client

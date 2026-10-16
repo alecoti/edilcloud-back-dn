@@ -287,9 +287,29 @@ def save_revision(*, profile, revision_id, payload):
     revision = get_revision(profile=profile, revision_id=revision_id, edit=True, lock=True)
     ensure_editable(revision, payload.version)
     validate_editor(payload.editor_doc, revision.evidence, revision.template_snapshot)
+    from .content import editor_equivalent
+    from .editorial import VERSION as EDITORIAL_VERSION
+
+    prior_quality = revision.quality
+    review_still_valid = (
+        prior_quality.get("passed")
+        and prior_quality.get("content_hash") == digest(revision.editor_doc)
+        and prior_quality.get("evidence_hash") == revision.evidence.get("bundle_hash")
+        and prior_quality.get("editorial_version") == EDITORIAL_VERSION
+        and editor_equivalent(revision.editor_doc, payload.editor_doc)
+    )
+    from .fields import sync_field_declarations
+
+    sync_field_declarations(revision=revision, profile=profile, doc=payload.editor_doc)
+    revision.source_count = len(revision.evidence.get("sources", []))
     revision.editor_doc = payload.editor_doc
     revision.version += 1
-    revision.quality = {"passed": False, "needs_verification": True}
+    revision.quality = (
+        {**prior_quality, "content_hash": digest(revision.editor_doc)}
+        if review_still_valid
+        and prior_quality.get("evidence_hash") == revision.evidence.get("bundle_hash")
+        else {"passed": False, "needs_verification": True}
+    )
     invalidate_preview(revision)
     revision.save()
     DocumentAudit.objects.create(
@@ -421,6 +441,16 @@ def new_revision(*, profile, revision_id):
         return existing
     if original.state not in {"published", "signed"}:
         raise HttpError(409, "La nuova revisione deve partire dalla pubblicazione corrente.")
+    from copy import deepcopy
+    from .editorial import VERSION as EDITORIAL_VERSION
+
+    review = original.quality
+    same_verified_content = (
+        review.get("passed")
+        and review.get("content_hash") == digest(original.editor_doc)
+        and review.get("evidence_hash") == original.evidence.get("bundle_hash")
+        and review.get("editorial_version") == EDITORIAL_VERSION
+    )
     revision = ElaboratoRevision.objects.create(
         elaborato=document,
         created_by=profile,
@@ -431,14 +461,19 @@ def new_revision(*, profile, revision_id):
         reasoning=original.reasoning,
         declarations=original.declarations,
         source_count=original.source_count,
-        quality={"passed": False, "needs_verification": True},
+        quality=deepcopy(review)
+        if same_verified_content
+        else {"passed": False, "needs_verification": True},
     )
     # No PDF, signature audit, preview or consent is ever copied.
     DocumentAudit.objects.create(
         revision=revision,
         actor=profile,
         action="revision.created",
-        detail={"from_revision": str(original.pk)},
+        detail={
+            "from_revision": str(original.pk),
+            "verification_retained": bool(same_verified_content),
+        },
     )
     return revision
 

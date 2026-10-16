@@ -25,6 +25,10 @@ from edilcloud.modules.projects.services import get_project_for_profile, profile
 from .content import digest, editor_claims
 
 
+def file_version(obj, field):
+    return digest({"name": getattr(obj, field).name, "updated_at": obj.updated_at.isoformat()})
+
+
 def build_evidence(*, profile, elaborato, declarations=()) -> dict:
     project = get_project_for_profile(profile=profile, project_id=elaborato.project_id)
     start = timezone.make_aware(datetime.combine(elaborato.period_start, time.min))
@@ -40,6 +44,7 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
         "limits": {"sources": 450, "text_characters": 150_000},
     }
     used = 0
+    candidates = []
 
     def add(kind, pk, data, *, at=None, file_ref=None, parent_id=None):
         nonlocal used
@@ -51,15 +56,11 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
             "at": at.isoformat() if at else None,
             "parent_id": parent_id,
         }
-        source["hash"] = digest(source)
         if file_ref:
             source["file_ref"] = file_ref
-        size = len(str(source))
-        if len(result["sources"]) >= 450 or used + size > 150_000:
-            result["truncated"] = True
-            return
-        used += size
-        result["sources"].append(source)
+            source["file_version"] = file_ref.get("version", "")
+        source["hash"] = digest({k: v for k, v in source.items() if k != "file_ref"})
+        candidates.append(source)
 
     add(
         "project",
@@ -97,6 +98,7 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
                 "declared_by": declaration["author"],
                 "declared_at": declaration["at"],
                 "nature": "reported",
+                **({"document_field": declaration["field"]} if declaration.get("field") else {}),
             },
         )
     # Membership is NOT evidence of attendance at a meeting or on a given date.
@@ -114,6 +116,7 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
                 "role": member.role,
                 "company": member.profile.workspace.name,
                 "presence": "unknown",
+                "professional_roles": member.project_role_codes,
             },
         )
 
@@ -170,9 +173,21 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
                     "filename": filename,
                     "context": (post.original_text or post.text)[:800],
                     "visual_content_verified": False,
+                    "media_kind": "image"
+                    if image
+                    else "audio"
+                    if PurePosixPath(filename).suffix.lower()
+                    in {".mp3", ".m4a", ".wav", ".flac", ".ogg", ".webm", ".mp4"}
+                    else "file",
+                    "event_date_from_parent": post.published_date.isoformat(),
+                    "uploaded_at_is_not_event_date": True,
                 },
                 at=attachment.created_at,
-                file_ref={"model": "post_attachment", "id": attachment.pk},
+                file_ref={
+                    "model": "post_attachment",
+                    "id": attachment.pk,
+                    "version": file_version(attachment, "file"),
+                },
                 parent_id=f"post:{post.pk}",
             )
     for comment in comments[:200]:
@@ -200,10 +215,22 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
                 "filename": filename,
                 "context": (attachment.comment.original_text or attachment.comment.text)[:800],
                 "visual_content_verified": False,
+                "media_kind": "image"
+                if image
+                else "audio"
+                if PurePosixPath(filename).suffix.lower()
+                in {".mp3", ".m4a", ".wav", ".flac", ".ogg", ".webm"}
+                else "file",
+                "event_date_from_parent": attachment.comment.created_at.isoformat(),
+                "uploaded_at_is_not_event_date": True,
             },
             at=attachment.created_at,
             parent_id=f"comment:{attachment.comment_id}",
-            file_ref={"model": "comment_attachment", "id": attachment.pk},
+            file_ref={
+                "model": "comment_attachment",
+                "id": attachment.pk,
+                "version": file_version(attachment, "file"),
+            },
         )
     for task in (
         project.tasks.filter(
@@ -255,12 +282,27 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
                 "title": photo.title,
                 "filename": PurePosixPath(photo.photo.name).name,
                 "visual_content_verified": False,
+                "at_is_upload_date": True,
             },
             at=photo.created_at,
-            file_ref={"model": "project_photo", "id": photo.pk},
+            file_ref={
+                "model": "project_photo",
+                "id": photo.pk,
+                "version": file_version(photo, "photo"),
+            },
         )
+    from .models import ElaboratoRevision
+
+    # Published PDFs are derived outputs, even though Drive stores them as
+    # ordinary project files. Feeding them back as primary extracted evidence
+    # amplified AI statements and could exhaust the source budget before photos.
+    derived_ids = ElaboratoRevision.objects.filter(
+        elaborato__project=project, drive_document_id__isnull=False
+    ).values("drive_document_id")
     documents = list(
-        ProjectDocument.objects.filter(project=project).order_by("-updated_at", "pk")[:61]
+        ProjectDocument.objects.filter(project=project)
+        .exclude(pk__in=derived_ids)
+        .order_by("-updated_at", "pk")[:61]
     )
     from .document_sources import document_excerpts
 
@@ -277,7 +319,11 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
                 "extraction_is_partial": bool(excerpts.get(document.pk)),
             },
             at=document.updated_at,
-            file_ref={"model": "document", "id": document.pk},
+            file_ref={
+                "model": "document",
+                "id": document.pk,
+                "version": file_version(document, "document"),
+            },
         )
     for pin in (
         ProjectDrawingPin.objects.filter(project=project, post_id__in=by_id)
@@ -315,11 +361,11 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
             },
             at=event.occurred_at,
         )
-    from .models import ElaboratoRevision
-
     prior = (
         ElaboratoRevision.objects.filter(
-            elaborato__project=project, state__in=("published", "signed")
+            elaborato__project=project,
+            state__in=("published", "signed"),
+            elaborato__period_end__lte=elaborato.period_end,
         )
         .exclude(elaborato=elaborato)
         .select_related("elaborato")
@@ -332,11 +378,58 @@ def build_evidence(*, profile, elaborato, declarations=()) -> dict:
             {
                 "title": revision.elaborato.title,
                 "revision": revision.number,
+                "period_start": str(revision.elaborato.period_start),
+                "period_end": str(revision.elaborato.period_end),
                 "summary": [c["text"] for c in editor_claims(revision.editor_doc)[:12]],
                 "secondary_source": True,
             },
             at=revision.published_at,
         )
+    # Preserve primary communications before the often numerous media/member
+    # records. Previously attachments could exhaust the budget before decisions
+    # in comments or extracted documents were even considered.
+    priorities = {
+        "project": 0,
+        "request": 0,
+        "declaration": 0,
+        "post": 1,
+        "comment": 2,
+        "document": 3,
+        "drawing_pin": 4,
+        "photo": 5,
+        "image_attachment": 5,
+        "task": 6,
+        "activity": 6,
+        "drawing": 7,
+        "member": 8,
+        "attachment": 9,
+        "event": 10,
+        "previous_elaborato": 11,
+    }
+    for source in sorted(candidates, key=lambda s: priorities.get(s["kind"], 12)):
+        size = len(str(source))
+        if len(result["sources"]) >= 450 or used + size > 150_000:
+            result["truncated"] = True
+            continue
+        used += size
+        result["sources"].append(source)
+    if not posts and not comments:
+        dates = []
+        for query in (
+            project.posts.filter(is_deleted=False, published_date__lt=start).order_by(
+                "-published_date"
+            ),
+            project.posts.filter(is_deleted=False, published_date__gte=end).order_by(
+                "published_date"
+            ),
+        ):
+            value = query.values_list("published_date", flat=True).first()
+            if value:
+                dates.append(timezone.localtime(value).date().isoformat())
+        result["nearby_post_dates"] = sorted(set(dates))
+    from .readiness import coverage_summary
+
+    result["coverage"] = coverage_summary(result)
     result["bundle_hash"] = digest(result)
     return result
 
@@ -371,4 +464,8 @@ def resolve_evidence_file(*, profile, project_id, source):
     obj = model.objects.filter(pk=ref.get("id"), **filters).first()
     if not obj:
         raise ValueError("La fonte è stata rimossa o non è più accessibile.")
+    if ref.get("version") and ref["version"] != file_version(obj, field):
+        raise ValueError(
+            "Il file della fonte è stato modificato. Aggiorna le fonti prima di generare il PDF."
+        )
     return getattr(obj, field)
