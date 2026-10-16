@@ -102,7 +102,10 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True):
         "job": serialize_job(job) if job else None,
     }
     if full:
+        from .usage import document_token_usage
+
         data.update(
+            ai_usage=document_token_usage(document.pk),
             can_edit=viewer_can_edit,
             editor_doc=revision.editor_doc,
             template=revision.template_snapshot,
@@ -132,7 +135,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True):
 
 
 def serialize_job(job, *, include_result=False):
-    return {
+    data = {
         "id": str(job.pk),
         "revision_id": str(job.revision_id),
         "state": job.state,
@@ -143,6 +146,11 @@ def serialize_job(job, *, include_result=False):
         "error_message": job.error_message,
         "result": job.result if include_result and job.state == "completed" else None,
     }
+    if include_result:
+        from .usage import document_token_usage
+
+        data["ai_usage"] = document_token_usage(job.revision.elaborato_id)
+    return data
 
 
 def list_elaborati(

@@ -163,7 +163,8 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
         if kind in {"bulletList", "orderedList", "listItem"}:
             tag = {"bulletList": "ul", "orderedList": "ol", "listItem": "li"}[kind]
             if kind == "orderedList":
-                return f'<ol start="{attrs.get("start", 1)}">{content}</ol>'
+                style = f' type="{esc(attrs["type"])}"' if attrs.get("type") else ""
+                return f'<ol start="{attrs.get("start", 1)}"{style}>{content}</ol>'
             return f"<{tag}>{content}</{tag}>"
         if kind == "table":
             rows = node.get("content", [])

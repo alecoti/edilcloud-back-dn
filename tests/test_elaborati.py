@@ -15,6 +15,7 @@ from edilcloud.modules.elaborati.content import (
     QualityResult,
     ReasoningResult,
     digest,
+    editor_equivalent,
     local_quality,
     validate_editor,
 )
@@ -260,6 +261,74 @@ def test_edit_uses_optimistic_lock_and_invalidates_quality(site, provider):
             payload=SaveRequest(version=2, editor_doc=revision.editor_doc),
         )
     assert exc.value.status_code == 409
+
+
+def test_tiptap_numbered_list_can_save_preview_and_publish(site, provider, monkeypatch):
+    from copy import deepcopy
+
+    from edilcloud.modules.elaborati.renderer import render_html
+
+    revision = generate(site)
+    item = deepcopy(revision.editor_doc["content"][1])
+    listing = {
+        "type": "orderedList",
+        "attrs": {"start": 3, "type": None},
+        "content": [{"type": "listItem", "content": [item]}],
+    }
+    revision.editor_doc["content"].append(listing)
+    before_open = deepcopy(revision.editor_doc)
+    del before_open["content"][-1]["attrs"]["type"]
+    assert editor_equivalent(before_open, revision.editor_doc)
+
+    owner = site[1]
+    client = Client()
+    token = login_and_get_token(email=owner.user.email, password="test123")
+    response = client.patch(
+        f"/api/v1/elaborati/revisions/{revision.pk}",
+        data=json.dumps({"version": revision.version, "editor_doc": revision.editor_doc}),
+        content_type="application/json",
+        **auth_header(token),
+    )
+    assert response.status_code == 200, response.content
+    revision.refresh_from_db()
+    assert revision.editor_doc["content"][-1]["attrs"] == {"start": 3, "type": None}
+    assert '<ol start="3">' in render_html(revision=revision, profile=owner)
+
+    # Exercise preview and exact-byte Drive publication using the saved editor
+    # document; no provider/network/rendering dependency is needed for this gate.
+    monkeypatch.setattr(
+        "edilcloud.modules.elaborati.renderer.render_pdf", lambda **kwargs: b"%PDF-list-regression"
+    )
+    revision = prepare(site, revision)
+    frozen = publish_revision(
+        profile=owner,
+        revision_id=revision.pk,
+        version=revision.version,
+        preview_hash=revision.preview_hash,
+    )
+    assert frozen.state == "published"
+    with frozen.drive_document.document.open("rb") as stream:
+        assert stream.read() == b"%PDF-list-regression"
+
+
+def test_numbered_list_types_preserve_formatting_and_reject_unsafe_attributes(site, provider):
+    from edilcloud.modules.elaborati.renderer import render_html
+
+    revision = generate(site)
+    listing = {"type": "orderedList", "attrs": {"start": 2}, "content": []}
+    revision.editor_doc["content"].append(listing)
+    for style in (None, "1", "a", "A", "i", "I"):
+        listing["attrs"]["type"] = style
+        validate_editor(revision.editor_doc, revision.evidence, revision.template_snapshot)
+        expected = f'<ol start="2" type="{style}">' if style else '<ol start="2">'
+        assert expected in render_html(revision=revision, profile=site[1])
+    for invalid in ([], {}, True, 1, "", 'a" onclick="alert(1)', "javascript:alert(1)"):
+        listing["attrs"]["type"] = invalid
+        with pytest.raises(ValueError):
+            validate_editor(revision.editor_doc, revision.evidence, revision.template_snapshot)
+    listing["attrs"] = {"start": 2, "type": None, "onclick": "alert(1)"}
+    with pytest.raises(ValueError):
+        validate_editor(revision.editor_doc, revision.evidence, revision.template_snapshot)
 
 
 def test_editor_proposal_requires_acceptance_and_cannot_apply_after_later_edit(site, provider):

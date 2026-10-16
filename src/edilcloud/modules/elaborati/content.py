@@ -384,7 +384,7 @@ def validate_editor(doc: dict, evidence: dict, template: dict) -> dict:
             if kind == "heading"
             else {"sourceId", "caption", "sourceIds", "nature", "sectionKey", "title", "layout"}
             if kind == "evidencePhoto"
-            else {"start"}
+            else {"start", "type"}
             if kind == "orderedList"
             else set()
         )
@@ -437,6 +437,13 @@ def validate_editor(doc: dict, evidence: dict, template: dict) -> dict:
             type(attrs.get("start", 1)) is not int or not 1 <= attrs.get("start", 1) <= 1_000_000
         ):
             raise ValueError("Numerazione dell'elenco non valida.")
+        # Tiptap 2 emits type=null even for an unchanged, ordinary numbered list.
+        # Accept only the HTML numbering styles, never arbitrary DOM attributes.
+        if kind == "orderedList" and attrs.get("type") is not None and (
+            not isinstance(attrs["type"], str)
+            or attrs["type"] not in {"1", "a", "A", "i", "I"}
+        ):
+            raise ValueError("Stile di numerazione dell'elenco non valido.")
         if kind == "heading" and (
             type(attrs.get("level")) is not int or attrs["level"] not in {1, 2, 3}
         ):
