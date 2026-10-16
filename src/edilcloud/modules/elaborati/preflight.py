@@ -95,6 +95,8 @@ class DocumentPreflight:
 
 def fast_review_reason(facts, quality):
     """Post-extraction guard: a cheap-looking input can reveal a complex case."""
+    if quality.get("literal_quote_selection"):
+        return "quote_selection_requires_independent_review"
     if len(facts) > 6:
         return "extracted_facts_exceed_simple_scope"
     sensitive = {"decision", "condition", "outcome", "reopening", "interruption", "visit", "meeting"}

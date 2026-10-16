@@ -42,6 +42,15 @@ class ReaderResult(StrictModel):
     sources: list[SourceDisposition]
 
 
+class QuoteSelection(StrictModel):
+    reference_key: str
+    quotes: list[str]
+
+
+class QuoteRepairResult(StrictModel):
+    references: list[QuoteSelection]
+
+
 class FactReconciliation(StrictModel):
     fact_id: str
     canonical_fact_id: str
@@ -165,10 +174,12 @@ def enforce_fact_policy(facts, parts, policy):
     by_id = {p["part_id"]: p for p in parts}
     for fact in facts:
         origins = {by_id[r.part_id].get("origin_kind") for r in fact.references}
-        if fact.category in policy.critical_facts:
-            fact.critical = True
-        if fact.critical:
-            fact.relevant = True
+        # Importance is relative to this document's perimeter. A condition in
+        # a later/unrelated technical file must not become mandatory just
+        # because conditions are critical within the selected report. Keep
+        # the explicit exclusion in the ledger; the independent completeness
+        # reviewer still checks that exclusion against the original sources.
+        fact.critical = fact.relevant and (fact.critical or fact.category in policy.critical_facts)
         if origins <= {"member", "task", "activity", "project", "request"} and (
             fact.nature in {"executed", "verified"} or fact.category in {"visit", "meeting"}
         ):

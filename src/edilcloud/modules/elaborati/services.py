@@ -180,6 +180,8 @@ def job_thinking(job):
 
 
 def job_resumable(job):
+    if job.error_code == "DOCUMENT_RESULT_INVALID":
+        return False
     for step in job.steps.filter(state="incomplete_output"):
         if step.kind != "document_section" or len(step.input.get("data", {}).get("facts", [])) < 2:
             return False

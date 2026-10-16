@@ -105,8 +105,11 @@ def test_global_reconciliation_rejects_merging_execution_with_verification(site,
     monkeypatch.setattr("edilcloud.modules.elaborati.intelligence_reconciliation.specialist", lambda **kwargs:
         ReconciliationResult(facts=[FactReconciliation(fact_id=f.id, canonical_fact_id="f0", relevant=True,
             reason="Erroneamente equivalenti", conflicts_with=[]) for f in facts]))
-    with pytest.raises(ValueError, match="natura o data"):
-        reconcile_global(job, facts, local, {})
+    output = reconcile_global(job, facts, local, {})
+    assert output["facts"]["f0"]["canonical_fact_id"] == "f0"
+    assert output["facts"]["f1"]["canonical_fact_id"] == "f1"
+    assert output["global_complete"] and len(output["facts"]) == 2
+    assert output["rejected_merges"] == [{"fact_ids": ["f0", "f1"], "reason": "different_nature_category_or_date"}]
 
 
 def test_small_document_is_promoted_for_extracted_critical_conditions_or_too_many_facts():
@@ -114,6 +117,22 @@ def test_small_document_is_promoted_for_extracted_critical_conditions_or_too_man
     assert fast_review_reason([fact(0, category="condition")], {"issues": []})
     assert fast_review_reason([fact(i, category="activity") for i in range(7)], {"issues": []})
     assert fast_review_reason([fact(0, category="activity")], {"issues": [{"severity": "blocking"}]})
+
+
+def test_policy_importance_does_not_reintroduce_explicitly_out_of_scope_conditions():
+    from edilcloud.modules.elaborati.intelligence_contracts import enforce_fact_policy
+    from edilcloud.modules.elaborati.policies import policy_for
+
+    outside = fact(0, category="condition", text="Condizione contenuta in un documento successivo alla riunione.")
+    outside.relevant = False
+    outside.relevance_reason = "Documento successivo al coordinamento richiesto; non attesta lo stato alla riunione."
+    inside = fact(1, category="condition", text="Condizione stabilita durante la riunione richiesta.")
+    inside.critical = False
+    parts = [{"part_id": f"part:{i}", "origin_kind": "document"} for i in range(2)]
+    enforce_fact_policy([outside, inside], parts, policy_for("coordination"))
+    assert outside.relevant is False and outside.critical is False
+    assert outside.relevance_reason
+    assert inside.relevant is True and inside.critical is True
 
 
 def test_writer_contract_contains_only_its_section_and_preserves_the_correct_brief(site):

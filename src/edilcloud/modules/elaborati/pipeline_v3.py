@@ -9,9 +9,9 @@ from .checkpoints import run_step, threaded_step
 from .content import Composition, Section, Claim, digest, validate_editor
 from .engine import compose_editor, prompt_bundle, prompt_template
 from .intelligence_calls import specialist
-from .intelligence_contracts import FastDocumentResult, StandardAnalysisResult, validate_reader, enforce_fact_policy
+from .intelligence_contracts import FastDocumentResult, StandardAnalysisResult, enforce_fact_policy
 from .intelligence_planning import plan_document, reconcile, complete_plan
-from .intelligence_readers import evidence_bundle, mark_metadata_examined, prepare_sources, read_inventory
+from .intelligence_readers import evidence_bundle, mark_metadata_examined, prepare_sources, read_inventory, validate_reader_with_quote_repair
 from .intelligence_reviews import application_quality, completeness_review, factual_review
 from .intelligence_writing import claim_blocks, compose_partitions, correct_sections, index_facts
 from .inventory import build_inventory, inventory_counts
@@ -94,7 +94,7 @@ def fast_document(job, policy):
                       "Non inventare dati per completare il testo. "
                       "Nessun fatto rilevante può essere escluso. L'assenza di dati non dimostra che non sia accaduto nulla."),
     )
-    validate_reader(result.reading, parts)
+    validate_reader_with_quote_repair(job, result.reading, parts, "fast_document")
     enforce_fact_policy(result.reading.facts, parts, policy)
     result.plan = complete_plan(result.plan, result.reading.facts, policy, job.revision.template_snapshot, job=job)
     bundle = index_facts(bundle, result.reading.facts)
@@ -113,6 +113,7 @@ def fast_document(job, policy):
     from .content import local_quality
 
     quality = {"passed": False, "needs_verification": False,
+               "literal_quote_selection": job.steps.filter(key="reader_quotes:fast_document").exists(),
                "issues": local_quality(editor, bundle, job.revision.template_snapshot),
                "missing_data": [r.requirement_id for r in result.plan.requirements if r.status != "satisfied"],
                "content_hash": digest(editor), "evidence_hash": bundle["bundle_hash"],
@@ -190,7 +191,7 @@ def standard_document(job, policy):
                       "Una dichiarazione di visita avvenuta è distinta da una richiesta di visita futura. "
                       "Non escludere fatti rilevanti per semplificare. Non scrivere ancora il documento."),
     )
-    validate_reader(analysis.reading, parts)
+    validate_reader_with_quote_repair(job, analysis.reading, parts, "standard_analysis")
     enforce_fact_policy(analysis.reading.facts, parts, policy)
     analysis.plan = complete_plan(analysis.plan, analysis.reading.facts, policy, template, job=job)
     for disposition in analysis.reading.sources:

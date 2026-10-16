@@ -1,6 +1,10 @@
 """Stable workflow failures shared by persistence and provider adapters."""
 
 
+class UnusableDocumentResult(ValueError):
+    """Known paid output cannot be repaired by replaying its checkpoint."""
+
+
 class IncompleteDocumentOutput(RuntimeError):
     """A terminal, billed response exceeded its output allowance.
 

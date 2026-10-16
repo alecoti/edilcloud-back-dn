@@ -7,14 +7,40 @@ import json
 
 from django.conf import settings
 from django.db import connection
+from django.db.models import Q
 from django.utils import timezone
 
 from .checkpoints import threaded_step
 from .content import digest
+from .errors import UnusableDocumentResult
 from .intelligence_calls import specialist
-from .intelligence_contracts import ReaderResult, validate_reader, enforce_fact_policy
+from .intelligence_contracts import QuoteRepairResult, ReaderResult, validate_reader, enforce_fact_policy
 from .models import DocumentEvidenceItem
 from .source_reading import finalize_root, set_reading_state
+
+
+def evidence_records(rows, *, page_size=50, order=("source_id",)):
+    """Materialize one keyset page before yielding work that may call AI.
+
+    A QuerySet.iterator cursor spans the provider call and progress/lease
+    writes. On SQLite that can deadlock even in WAL mode; on PostgreSQL it
+    unnecessarily holds a server cursor across slow network requests. Keep
+    the original stable source ordering, without loading the whole inventory.
+    """
+    last = None
+    while True:
+        selected = rows.order_by(*order)
+        if last is not None:
+            after = Q()
+            for index, field in enumerate(order):
+                prefix = {name: last[position] for position, name in enumerate(order[:index])}
+                after |= Q(**prefix, **{field + "__gt": last[index]})
+            selected = selected.filter(after)
+        page = list(selected[:page_size])
+        if not page:
+            return
+        last = tuple(getattr(page[-1], field) for field in order)
+        yield from page
 
 
 def bounded_batches(values, *, max_characters=26000, max_items=12):
@@ -58,15 +84,68 @@ def prepare_sources(job):
         prepare_source(job, item)
         return item.pk
 
-    for _ in parallel_map(prepare, roots.iterator(chunk_size=50)):
+    for _ in parallel_map(prepare, evidence_records(roots)):
         pass
     return roots.count()
 
 
 def part_batches(job):
     rows = DocumentEvidenceItem.objects.filter(job=job, kind="source_part").order_by("parent_source_id", "source_id")
-    for batch in bounded_batches(row.payload for row in rows.iterator(chunk_size=50)):
+    for batch in bounded_batches(row.payload for row in evidence_records(rows, order=("parent_source_id", "source_id"))):
         yield batch
+
+
+def validate_reader_with_quote_repair(job, result, parts, identifier):
+    """One bounded passage selection, without re-reading/rebuying the batch.
+
+    Facts, attribution, nature and source identity remain unchanged. Selecting
+    a genuine passage is not a verdict that the fact is true: both independent
+    reviewers still compare those facts against the original evidence.
+    """
+    try:
+        return validate_reader(result, parts)
+    except ValueError as exc:
+        if str(exc) != "Il passaggio citato non è presente nella fonte originale.":
+            raise
+    originals = {p["part_id"]: p for p in parts}
+    invalid = []
+    def normalize(value):
+        return " ".join(value.split())
+    for fact in result.facts:
+        for index, ref in enumerate(fact.references):
+            part = originals.get(ref.part_id)
+            if not part or ref.source_id != part["source_id"] or ref.page != part.get("page"):
+                raise ValueError("Il riferimento non corrisponde alla fonte esaminata.")
+            if normalize(ref.quote) not in normalize(part["text"]):
+                invalid.append({"reference_key": f"{fact.id}:{index}", "fact": fact.text,
+                                "part_id": ref.part_id, "invalid_quote": ref.quote})
+    if not invalid:
+        raise ValueError("Il passaggio citato non è presente nella fonte originale.")
+    selection = specialist(job=job, key=f"reader_quotes:{identifier}", stage="document_quote_selection",
+        schema=QuoteRepairResult, effort="medium", data={"references": invalid,
+            "original_sources": [originals[key] for key in dict.fromkeys(row["part_id"] for row in invalid)]},
+        instructions=("Seleziona soltanto passaggi letterali CONTIGUI dal testo della fonte originale con lo stesso part_id per ciascun "
+                      "reference_key. Non riscrivere il fatto, non correggere o inventare valori della fonte. "
+                      "Puoi scegliere più passaggi distinti quando i campi sono separati. Ogni stringa di quotes "
+                      "deve comparire letteralmente nella fonte. Se non esiste alcun passaggio pertinente, "
+                      "restituisci quotes=[] per quel riferimento. Non includere commenti o nuovi fatti."))
+    mapping = {row.reference_key: row.quotes for row in selection.references}
+    expected = {row["reference_key"] for row in invalid}
+    if len(mapping) != len(selection.references) or set(mapping) != expected:
+        raise UnusableDocumentResult("La selezione dei passaggi non corrisponde ai riferimenti assegnati.")
+    for fact in result.facts:
+        references = []
+        for index, ref in enumerate(fact.references):
+            key = f"{fact.id}:{index}"
+            if key not in mapping:
+                references.append(ref)
+                continue
+            quotes = mapping[key]
+            if not quotes or any(not q.strip() or normalize(q) not in normalize(originals[ref.part_id]["text"]) for q in quotes):
+                raise UnusableDocumentResult("Citazione non verificabile dopo la selezione: nessun ulteriore tentativo automatico.")
+            references.extend(ref.model_copy(update={"quote": quote}) for quote in quotes)
+        fact.references = references
+    return validate_reader(result, parts)
 
 
 def read_batch(job, parts, *, policy, request):
@@ -90,7 +169,7 @@ def read_batch(job, parts, *, policy, request):
             "Richiesta del documento e lingua sono contesto amministrativo, non fatti da rendicontare."
         ),
     )
-    validate_reader(result, parts)
+    validate_reader_with_quote_repair(job, result, parts, identifier)
     from .policies import policy_for
 
     enforce_fact_policy(result.facts, parts, policy_for(job.revision.elaborato.document_type))
@@ -117,7 +196,7 @@ def read_inventory(job, *, policy, request):
         from .inventory import inventory_counts
 
         progress(job, "reading", facts=len(facts), inventory=inventory_counts(job))
-    for item in DocumentEvidenceItem.objects.filter(job=job, parent_source_id="").iterator(chunk_size=50):
+    for item in evidence_records(DocumentEvidenceItem.objects.filter(job=job, parent_source_id="")):
         item.refresh_from_db()
         if item.state == "pending":
             finalize_root(item)
@@ -162,7 +241,7 @@ def evidence_bundle(job):
 def mark_metadata_examined(job):
     # Used by FAST_0 only: no substantive content was selected by preflight.
     rows = DocumentEvidenceItem.objects.filter(job=job, parent_source_id="", state="pending")
-    for item in rows.iterator(chunk_size=100):
+    for item in evidence_records(rows, page_size=100):
         if item.kind in {"project", "request", "member", "task", "activity", "event"}:
             set_reading_state(item, "excluded", "metadata_does_not_document_performed_work")
         elif item.kind in {"post", "comment", "declaration"} and not item.payload.get("data", {}).get("text", "").strip():

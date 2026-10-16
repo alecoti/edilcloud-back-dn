@@ -6,7 +6,7 @@ from .content import digest, local_quality, validate_editor
 from .intelligence_calls import specialist
 from .intelligence_contracts import CompletenessReview, FactualReview
 from .intelligence_planning import requirements
-from .intelligence_readers import bounded_batches, parallel_map
+from .intelligence_readers import bounded_batches, evidence_records, parallel_map
 from .intelligence_writing import claim_blocks
 from .models import DocumentEvidenceItem
 
@@ -133,7 +133,7 @@ def completeness_review(job, editor, facts, policy, plan):
         if any(issue.subject_id not in allowed or not issue.explanation.strip() for issue in result.issues):
             raise ValueError("Rilievo di completezza con riferimento sconosciuto.")
         return result
-    for result in parallel_map(review, bounded_batches((row.payload for row in originals.iterator(chunk_size=50)),
+    for result in parallel_map(review, bounded_batches((row.payload for row in evidence_records(originals)),
                                                        max_characters=26000, max_items=12)):
         issues.extend(row.model_dump() for row in result.issues)
         read_ids.update(result.reviewed_source_ids)

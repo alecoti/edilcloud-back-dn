@@ -236,7 +236,7 @@ def process_job(job_id):
             )
     except Exception as exc:
         from .provider import DocumentProviderError
-        from .errors import IncompleteDocumentOutput
+        from .errors import IncompleteDocumentOutput, UnusableDocumentResult
 
         known = isinstance(exc, (ValueError, HttpError, DocumentProviderError, IncompleteDocumentOutput))
         message = (
@@ -246,7 +246,9 @@ def process_job(job_id):
         DocumentJob.objects.filter(pk=job.pk, state="running", lease_token=token).update(
             state="failed",
             stage="failed",
-            error_code="INCOMPLETE_OUTPUT" if isinstance(exc, IncompleteDocumentOutput) else "DOCUMENT_REQUEST_FAILED",
+            error_code=("INCOMPLETE_OUTPUT" if isinstance(exc, IncompleteDocumentOutput)
+                        else "DOCUMENT_RESULT_INVALID" if isinstance(exc, UnusableDocumentResult)
+                        else "DOCUMENT_REQUEST_FAILED"),
             error_message=message[:500],
         )
     return True

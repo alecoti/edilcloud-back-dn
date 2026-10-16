@@ -3,11 +3,14 @@
 from datetime import timedelta
 from contextlib import contextmanager
 import hashlib
+import io
 import json
+import math
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import wave
 from threading import Lock
 from weakref import WeakValueDictionary
 
@@ -21,7 +24,7 @@ import httpx
 from .checkpoints import ProviderCheckpoint, run_step
 from .intelligence_calls import specialist
 from .intelligence_contracts import ImageDescription
-from .models import DocumentAIUsage, DocumentAudit, DocumentJob
+from .models import DocumentAIUsage, DocumentAudit, DocumentJob, DocumentStepAttempt
 from .renderer import image_data
 from .provider import DocumentProviderError
 from .source_reading import add_parts, authorized_local_file, set_reading_state
@@ -82,6 +85,24 @@ def analyze_image(job, item):
         type(item).objects.filter(pk=item.pk).update(reading={"visual_analysis": value})
 
 
+def transcription_reservation(raw):
+    """Conservative quota planning for one decoded segment, never an API cap.
+
+    FFmpeg supplies PCM WAV. Reserve from its real duration rather than zero;
+    successful usage releases this reservation in the same ledger transaction.
+    The allowance deliberately exceeds ordinary speech token rates and includes
+    room for output. Actual provider usage remains the accounting authority.
+    """
+    try:
+        with wave.open(io.BytesIO(raw), "rb") as audio:
+            seconds = audio.getnframes() / audio.getframerate()
+    except (wave.Error, EOFError, ZeroDivisionError) as exc:
+        raise DocumentProviderError("Segmento audio non valido: trascrizione non avviata.") from exc
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise DocumentProviderError("Segmento audio vuoto: trascrizione non avviata.")
+    return math.ceil(seconds * 256) + 4096
+
+
 def transcribe_segment(job, raw, filename):
     checkpoint = ProviderCheckpoint(
         job, stage="document_transcription", model="gpt-4o-transcribe", effort="none"
@@ -90,7 +111,7 @@ def transcribe_segment(job, raw, filename):
     if payload is None:
         if not settings.OPENAI_API_KEY:
             raise DocumentProviderError("Trascrizione audio non configurata.")
-        checkpoint.sent()
+        checkpoint.sent(reservation=transcription_reservation(raw))
         try:
             response = httpx.post(
                 settings.OPENAI_API_BASE_URL.rstrip("/") + "/audio/transcriptions",
@@ -108,10 +129,6 @@ def transcribe_segment(job, raw, filename):
                 )
             result = response.json()
             text = result.get("text")
-            if not isinstance(text, str) or not text.strip():
-                raise DocumentProviderError(
-                    "Il servizio di trascrizione ha restituito un risultato vuoto."
-                )
             identifier = "audio:" + (
                 response.headers.get("x-request-id") or str(checkpoint.attempt.pk)
             )
@@ -149,6 +166,8 @@ def transcribe_segment(job, raw, filename):
                 "total_tokens": max(0, int(usage.get("total_tokens", 0))),
             },
         )
+        if checkpoint.attempt:
+            DocumentStepAttempt.objects.filter(pk=checkpoint.attempt.pk).update(reserved_tokens=0)
         if created:
             DocumentJob.objects.filter(pk=job.pk).update(
                 consumed_tokens=F("consumed_tokens") + record.total_tokens
@@ -168,6 +187,8 @@ def transcribe_segment(job, raw, filename):
                 detail={"model": record.model, "usage": usage},
             )
     text = json.loads(payload["output"][0]["content"][0]["text"])["text"]
+    if not isinstance(text, str) or not text.strip():
+        raise DocumentProviderError("Il servizio di trascrizione ha restituito un risultato vuoto.")
     return {"text": text, "human_verified": False, "model": "gpt-4o-transcribe"}
 
 

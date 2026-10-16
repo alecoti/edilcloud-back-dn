@@ -233,6 +233,7 @@ def strict_response_schema(model, template=None, evidence=None, data=None):
         parts = data.get("parts") or data.get("original_sources") or []
         part_ids = [part["part_id"] for part in parts]
         constrain("SourceReference", "part_id", part_ids)
+        constrain("QuoteSelection", "reference_key", [row["reference_key"] for row in data.get("references", [])])
         constrain("SourceDisposition", "part_id", part_ids)
         if "ClaimReview" in definitions:
             constrain("ClaimReview", "claim_id", [c["claim_id"] for c in data.get("claims", [])])

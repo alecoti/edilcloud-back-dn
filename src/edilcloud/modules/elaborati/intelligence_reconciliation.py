@@ -31,6 +31,7 @@ def reconcile_global(job, facts, local, policy):
 
     def execute(_step):
         parents = {f.id: f.id for f in facts}
+        rejected_merges = set()
 
         def root(key):
             while parents[key] != key:
@@ -41,7 +42,11 @@ def reconcile_global(job, facts, local, policy):
         def unify(left, right):
             a, b = known[left], known[right]
             if (a.nature, a.category, a.event_date) != (b.nature, b.category, b.event_date):
-                raise ValueError("La riconciliazione globale non può unificare fatti di natura o data diversa.")
+                # A proposed deduplication is advisory. Rejecting it must keep
+                # both facts, not discard the complete paid analysis or infer
+                # a relationship that the sources have not established.
+                rejected_merges.add(tuple(sorted((left, right))))
+                return
             first, second = sorted((root(left), root(right)))
             parents[second] = first
 
@@ -98,6 +103,8 @@ def reconcile_global(job, facts, local, policy):
             rows[fact.id] = row
         return {"facts": rows, "conflicts": [list(v) for v in sorted(conflicts)],
                 "relations": [list(v) for v in sorted(related)], "global_complete": True,
+                "rejected_merges": [{"fact_ids": list(pair), "reason": "different_nature_category_or_date"}
+                                    for pair in sorted(rejected_merges)],
                 "global_windows": len(windows), "canonical_facts": len({root(f.id) for f in facts})}
 
     return run_step(job=job, key="reconciliation_global", kind="reconciliation_global",
