@@ -37,3 +37,9 @@ La prima forma è una simulazione. Il comando non modifica Elaborati pubblicati 
 - Web: build di produzione, TypeScript ed ESLint delle aree modificate riusciti; 10 controlli browser su anagrafica, permessi, versioni, file originali e schermate strette.
 - Flutter: 20 test per anagrafica, impostazioni ed evidenze; 85 test aggiuntivi per traduzioni offline e localizzazione. Verifica runtime della schermata anagrafica in Chrome, senza prova su Android o iPad fisici.
 - Sei PDF sintetici prodotti dal renderer applicativo con attribuzioni, copertura, collegamenti alle versioni delle evidenze e hash coerenti con il manifest. Non sono un benchmark della redazione AI.
+
+## Correzione del controllo di rilascio
+
+Il primo deploy è stato bloccato prima dell'accesso al server: 741 test passati, 1 fallito e 4 saltati. Il test sulle quote disco continuava ad attendersi solo i 6 byte del file operativo, mentre ora vengono conservati e conteggiati anche i 6 byte dell'evidenza privata. Il conteggio applicativo era corretto.
+
+Il test aggiornato controlla entrambi i file, conserva il controllo sulle letture delle dimensioni già persistite e sulla compatibilità legacy, e verifica la deduplicazione dell'evidenza quando gli stessi byte vengono caricati nuovamente. Le suite performance, fatturazione e provenienza documentale passano insieme: **34 test**, senza modifiche al codice applicativo o ai vincoli del deploy.

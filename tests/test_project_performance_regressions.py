@@ -227,13 +227,27 @@ def test_storage_quota_uses_persisted_sizes_but_still_counts_legacy_files(tmp_pa
     from django.core.files.uploadedfile import SimpleUploadedFile
     from edilcloud.modules.billing import services as billing
     from edilcloud.modules.projects.models import ProjectDocument
+    from edilcloud.modules.projects.provenance_models import EvidenceBlob
+
     settings.MEDIA_ROOT = tmp_path
+    settings.PRIVATE_STORAGE_ROOT = tmp_path / "private"
     owner, project, _task, _workers = fixture()
     document = ProjectDocument.objects.create(project=project, title="Plan", document=SimpleUploadedFile("plan.pdf", b"legacy"))
+    blob = EvidenceBlob.objects.get(project=project)
+    assert document.file_size == blob.size == 6
+
     def unexpected(*args, **kwargs):
         pytest.fail("Quota calculation must not stat files with known sizes")
+
     with monkeypatch.context() as patch:
         patch.setattr(billing, "storage_size_for_name", unexpected)
-        assert billing.calculate_workspace_storage_usage(owner.workspace) == 6
+        patch.setattr(blob.file.storage, "size", unexpected)
+        # The working file and the retained evidence occupy separate storage.
+        assert billing.calculate_workspace_storage_usage(owner.workspace) == 12
     ProjectDocument.objects.filter(pk=document.pk).update(file_size=None)
-    assert billing.calculate_workspace_storage_usage(owner.workspace) == 6
+    assert billing.calculate_workspace_storage_usage(owner.workspace) == 12
+
+    # A second upload of the same bytes adds a working file, not another blob.
+    ProjectDocument.objects.create(project=project, title="Copy", document=SimpleUploadedFile("copy.pdf", b"legacy"))
+    assert EvidenceBlob.objects.filter(project=project).count() == 1
+    assert billing.calculate_workspace_storage_usage(owner.workspace) == 18
