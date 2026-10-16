@@ -40,6 +40,8 @@ def require_project_editor(profile, project):
 
 
 def authorize_revision(*, profile, revision, edit=False):
+    if revision.state == "deleted":
+        raise HttpError(404, "Revisione non trovata.")
     try:
         project = get_project_for_profile(profile=profile, project_id=revision.elaborato.project_id)
     except ValueError as exc:
@@ -74,7 +76,7 @@ def ensure_editable(revision, version):
         )
 
 
-def serialize_revision(revision, *, full=False, viewer_can_edit=True):
+def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_user_id=None):
     document = revision.elaborato
     job = revision.jobs.defer("result", "payload").order_by("-created_at").first() if full else None
     data = {
@@ -103,6 +105,23 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True):
     }
     if full:
         from .usage import document_token_usage
+        from .publication import publication_content_hash
+
+        preview_ready = bool(
+            revision.preview_hash
+            and revision.preview_expires_at
+            and revision.preview_expires_at > timezone.now()
+            and revision.preview_content_hash == publication_content_hash(revision)
+            and (
+                viewer_user_id is None
+                or revision.preview_signature.get("prepared_by_user_id") == viewer_user_id
+            )
+        )
+        fingerprint = revision.preview_signature.get("fingerprint")
+        if preview_ready and fingerprint and viewer_user_id is not None:
+            preview_ready = PersonalSignature.objects.filter(
+                user_id=viewer_user_id, fingerprint=fingerprint
+            ).exists()
 
         data.update(
             ai_usage=document_token_usage(document.pk),
@@ -113,11 +132,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True):
             quality=revision.quality,
             declarations=revision.declarations,
             signature_audit=revision.signature_audit,
-            preview_ready=bool(
-                revision.preview_hash
-                and revision.preview_expires_at
-                and revision.preview_expires_at > timezone.now()
-            ),
+            preview_ready=preview_ready,
             preview_hash=revision.preview_hash,
             preview_signature_applied=bool(revision.preview_signature.get("fingerprint")),
             history=[
@@ -127,7 +142,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True):
                     "state": r.state,
                     "published_at": r.published_at.isoformat() if r.published_at else None,
                 }
-                for r in document.revisions.all()
+                for r in document.revisions.exclude(state="deleted")
                 if viewer_can_edit or r.state != "draft"
             ],
         )
@@ -190,8 +205,10 @@ def list_elaborati(
         project__in=accessible, profile=profile, disabled=False, status=ProjectMemberStatus.ACTIVE
     ).select_related("project", "profile")
     editable_ids = [m.project_id for m in members if can_edit_project(m)]
-    revisions = ElaboratoRevision.objects.filter(elaborato_id=OuterRef("pk")).filter(
-        ~Q(state="draft") | Q(elaborato__project_id__in=editable_ids)
+    revisions = (
+        ElaboratoRevision.objects.filter(elaborato_id=OuterRef("pk"))
+        .exclude(state="deleted")
+        .filter(~Q(state="draft") | Q(elaborato__project_id__in=editable_ids))
     )
     # Global page shows the current revision. Older revisions remain in history;
     # a state filter can explicitly retrieve a superseded publication.
@@ -296,28 +313,20 @@ def save_revision(*, profile, revision_id, payload):
     ensure_editable(revision, payload.version)
     validate_editor(payload.editor_doc, revision.evidence, revision.template_snapshot)
     from .content import editor_equivalent
-    from .editorial import VERSION as EDITORIAL_VERSION
 
-    prior_quality = revision.quality
-    review_still_valid = (
-        prior_quality.get("passed")
-        and prior_quality.get("content_hash") == digest(revision.editor_doc)
-        and prior_quality.get("evidence_hash") == revision.evidence.get("bundle_hash")
-        and prior_quality.get("editorial_version") == EDITORIAL_VERSION
-        and editor_equivalent(revision.editor_doc, payload.editor_doc)
-    )
+    # Opening/flushing the editor adds harmless defaults. Saving identical
+    # content must preserve the prepared PDF and must never request another AI
+    # review. Real edits still invalidate the old preview below.
+    if editor_equivalent(revision.editor_doc, payload.editor_doc):
+        return revision
+
     from .fields import sync_field_declarations
 
     sync_field_declarations(revision=revision, profile=profile, doc=payload.editor_doc)
     revision.source_count = len(revision.evidence.get("sources", []))
     revision.editor_doc = payload.editor_doc
     revision.version += 1
-    revision.quality = (
-        {**prior_quality, "content_hash": digest(revision.editor_doc)}
-        if review_still_valid
-        and prior_quality.get("evidence_hash") == revision.evidence.get("bundle_hash")
-        else {"passed": False, "needs_verification": True}
-    )
+    revision.quality = {"passed": False, "needs_verification": True}
     invalidate_preview(revision)
     revision.save()
     DocumentAudit.objects.create(
@@ -334,6 +343,50 @@ def invalidate_preview(revision):
     revision.preview_content_hash = ""
     revision.preview_expires_at = None
     revision.preview_signature = {}
+
+
+@transaction.atomic
+def delete_draft(*, profile, revision_id, version):
+    revision = get_revision(profile=profile, revision_id=revision_id, edit=True, lock=True)
+    if revision.state != "draft":
+        raise HttpError(
+            409, "Puoi eliminare soltanto una bozza; i documenti pubblicati restano nello storico."
+        )
+    if revision.version != version:
+        raise HttpError(409, "La bozza è cambiata. Ricarica prima di eliminarla.")
+    # Lock only queued jobs: a worker either claimed the job already (reject)
+    # or will observe its cancellation before making any provider request.
+    queued = list(revision.jobs.select_for_update().filter(state="queued"))
+    if revision.jobs.filter(state="running").exists():
+        raise HttpError(
+            409, "Attendi la fine dell'elaborazione in corso prima di eliminare la bozza."
+        )
+    if queued:
+        DocumentJob.objects.filter(pk__in=[job.pk for job in queued], state="queued").update(
+            state="failed",
+            stage="cancelled",
+            reserved_tokens=0,
+            error_code="DRAFT_DELETED",
+            error_message="Elaborazione annullata: bozza eliminata.",
+        )
+    # Keep the provider ledger, project numbering and published history. A
+    # deleted draft is inaccessible through every document/source/job endpoint.
+    old_file = revision.preview_file.name
+    storage = revision.preview_file.storage
+    revision.state = "deleted"
+    revision.version += 1
+    revision.preview_file = ""
+    invalidate_preview(revision)
+    revision.save()
+    DocumentAudit.objects.create(
+        revision=revision,
+        actor=profile,
+        action="draft.deleted",
+        detail={"version": revision.version},
+    )
+    if old_file:
+        transaction.on_commit(lambda: storage.delete(old_file), robust=True)
+    return {"deleted": True, "revision_id": str(revision.pk)}
 
 
 @transaction.atomic

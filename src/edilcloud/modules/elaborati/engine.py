@@ -295,24 +295,6 @@ def verify_document(job, *, editor=None, evidence=None, reasoning=None):
     validate_editor(editor, evidence, revision.template_snapshot)
     local = local_quality(editor, evidence, revision.template_snapshot)
     local += documentary_issues(editor, evidence, revision.elaborato.document_type)
-    cached = revision.quality
-    if (
-        job.action == "preview"
-        and cached.get("passed")
-        and cached.get("content_hash") == digest(editor)
-        and cached.get("evidence_hash") == evidence.get("bundle_hash")
-        and cached.get("editorial_version") == EDITORIAL_VERSION
-        and not any(issue["severity"] == "blocking" for issue in local)
-    ):
-        from .models import DocumentAudit
-
-        DocumentAudit.objects.create(
-            revision=revision,
-            actor=job.requested_by,
-            action="quality.reused",
-            detail={"content_hash": digest(editor), "evidence_hash": evidence["bundle_hash"]},
-        )
-        return cached
     from .jobs import set_stage
 
     set_stage(job, "quality")

@@ -53,6 +53,7 @@ class ElaboratoRevision(TimestampedModel):
         PUBLISHED = "published", "Pubblicato"
         SIGNED = "signed", "Firmato"
         SUPERSEDED = "superseded", "Superato"
+        DELETED = "deleted", "Bozza eliminata"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     elaborato = models.ForeignKey(Elaborato, on_delete=models.CASCADE, related_name="revisions")

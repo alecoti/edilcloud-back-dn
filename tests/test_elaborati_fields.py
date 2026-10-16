@@ -371,9 +371,7 @@ def test_signature_space_is_editable_content_but_never_counts_as_a_fact(language
     assert any(i["severity"] == "blocking" for i in local_quality(doc, {"sources": []}, template))
 
 
-def test_editor_defaults_preserve_review_but_any_content_change_requires_new_verification(
-    site, provider
-):
+def test_editor_defaults_preserve_review_but_content_changes_mark_review_stale(site, provider):
     revision = baseline.generate(site)
     original = deepcopy(revision.quality)
     doc = deepcopy(revision.editor_doc)
@@ -388,7 +386,9 @@ def test_editor_defaults_preserve_review_but_any_content_change_requires_new_ver
     assert saved.quality["passed"] and saved.quality["checked_at"] == original["checked_at"]
     from edilcloud.modules.elaborati.content import digest
 
-    assert saved.quality["content_hash"] == digest(doc)
+    # Harmless defaults are a no-op: keep the saved canonical JSON and version.
+    assert saved.version == revision.version
+    assert saved.quality["content_hash"] == digest(saved.editor_doc)
     assert saved.quality["evidence_hash"] == saved.evidence["bundle_hash"]
     proposal = deepcopy(doc)
     proposal["content"][1]["content"][0]["text"] += " Chiusura dichiarata."
@@ -400,12 +400,23 @@ def test_editor_defaults_preserve_review_but_any_content_change_requires_new_ver
     assert not changed.quality["passed"] and changed.quality["needs_verification"]
 
 
-def test_preview_reuses_matching_review_while_explicit_verify_still_calls_provider(site, provider):
-    from edilcloud.modules.elaborati.engine import verify_document
+def test_preview_uses_no_ai_while_explicit_verify_still_calls_provider(site, provider, monkeypatch):
     from edilcloud.modules.elaborati.jobs import process_job
 
     revision = baseline.generate(site)
     calls_before = len(provider)
+    monkeypatch.setattr(
+        "edilcloud.modules.elaborati.renderer.render_pdf", lambda **kwargs: b"%PDF-no-ai"
+    )
+    preview = services.request_action(
+        profile=site[1],
+        revision_id=revision.pk,
+        payload=ActionRequest(
+            idempotency_key=uuid.uuid4(), version=revision.version, action="preview"
+        ),
+    )
+    assert process_job(preview.pk)
+    assert len(provider) == calls_before
     job = services.request_action(
         profile=site[1],
         revision_id=revision.pk,
@@ -413,11 +424,6 @@ def test_preview_reuses_matching_review_while_explicit_verify_still_calls_provid
             idempotency_key=uuid.uuid4(), version=revision.version, action="verify"
         ),
     )
-    # The same path used by preview can reuse the existing review. It must not
-    # treat a fresh 'verify' request as cached merely because nothing changed.
-    job.action = "preview"
-    cached = verify_document(job)
-    assert cached["passed"] and len(provider) == calls_before
     assert process_job(job.pk)
     assert len(provider) == calls_before + 1
 

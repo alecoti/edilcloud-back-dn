@@ -91,7 +91,9 @@ def list_documents(
 @router.post("")
 def create(request, payload: schemas.CreateRequest):
     return services.serialize_revision(
-        services.create_elaborato(profile=profile_for(request), payload=payload), full=True
+        services.create_elaborato(profile=profile_for(request), payload=payload),
+        full=True,
+        viewer_user_id=request.auth.user.pk,
     )
 
 
@@ -102,7 +104,9 @@ def get_revision(request, revision_id: UUID):
     from edilcloud.modules.projects.services import get_project_membership
 
     editable = can_edit_project(get_project_membership(revision.elaborato.project, profile))
-    return services.serialize_revision(revision, full=True, viewer_can_edit=editable)
+    return services.serialize_revision(
+        revision, full=True, viewer_user_id=request.auth.user.pk, viewer_can_edit=editable
+    )
 
 
 @router.patch("/revisions/{revision_id}")
@@ -113,7 +117,7 @@ def save(request, revision_id: UUID, payload: schemas.SaveRequest):
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    return services.serialize_revision(revision, full=True)
+    return services.serialize_revision(revision, full=True, viewer_user_id=request.auth.user.pk)
 
 
 @router.post("/revisions/{revision_id}/actions")
@@ -125,6 +129,13 @@ def action(request, revision_id: UUID, payload: schemas.ActionRequest):
     )
 
 
+@router.delete("/revisions/{revision_id}")
+def delete_draft(request, revision_id: UUID, version: int):
+    return services.delete_draft(
+        profile=profile_for(request), revision_id=revision_id, version=version
+    )
+
+
 @router.post("/revisions/{revision_id}/accept")
 def accept(request, revision_id: UUID, payload: schemas.AcceptRequest):
     revision = services.accept_proposal(
@@ -133,7 +144,7 @@ def accept(request, revision_id: UUID, payload: schemas.AcceptRequest):
         version=payload.version,
         job_id=payload.job_id,
     )
-    return services.serialize_revision(revision, full=True)
+    return services.serialize_revision(revision, full=True, viewer_user_id=request.auth.user.pk)
 
 
 @router.post("/revisions/{revision_id}/declarations")
@@ -146,13 +157,15 @@ def declaration(request, revision_id: UUID, payload: schemas.DeclarationRequest)
         version=payload.version,
         text=payload.text,
     )
-    return services.serialize_revision(revision, full=True)
+    return services.serialize_revision(revision, full=True, viewer_user_id=request.auth.user.pk)
 
 
 @router.post("/revisions/{revision_id}/new-revision")
 def new_revision(request, revision_id: UUID):
     return services.serialize_revision(
-        services.new_revision(profile=profile_for(request), revision_id=revision_id), full=True
+        services.new_revision(profile=profile_for(request), revision_id=revision_id),
+        full=True,
+        viewer_user_id=request.auth.user.pk,
     )
 
 
@@ -170,7 +183,7 @@ def publish(request, revision_id: UUID, payload: schemas.PublishRequest):
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    return services.serialize_revision(revision, full=True)
+    return services.serialize_revision(revision, full=True, viewer_user_id=request.auth.user.pk)
 
 
 @router.get("/jobs/{job_id}")

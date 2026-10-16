@@ -15,7 +15,7 @@ from edilcloud.modules.projects.services import (
     get_project_membership,
 )
 
-from .content import digest
+from .content import digest, validate_editor
 from .models import DocumentAudit, Elaborato, ElaboratoRevision, PersonalSignature
 from .services import ensure_editable, get_revision
 
@@ -36,14 +36,21 @@ def publication_content_hash(revision):
     )
 
 
+def validate_publication(revision):
+    """Technical validation only; content review by AI is always optional."""
+    validate_editor(revision.editor_doc, revision.evidence, revision.template_snapshot)
+    if not revision.editor_doc["content"]:
+        raise ValueError("La bozza è vuota. Inserisci il contenuto prima di preparare il PDF.")
+
+
 def prepare_preview(job):
-    from .engine import verify_document
     from .renderer import image_data, render_pdf
 
     revision = job.revision
-    quality = verify_document(job)
-    if not quality["passed"]:
-        return {"quality": quality}
+    # Rendering/publication are deterministic operations, never paid AI checks.
+    # AI findings remain available in revision.quality for the author's review;
+    # the optional Verify command is the only way to request another AI review.
+    validate_publication(revision)
     signature = None
     audit = {"prepared_by_user_id": job.requested_by.user_id}
     if job.payload.get("apply_signature"):
@@ -82,7 +89,6 @@ def prepare_preview(job):
     # fenced job completion may attach it to a still-current revision.
     revision.preview_file.save(f"{uuid.uuid4()}.pdf", ContentFile(pdf), save=False)
     return {
-        "quality": quality,
         "preview": {
             "preview_file": revision.preview_file.name,
             "preview_hash": pdf_hash,
@@ -115,10 +121,7 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
     if revision.state in {"published", "signed"} and revision.pdf_hash == preview_hash:
         return revision
     ensure_editable(revision, version)
-    if not revision.quality.get("passed") or revision.quality.get("content_hash") != digest(
-        revision.editor_doc
-    ):
-        raise HttpError(409, "Completa la verifica finale prima di pubblicare.")
+    validate_publication(revision)
     if (
         not revision.preview_file
         or revision.preview_hash != preview_hash

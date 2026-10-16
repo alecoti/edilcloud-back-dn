@@ -56,8 +56,8 @@ def queue_job(*, revision, profile, action, key, payload=None, input_version=Non
         ]
         or 0
     )
-    tokens = 90_000 if action == "generate" else 45_000
-    if settings.AI_TOKEN_QUOTA_ENFORCED and not ai_quota_is_unlimited(account):
+    tokens = 0 if action == "preview" else 90_000 if action == "generate" else 45_000
+    if tokens and settings.AI_TOKEN_QUOTA_ENFORCED and not ai_quota_is_unlimited(account):
         remaining = entitlement_snapshot(account)["ai_tokens"]["remaining_this_period"]
         if remaining - reserved < tokens:
             raise HttpError(
@@ -158,26 +158,38 @@ def process_job(job_id):
                 revision.quality = result["quality"]
                 revision.version += 1
                 revision.save()
-            elif job.action in {"verify", "missing", "preview"}:
+            elif job.action == "preview":
+                old_preview = revision.preview_file.name
+                for field, value in result["preview"].items():
+                    setattr(revision, field, value)
+                if old_preview and old_preview != revision.preview_file.name:
+                    storage = revision.preview_file.storage
+                    transaction.on_commit(lambda: storage.delete(old_preview))
+                revision.save()
+            elif job.action in {"verify", "missing"}:
                 revision.quality = result["quality"]
                 if not result["quality"].get("passed"):
                     from .services import invalidate_preview
 
                     invalidate_preview(revision)
-                if job.action == "preview" and result.get("preview"):
-                    old_preview = revision.preview_file.name
-                    for field, value in result["preview"].items():
-                        setattr(revision, field, value)
-                    if old_preview and old_preview != revision.preview_file.name:
-                        storage = revision.preview_file.storage
-                        transaction.on_commit(lambda: storage.delete(old_preview))
                 revision.save()
             locked_job.state = "completed"
-            locked_job.stage = "ready" if result.get("quality", {}).get("passed") else "review"
+            locked_job.stage = (
+                "ready"
+                if result.get("preview") or result.get("quality", {}).get("passed")
+                else "review"
+            )
             locked_job.result = (
                 result
                 if job.action not in {"generate", "preview"}
-                else {"quality": result["quality"], "revision_id": str(revision.pk)}
+                else {
+                    "revision_id": str(revision.pk),
+                    **(
+                        {"preview_ready": True, "ai_used": False}
+                        if job.action == "preview"
+                        else {"quality": result["quality"]}
+                    ),
+                }
             )
             locked_job.save(update_fields=("state", "stage", "result", "updated_at"))
             DocumentAudit.objects.create(
