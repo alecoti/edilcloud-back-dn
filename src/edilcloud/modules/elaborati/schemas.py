@@ -3,10 +3,11 @@ from typing import Literal
 from uuid import UUID
 
 from ninja import Schema
-from pydantic import ConfigDict, Field, StrictBool
+from pydantic import ConfigDict, Field, StrictBool, field_validator
 
 DocumentType = Literal[
-    "daily_report", "inspection", "coordination", "periodic_report", "photo_report", "issue_report"
+    "daily_report", "inspection", "coordination", "periodic_report", "photo_report", "issue_report",
+    "inspection_report", "coordination_minutes",
 ]
 GraphicStyle = Literal["technical", "corporate", "photographic"]
 
@@ -24,6 +25,13 @@ class CreateRequest(StrictSchema):
     style: GraphicStyle | None = None
     language: Literal["it", "en", "fr", "ro", "ru", "ar"] = "it"
     context: str = Field(default="", max_length=4000)
+
+    @field_validator("document_type", mode="before")
+    @classmethod
+    def compatible_type(cls, value):
+        from .policies import storage_type
+
+        return storage_type(value)
 
 
 class SaveRequest(StrictSchema):
@@ -51,11 +59,16 @@ class ActionRequest(StrictSchema):
     section_key: str = Field(default="", max_length=64)
     apply_signature: StrictBool = False
     signature_confirmation: StrictBool = False
+    preview_purpose: Literal["draft", "publication"] = "publication"
 
 
 class AcceptRequest(StrictSchema):
     version: int = Field(gt=0)
     job_id: UUID
+
+
+class ResumeRequest(StrictSchema):
+    version: int = Field(gt=0)
 
 
 class DeclarationRequest(StrictSchema):

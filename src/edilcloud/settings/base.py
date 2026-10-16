@@ -29,6 +29,9 @@ DATABASE_URL = get_env(
     "postgresql://postgres:postgres@localhost:5432/edilcloud_dn",
 )
 REDIS_URL = get_env("REDIS_URL", "redis://localhost:6379/0")
+# V3 is opt-in until its document/PDF acceptance gates have passed.
+ELABORATI_WORKFLOW_VERSION = get_env("ELABORATI_WORKFLOW_VERSION", "v1")
+ELABORATI_V3_CONCURRENCY = max(1, int(get_env("ELABORATI_V3_CONCURRENCY", "2")))
 SENTRY_DSN = get_env("SENTRY_DSN")
 APP_FRONTEND_URL = get_env("APP_FRONTEND_URL", "http://localhost:3000").rstrip("/")
 BACKEND_PUBLIC_URL = get_env("BACKEND_PUBLIC_URL", "http://localhost:8001").rstrip("/")

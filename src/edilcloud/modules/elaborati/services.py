@@ -131,21 +131,17 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
                 user_id=viewer_user_id, fingerprint=fingerprint
             ).exists()
 
+        summaries = []
+        if viewer_user_id is not None:
+            # A local preview has no reasoning. Retain the latest generation's
+            # public summaries when it becomes the newest job in the history.
+            candidates = revision.jobs.filter(requested_by__user_id=viewer_user_id).exclude(action="preview")
+            for candidate in candidates.order_by("-created_at"):
+                summaries = job_thinking(candidate)
+                if summaries:
+                    break
         data.update(
-            thinking=(
-                job.thinking
-                if own_thinking and job.thinking
-                else (
-                    revision.jobs.filter(requested_by__user_id=viewer_user_id)
-                    .exclude(thinking=[])
-                    .order_by("-created_at")
-                    .values_list("thinking", flat=True)
-                    .first()
-                    or []
-                )
-            )
-            if viewer_user_id is not None
-            else [],
+            thinking=summaries,
             ai_usage=document_token_usage(document.pk),
             can_edit=viewer_can_edit,
             editor_doc=revision.editor_doc,
@@ -154,7 +150,9 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
             quality=revision.quality,
             declarations=revision.declarations,
             signature_audit=revision.signature_audit,
-            preview_ready=preview_ready,
+            pdf_ready=preview_ready,
+            preview_ready=preview_ready and revision.preview_signature.get("purpose", "publication") == "publication",
+            preview_purpose=revision.preview_signature.get("purpose", "publication"),
             preview_hash=revision.preview_hash,
             preview_signature_applied=bool(revision.preview_signature.get("fingerprint")),
             history=[
@@ -171,7 +169,31 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
     return data
 
 
+def job_thinking(job):
+    entries = list(job.thinking)
+    if job.workflow_version.startswith("v3"):
+        entries.extend(
+            entry for summaries in job.steps.order_by("started_at", "key").values_list("thinking", flat=True)
+            for entry in summaries
+        )
+    return entries
+
+
+def job_resumable(job):
+    return bool(
+        job.workflow_version.startswith("v3") and job.state == "failed"
+        and not job.steps.filter(state__in=("unknown", "cancelled")).exists()
+        and not job.steps.filter(attempts__state__in=("sent", "unknown")).exists()
+    )
+
+
 def serialize_job(job, *, include_result=False, include_thinking=False):
+    thinking = job_thinking(job) if include_thinking else []
+    workflow = dict(job.workflow_state)
+    if job.workflow_version.startswith("v3"):
+        from django.db.models import Count
+
+        workflow["steps"] = {r["state"]: r["n"] for r in job.steps.values("state").annotate(n=Count("pk"))}
     data = {
         "id": str(job.pk),
         "revision_id": str(job.revision_id),
@@ -182,13 +204,43 @@ def serialize_job(job, *, include_result=False, include_thinking=False):
         "error_code": job.error_code,
         "error_message": job.error_message,
         "result": job.result if include_result and job.state == "completed" else None,
-        "thinking": job.thinking if include_thinking else [],
+        "thinking": thinking,
+        "workflow": workflow,
+        "workflow_version": job.workflow_version,
+        "can_resume": include_thinking and job_resumable(job),
     }
     if include_result:
         from .usage import document_token_usage
 
         data["ai_usage"] = document_token_usage(job.revision.elaborato_id)
     return data
+
+
+@transaction.atomic
+def resume_job(*, profile, job_id, version):
+    type(profile).objects.select_for_update().get(pk=profile.pk)
+    candidate = DocumentJob.objects.filter(pk=job_id, requested_by=profile).first()
+    if not candidate:
+        raise HttpError(404, "Elaborazione non trovata.")
+    revision = get_revision(profile=profile, revision_id=candidate.revision_id, edit=True, lock=True)
+    job = DocumentJob.objects.select_for_update().get(pk=candidate.pk)
+    if revision.state != "draft" or revision.version != version or job.input_version != version:
+        raise HttpError(409, "La bozza è cambiata: questa elaborazione non può essere ripresa.")
+    if not job.workflow_version.startswith("v3"):
+        raise HttpError(409, "Questa elaborazione non dispone di checkpoint ripristinabili.")
+    if job.state in {"queued", "running"}:
+        return job
+    if job.state != "failed" or not job_resumable(job):
+        raise HttpError(409, "Esito remoto non confermato o elaborazione conclusa: ripresa non disponibile.")
+    ensure_editable(revision, version)
+    job.state = "queued"
+    job.stage = "resuming"
+    job.lease_token = job.lease_expires_at = None
+    job.error_code = job.error_message = ""
+    job.save(update_fields=("state", "stage", "lease_token", "lease_expires_at", "error_code", "error_message", "updated_at"))
+    DocumentAudit.objects.create(revision=revision, actor=profile, action="job.resumed",
+                                 detail={"job_id": str(job.pk), "version": version})
+    return job
 
 
 def list_elaborati(

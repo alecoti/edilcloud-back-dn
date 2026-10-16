@@ -200,6 +200,12 @@ def job_status(request, job_id: UUID):
     )
 
 
+@router.post("/jobs/{job_id}/resume")
+def resume_job(request, job_id: UUID, payload: schemas.ResumeRequest):
+    job = services.resume_job(profile=profile_for(request), job_id=job_id, version=payload.version)
+    return services.serialize_job(job, include_thinking=True)
+
+
 def private_response(field, filename):
     if not field:
         raise HttpError(404, "PDF non disponibile.")
@@ -226,6 +232,10 @@ def pdf(request, revision_id: UUID):
             or revision.preview_expires_at <= timezone.now()
         ):
             raise HttpError(409, "Genera un'anteprima aggiornata.")
+        from .publication import publication_content_hash
+
+        if revision.preview_content_hash != publication_content_hash(revision):
+            raise HttpError(409, "Il PDF non corrisponde alla versione corrente della bozza.")
     return private_response(revision.preview_file, f"Elaborato-Rev{revision.number}.pdf")
 
 

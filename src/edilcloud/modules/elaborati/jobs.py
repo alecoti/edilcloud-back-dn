@@ -56,7 +56,10 @@ def queue_job(*, revision, profile, action, key, payload=None, input_version=Non
         ]
         or 0
     )
-    tokens = 0 if action == "preview" else 90_000 if action == "generate" else 45_000
+    workflow = getattr(settings, "ELABORATI_WORKFLOW_VERSION", "v1") if action == "generate" else "v1"
+    # V3 chooses FAST_0 before reserving paid attempts. Per-attempt reservations
+    # are made when a specialist is about to execute, not for an empty report.
+    tokens = 0 if action == "preview" or workflow.startswith("v3") else 90_000 if action == "generate" else 45_000
     if tokens and settings.AI_TOKEN_QUOTA_ENFORCED and not ai_quota_is_unlimited(account):
         remaining = entitlement_snapshot(account)["ai_tokens"]["remaining_this_period"]
         if remaining - reserved < tokens:
@@ -73,6 +76,7 @@ def queue_job(*, revision, profile, action, key, payload=None, input_version=Non
         input_version=input_version,
         payload=payload,
         reserved_tokens=tokens,
+        workflow_version=workflow,
     )
 
 
@@ -93,7 +97,20 @@ def set_stage(job, stage):
 def expire_jobs():
     # A timed out provider request could already have been billed. Never replay
     # it automatically; a new explicit request is visible to the author.
-    return DocumentJob.objects.filter(state="running", lease_expires_at__lt=timezone.now()).update(
+    expired = DocumentJob.objects.filter(state="running", lease_expires_at__lt=timezone.now())
+    from .models import DocumentStep, DocumentStepAttempt
+
+    # A sent provider request is never replayed, even if its worker vanished.
+    DocumentStepAttempt.objects.filter(step__job__in=expired, state="sent").update(
+        state="unknown", error_code="WORKER_INTERRUPTED",
+    )
+    DocumentStep.objects.filter(job__in=expired, attempts__state="unknown").update(state="unknown")
+    DocumentStep.objects.filter(job__in=expired, state="running").update(
+        state="failed", lease_expires_at=timezone.now(), error_code="WORKER_INTERRUPTED",
+    )
+    resumable = expired.filter(workflow_version__startswith="v3").exclude(steps__state="unknown")
+    recovered = resumable.update(state="queued", stage="resuming", lease_token=None, lease_expires_at=None)
+    return recovered + expired.update(
         state="failed",
         stage="failed",
         error_code="WORKER_INTERRUPTED",
@@ -122,7 +139,23 @@ def process_job(job_id):
         from .engine import edit_proposal, generate_document, verify_document
 
         if job.action == "generate":
-            result = generate_document(job)
+            if job.workflow_version.startswith("v3"):
+                from .pipeline_v3 import generate_document as generate_v3
+
+                result = generate_v3(job)
+                # Render from the complete, checkpointed structured content.
+                # Nothing is committed over a newer user revision.
+                from copy import copy
+                from .publication import prepare_preview
+
+                rendering_job = copy(job)
+                rendering_job.revision = copy(job.revision)
+                rendering_job.revision.editor_doc = result["editor_doc"]
+                rendering_job.revision.evidence = result["evidence"]
+                rendering_job.payload = {"preview_purpose": "draft"}
+                result.update(prepare_preview(rendering_job))
+            else:
+                result = generate_document(job)
         elif job.action in {"verify", "missing"}:
             result = {"quality": verify_document(job)}
         elif job.action == "preview":
@@ -156,6 +189,9 @@ def process_job(job_id):
                 revision.source_count = len(result["evidence"].get("sources", []))
                 revision.reasoning = result["reasoning"]
                 revision.quality = result["quality"]
+                if result.get("preview"):
+                    for field, value in result["preview"].items():
+                        setattr(revision, field, value)
                 revision.version += 1
                 revision.save()
             elif job.action == "preview":

@@ -27,8 +27,10 @@ class DocumentProviderError(Exception):
 def provider_heartbeat(job):
     """Long reasoning calls keep the existing fenced worker lease alive."""
     from .jobs import renew_lease
+    from .checkpoints import CURRENT_STEP, renew_current_step, step_context
 
     stop = Event()
+    active_step = CURRENT_STEP.get()
 
     def heartbeat():
         close_old_connections()
@@ -36,6 +38,8 @@ def provider_heartbeat(job):
             while not stop.wait(45):
                 try:
                     renew_lease(job)
+                    with step_context(active_step):
+                        renew_current_step()
                 except RuntimeError:
                     # Never reacquire another worker's lease. The response path
                     # still records usage before its final ownership check.
@@ -243,7 +247,11 @@ def structured_response(
     max_output_tokens=LUNA_MAX_OUTPUT_TOKENS,
     images=(),
 ):
-    if not settings.OPENAI_API_KEY:
+    from .checkpoints import ProviderCheckpoint
+
+    checkpoint = ProviderCheckpoint(job, stage=stage, model="gpt-6-luna", effort=effort)
+    cached_payload = checkpoint.restore()
+    if not settings.OPENAI_API_KEY and cached_payload is None:
         raise DocumentProviderError("Servizio di redazione AI non configurato.")
     body = {
         "model": "gpt-6-luna",
@@ -304,11 +312,12 @@ def structured_response(
     started = time.monotonic()
     response_id = None
     progress = None
-    payload = None
+    payload = cached_payload
 
     def created(identifier):
         nonlocal response_id
         response_id = identifier
+        checkpoint.created(identifier)
         DocumentAudit.objects.create(
             revision=job.revision,
             actor=job.requested_by,
@@ -324,72 +333,77 @@ def structured_response(
 
     try:
         # Do not automatically retry billable requests after ambiguous timeouts.
-        with (
-            provider_heartbeat(job),
-            httpx.Client(timeout=httpx.Timeout(1800, connect=15), follow_redirects=False) as client,
-        ):
-            if budget > remaining and not unlimited:
-                # Count precisely before rejecting a source-rich weekly report.
-                count = client.post(
-                    f"{settings.OPENAI_API_BASE_URL.rstrip('/')}/responses/input_tokens",
-                    json={
-                        k: body[k] for k in ("model", "input", "instructions", "reasoning", "text")
-                    },
-                    headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}"},
-                )
-                if count.status_code >= 400:
-                    raise DocumentProviderError(
-                        "Impossibile verificare il budget delle fonti. Riprova o riduci il periodo."
+        if payload is None:
+            with (
+                provider_heartbeat(job),
+                httpx.Client(timeout=httpx.Timeout(1800, connect=15), follow_redirects=False) as client,
+            ):
+                if (checkpoint.step or budget > remaining) and not unlimited:
+                    # Count precisely before rejecting a source-rich weekly report.
+                    count = client.post(
+                        f"{settings.OPENAI_API_BASE_URL.rstrip('/')}/responses/input_tokens",
+                        json={
+                            k: body[k] for k in ("model", "input", "instructions", "reasoning", "text")
+                        },
+                        headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}"},
                     )
-                counted = count.json().get("input_tokens")
-                if (
-                    type(counted) is not int
-                    or counted < 0
-                    or counted + max_output_tokens > remaining
-                ):
-                    raise DocumentProviderError(
-                        "Fonti troppo estese per il budget disponibile. Riduci il periodo o dividi l'elaborato."
-                    )
-            from .provider_stream import read_response
-            from .thinking import ReasoningProgress
-
-            progress = ReasoningProgress(job, stage)
-            for attempt in range(2):
-                with client.stream(
-                    "POST",
-                    f"{settings.OPENAI_API_BASE_URL.rstrip('/')}/responses",
-                    json=body,
-                    headers={
-                        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-                        "Content-Type": "application/json",
-                    },
-                ) as response:
-                    if response.status_code >= 400:
-                        # An explicit pre-generation rejection of this optional
-                        # parameter is safe to fall back from. Never replay a
-                        # started response, timeout, generic 400 or rate limit.
-                        response.read()
-                        try:
-                            error = response.json().get("error") or {}
-                        except (ValueError, AttributeError):
-                            error = {}
-                        if not isinstance(error, dict):
-                            error = {}
-                        if (
-                            attempt == 0
-                            and response.status_code in {400, 403}
-                            and error.get("param") == "reasoning.summary"
-                            and "summary" in body["reasoning"]
-                        ):
-                            body["reasoning"].pop("summary")
-                            continue
+                    if count.status_code >= 400:
                         raise DocumentProviderError(
-                            f"Servizio AI temporaneamente non disponibile (HTTP {response.status_code})."
+                            "Impossibile verificare il budget delle fonti. Riprova o riduci il periodo."
                         )
-                    payload = read_response(
-                        response, on_created=created, on_summary=progress.summary
-                    )
-                    break
+                    counted = count.json().get("input_tokens")
+                    if (
+                        type(counted) is not int
+                        or counted < 0
+                        or (not checkpoint.step and counted + max_output_tokens > remaining)
+                    ):
+                        raise DocumentProviderError(
+                            "Fonti troppo estese per il budget disponibile. Riduci il periodo o dividi l'elaborato."
+                        )
+                    budget = counted + max_output_tokens
+                from .provider_stream import read_response
+                from .thinking import ReasoningProgress
+
+                progress = ReasoningProgress(job, stage)
+                for attempt in range(2):
+                    checkpoint.sent(reservation=budget)
+                    with client.stream(
+                        "POST",
+                        f"{settings.OPENAI_API_BASE_URL.rstrip('/')}/responses",
+                        json=body,
+                        headers={
+                            "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                            "Content-Type": "application/json",
+                        },
+                    ) as response:
+                        if response.status_code >= 400:
+                            # Only an explicit rejection before generation can
+                            # safely fall back from the optional summary flag.
+                            response.read()
+                            try:
+                                error = response.json().get("error") or {}
+                            except (ValueError, AttributeError):
+                                error = {}
+                            if not isinstance(error, dict):
+                                error = {}
+                            if response.status_code in {400, 401, 403, 404, 413, 422, 429}:
+                                checkpoint.rejected(f"HTTP_{response.status_code}")
+                            if (
+                                attempt == 0
+                                and response.status_code in {400, 403}
+                                and error.get("param") == "reasoning.summary"
+                                and "summary" in body["reasoning"]
+                            ):
+                                body["reasoning"].pop("summary")
+                                continue
+                            raise DocumentProviderError(
+                                f"Servizio AI temporaneamente non disponibile (HTTP {response.status_code})."
+                            )
+                        payload = read_response(
+                            response, on_created=created, on_summary=progress.summary
+                        )
+                        checkpoint.completed(payload)
+                        break
     except (httpx.HTTPError, ValueError) as exc:
         if response_id:
             DocumentAudit.objects.create(
@@ -402,6 +416,8 @@ def structured_response(
             "Il servizio AI non ha completato la richiesta. La bozza precedente resta disponibile."
         ) from exc
     finally:
+        if payload is None:
+            checkpoint.interrupted()
         if progress:
             progress.finish(payload.get("status") if payload else "interrupted")
     usage = payload.get("usage") or {}
@@ -417,11 +433,16 @@ def structured_response(
                 "job": job,
                 "workspace_id": job.revision.elaborato.project.workspace_id,
                 "stage": stage,
+                "attempt": checkpoint.attempt,
                 "input_tokens": max(0, int(usage.get("input_tokens", 0))),
                 "output_tokens": max(0, int(usage.get("output_tokens", 0))),
                 "total_tokens": max(0, int(usage.get("total_tokens", 0))),
             },
         )
+        if checkpoint.attempt:
+            from .models import DocumentStepAttempt
+
+            DocumentStepAttempt.objects.filter(pk=checkpoint.attempt.pk).update(reserved_tokens=0)
         if created:
             DocumentJob.objects.filter(pk=job.pk).update(
                 consumed_tokens=F("consumed_tokens") + record.total_tokens

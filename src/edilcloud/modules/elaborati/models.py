@@ -143,6 +143,8 @@ class DocumentJob(TimestampedModel):
     error_message = models.CharField(max_length=500, blank=True)
     reserved_tokens = models.PositiveIntegerField(default=0)
     consumed_tokens = models.PositiveIntegerField(default=0)
+    workflow_version = models.CharField(max_length=32, default="v1", db_default="v1")
+    workflow_state = models.JSONField(default=dict, db_default={})
 
     class Meta:
         ordering = ("created_at",)
@@ -159,8 +161,102 @@ class DocumentJob(TimestampedModel):
         indexes = [models.Index(fields=("state", "created_at"))]
 
 
+class DocumentStep(TimestampedModel):
+    """A fenced, independently recoverable unit of a document workflow."""
+
+    class State(models.TextChoices):
+        PENDING = "pending", "In attesa"
+        RUNNING = "running", "In elaborazione"
+        COMPLETED = "completed", "Completata"
+        FAILED = "failed", "Errore recuperabile"
+        UNKNOWN = "unknown", "Esito remoto sconosciuto"
+        CANCELLED = "cancelled", "Annullata"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(DocumentJob, on_delete=models.CASCADE, related_name="steps")
+    key = models.CharField(max_length=200)
+    kind = models.CharField(max_length=40)
+    contract_version = models.CharField(max_length=40)
+    input_hash = models.CharField(max_length=64)
+    state = models.CharField(max_length=16, choices=State.choices, default=State.PENDING)
+    dependencies = models.ManyToManyField("self", symmetrical=False, related_name="dependents")
+    lease_token = models.UUIDField(null=True, blank=True)
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+    input = models.JSONField(default=dict)
+    output = models.JSONField(default=dict)
+    output_hash = models.CharField(max_length=64, blank=True)
+    thinking = models.JSONField(default=list)
+    error_code = models.CharField(max_length=48, blank=True)
+    error_message = models.CharField(max_length=500, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("created_at", "key")
+        constraints = [models.UniqueConstraint(fields=("job", "key"), name="elaborato_step_key")]
+        indexes = [models.Index(fields=("job", "state", "kind"))]
+
+
+class DocumentStepAttempt(TimestampedModel):
+    class State(models.TextChoices):
+        PREPARED = "prepared", "Preparato"
+        SENT = "sent", "Inviato"
+        COMPLETED = "completed", "Completato"
+        REJECTED = "rejected", "Rifiutato prima dell'elaborazione"
+        UNKNOWN = "unknown", "Esito remoto sconosciuto"
+        FAILED = "failed", "Risposta non applicabile"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    step = models.ForeignKey(DocumentStep, on_delete=models.CASCADE, related_name="attempts")
+    number = models.PositiveIntegerField()
+    state = models.CharField(max_length=16, choices=State.choices, default=State.PREPARED)
+    input_hash = models.CharField(max_length=64)
+    model = models.CharField(max_length=64, blank=True)
+    effort = models.CharField(max_length=16, blank=True)
+    response_id = models.CharField(max_length=128, blank=True)
+    usage = models.JSONField(default=dict)
+    reserved_tokens = models.PositiveIntegerField(default=0)
+    # Persist the complete provider result before later schema/quality checks.
+    response = models.JSONField(default=dict)
+    error_code = models.CharField(max_length=48, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("step", "number"), name="elaborato_attempt")]
+
+
+class DocumentEvidenceItem(TimestampedModel):
+    class State(models.TextChoices):
+        PENDING = "pending", "Da esaminare"
+        READ = "read", "Esaminata"
+        EXCLUDED = "excluded", "Esclusa con motivazione"
+        UNREADABLE = "unreadable", "Illeggibile"
+        FAILED = "failed", "Lettura non riuscita"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(DocumentJob, on_delete=models.CASCADE, related_name="evidence_items")
+    source_id = models.CharField(max_length=200)
+    # An empty parent denotes an original record. Page/part rows have a parent.
+    parent_source_id = models.CharField(max_length=200, blank=True)
+    kind = models.CharField(max_length=40)
+    source_hash = models.CharField(max_length=64)
+    source_version = models.CharField(max_length=128, blank=True)
+    payload = models.JSONField(default=dict)
+    state = models.CharField(max_length=16, choices=State.choices, default=State.PENDING)
+    reason = models.CharField(max_length=500, blank=True)
+    reading = models.JSONField(default=dict)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("source_id",)
+        constraints = [models.UniqueConstraint(fields=("job", "source_id"), name="elaborato_source")]
+        indexes = [models.Index(fields=("job", "state", "kind"))]
+
+
 class DocumentAIUsage(TimestampedModel):
     job = models.ForeignKey(DocumentJob, on_delete=models.CASCADE, related_name="usage")
+    attempt = models.ForeignKey(
+        DocumentStepAttempt, on_delete=models.SET_NULL, null=True, blank=True, related_name="usage_records"
+    )
     workspace = models.ForeignKey("workspaces.Workspace", on_delete=models.CASCADE)
     stage = models.CharField(max_length=32)
     model = models.CharField(max_length=64, default="gpt-6-luna")

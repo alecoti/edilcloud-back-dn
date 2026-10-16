@@ -15,9 +15,13 @@ logger = logging.getLogger(__name__)
 
 class ReasoningProgress:
     def __init__(self, job, stage):
+        from .checkpoints import CURRENT_STEP
+
         self.job = job
-        job.refresh_from_db(fields=("thinking",))
-        self.entries = deepcopy(job.thinking)
+        self.step = CURRENT_STEP.get()
+        target = self.step or job
+        target.refresh_from_db(fields=("thinking",))
+        self.entries = deepcopy(target.thinking)
         self.entry = {"id": str(uuid.uuid4()), "stage": stage, "status": "in_progress", "parts": []}
         self.entries.append(self.entry)
         self.parts = {}
@@ -49,9 +53,18 @@ class ReasoningProgress:
         if not force and now - self.last_write < 1:
             return
         try:
-            DocumentJob.objects.filter(
-                pk=self.job.pk, state="running", lease_token=self.job.lease_token
-            ).update(
+            if self.step:
+                from .models import DocumentStep
+
+                query = DocumentStep.objects.filter(
+                    pk=self.step.pk, state="running", lease_token=self.step.lease_token,
+                    job__state="running", job__lease_token=self.job.lease_token,
+                )
+            else:
+                query = DocumentJob.objects.filter(
+                    pk=self.job.pk, state="running", lease_token=self.job.lease_token,
+                )
+            query.update(
                 thinking=self.entries,
                 updated_at=timezone.now(),
             )

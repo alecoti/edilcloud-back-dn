@@ -52,7 +52,10 @@ def prepare_preview(job):
     # the optional Verify command is the only way to request another AI review.
     validate_publication(revision)
     signature = None
-    audit = {"prepared_by_user_id": job.requested_by.user_id}
+    purpose = job.payload.get("preview_purpose", "publication")
+    if purpose == "draft" and job.payload.get("apply_signature"):
+        raise HttpError(400, "La firma si applica soltanto alla versione finale da confermare.")
+    audit = {"prepared_by_user_id": job.requested_by.user_id, "purpose": purpose}
     if job.payload.get("apply_signature"):
         personal = PersonalSignature.objects.filter(user=job.requested_by.user).first()
         if (
@@ -82,7 +85,7 @@ def prepare_preview(job):
         revision=revision,
         profile=job.requested_by,
         signature=signature,
-        publication_state="signed" if signature else "published",
+        publication_state="draft" if purpose == "draft" else "signed" if signature else "published",
     )
     pdf_hash = hashlib.sha256(pdf).hexdigest()
     # FileField.save(save=False) writes an isolated immutable candidate. Only the
@@ -131,6 +134,8 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
     ):
         raise HttpError(409, "L'anteprima è scaduta o non corrisponde più alla bozza.")
     audit = revision.preview_signature
+    if audit.get("purpose", "publication") != "publication":
+        raise HttpError(409, "Prepara la versione finale prima di confermare la pubblicazione.")
     if audit.get("prepared_by_user_id") != profile.user_id:
         raise HttpError(403, "L'anteprima deve essere confermata dall'utente che l'ha preparata.")
     signed = bool(audit.get("fingerprint"))
