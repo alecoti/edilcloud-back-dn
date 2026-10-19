@@ -96,3 +96,13 @@ groups:
         annotations:
           summary: "Exporter Redis non raggiungibile"
           description: "Prometheus non riesce a leggere redis-exporter da almeno 2 minuti."
+
+      - alert: EdilCloudRedisUnavailable
+        expr: redis_up{job="redis-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          scope: datastore
+        annotations:
+          summary: "Redis non disponibile"
+          description: "L'exporter risponde ma non riesce a connettersi a Redis da almeno un minuto. Rinnovo sessioni e realtime possono essere temporaneamente indisponibili."

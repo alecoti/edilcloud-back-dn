@@ -32,3 +32,11 @@ The web app is a Next.js 16.2.1 BFF. Django issues signed access tokens (15 minu
 - [Redis persistence recovery](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/): back up the AOF before checking/repairing it.
 
 Validation results and release identifiers will be recorded after the checks run. No finite verification can guarantee absence of all future infrastructure/authentication failures.
+
+## Why the Redis file was corrupt
+
+The preserved original's invalid tail contains exactly 2,559 NUL bytes, rather than an incomplete Redis command. Its mtime is 18 October 15:05:36 Europe/Rome. The previous system journal stops at 15:05:31 and the next boot starts at 15:30:37. Docker also reports NUL bytes in its own log after that boot. This is strong evidence consistent with an abrupt VM/storage interruption during writes, affecting multiple files. It does not prove whether the initiating fault was a provider reset, power loss, or storage failure; that attribution requires provider-side records. The inspected kernel logs contain no OOM-kill or disk-I/O-error evidence. Current free RAM, free disk and inodes do not prove their values at the incident time.
+
+Redis's `appendfsync=everysec` and `aof-load-truncated=yes` were checked: the latter can recover a truncated command but not an all-zero corrupt record. Do not automatically delete the AOF or silently truncate future corruption. Preserve the original, check the backup and use `redis-check-aof --fix` only after reviewing the affected tail. The recommended `vm.overcommit_memory=1` host setting was applied persistently in `/etc/sysctl.d/60-edilcloud-redis.conf`; it avoids a separate documented Redis background-save/fork problem and is not presented as the cause of this corruption.
+
+Monitoring previously checked only whether the Redis exporter HTTP endpoint responded. The new `EdilCloudRedisUnavailable` rule checks `redis_up=0`, detecting an unavailable Redis server even while its exporter stays up. Readiness now also checks the dependencies required for authentication before switching production traffic to a release.
