@@ -216,6 +216,7 @@ CACHES = {
         "LOCATION": REDIS_URL,
         "KEY_PREFIX": get_env("CACHE_KEY_PREFIX", "edilcloud-dn"),
         "TIMEOUT": int(get_env("CACHE_DEFAULT_TIMEOUT_SECONDS", "300")),
+        "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
     }
 }
 CACHES["weather"] = {

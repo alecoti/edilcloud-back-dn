@@ -36,6 +36,34 @@ def test_health_endpoint_returns_ok():
 
 
 @pytest.mark.django_db
+def test_readiness_checks_database_and_cache():
+    response = Client().get("/api/v1/health/ready")
+    assert response.status_code == 200
+    assert response.json()["database"] == response.json()["cache"] == "ok"
+    assert "no-store" in response["Cache-Control"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("dependency", ["database", "cache"])
+def test_readiness_rejects_failed_dependencies(monkeypatch, dependency):
+    from edilcloud.platform.api import health
+
+    def fail(*args, **kwargs):
+        raise ConnectionError("private infrastructure details")
+
+    if dependency == "database":
+        monkeypatch.setattr(health.connection, "cursor", fail)
+    else:
+        monkeypatch.setattr(health.cache, "set", fail)
+    response = Client().get("/api/v1/health/ready")
+    assert response.status_code == 503
+    assert response.json()[dependency] == "error"
+    assert response.json()["status"] == "degraded"
+    assert response["Retry-After"] == "5"
+    assert "private infrastructure" not in response.content.decode()
+
+
+@pytest.mark.django_db
 def test_request_context_echoes_request_id_header():
     client = Client()
     response = client.get("/", HTTP_X_REQUEST_ID="req-test-123")

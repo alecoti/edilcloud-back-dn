@@ -321,7 +321,7 @@ jobs:
               if run_priv curl -fsS --max-time 10 \
                 -H "Host: ${LIVE_HOST_HEADER}" \
                 -H 'X-Forwarded-Proto: https' \
-                "http://127.0.0.1:${port}/api/v1/health" >/dev/null; then
+                  "http://127.0.0.1:${port}/api/v1/health/ready" >/dev/null; then
                 return 0
               fi
               sleep 5

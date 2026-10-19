@@ -87,7 +87,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; req=urllib.request.Request('http://127.0.0.1:8001/api/v1/health', headers={'Host':'localhost','X-Forwarded-Proto':'https'}); urllib.request.urlopen(req, timeout=3).read()\"",
+            "python -c \"import urllib.request; req=urllib.request.Request('http://127.0.0.1:8001/api/v1/health/ready', headers={'Host':'localhost','X-Forwarded-Proto':'https'}); urllib.request.urlopen(req, timeout=3).read()\"",
         ]
       interval: 10s
       timeout: 5s
@@ -129,7 +129,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; req=urllib.request.Request('http://127.0.0.1:8001/api/v1/health', headers={'Host':'localhost','X-Forwarded-Proto':'https'}); urllib.request.urlopen(req, timeout=3).read()\"",
+            "python -c \"import urllib.request; req=urllib.request.Request('http://127.0.0.1:8001/api/v1/health/ready', headers={'Host':'localhost','X-Forwarded-Proto':'https'}); urllib.request.urlopen(req, timeout=3).read()\"",
         ]
       interval: 10s
       timeout: 5s

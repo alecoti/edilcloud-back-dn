@@ -217,3 +217,62 @@ def test_invalid_refresh_tokens_cannot_authorize(account, mutation):
     else:
         del claims["rti"]
     assert refresh(Client(), services.encode_refresh_token(claims)).status_code == 401
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("operation", ["add", "incr", "set"])
+def test_limiter_outage_is_retryable_without_revocation_or_rotation(account, monkeypatch, operation):
+    from redis.exceptions import ConnectionError as RedisConnectionError
+    from edilcloud.platform import rate_limit
+
+    user, profile, _ = account
+    initial = services.issue_authenticated_response(user, profile_id=profile.id)
+    session = AuthTokenSession.objects.get(session_token=initial["session_id"])
+    generation = session.current_refresh_jti
+
+    class BrokenCache:
+        def add(self, *args, **kwargs):
+            if operation == "add":
+                raise RedisConnectionError("sensitive connection details")
+            return False
+
+        def incr(self, *args, **kwargs):
+            if operation == "incr":
+                raise RedisConnectionError("sensitive connection details")
+            raise ValueError("counter expired")
+
+        def set(self, *args, **kwargs):
+            raise RedisConnectionError("sensitive connection details")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(rate_limit, "cache", BrokenCache())
+        response = refresh(Client(), initial["refresh_token"])
+    assert response.status_code == 503
+    assert response.json()["retryable"] is True
+    assert response["Retry-After"] == "5"
+    assert "sensitive" not in response.content.decode()
+    session.refresh_from_db()
+    assert session.revoked_at is None
+    assert session.current_refresh_jti == generation
+    assert services.verify_user_token(initial["token"])["main_profile"] == profile.id
+    assert refresh(Client(), initial["refresh_token"]).status_code == 200
+
+
+@pytest.mark.django_db
+def test_login_limiter_outage_does_not_issue_a_session(account, monkeypatch):
+    from redis.exceptions import TimeoutError as RedisTimeoutError
+    from edilcloud.platform import rate_limit
+
+    user, _, _ = account
+    before = AuthTokenSession.objects.count()
+    class BrokenCache:
+        def add(self, *args, **kwargs):
+            raise RedisTimeoutError("credentials must not be returned")
+
+    monkeypatch.setattr(rate_limit, "cache", BrokenCache())
+    response = Client().post("/api/v1/auth/login", data=json.dumps({
+        "username_or_email": user.email, "password": "devpass123",
+    }), content_type="application/json")
+    assert response.status_code == 503
+    assert response.json()["retryable"] is True
+    assert AuthTokenSession.objects.count() == before

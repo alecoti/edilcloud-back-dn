@@ -3,9 +3,11 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db import connection
 from django.http import HttpResponse
 from ninja import Router, Schema
 from ninja.errors import HttpError
+from ninja.responses import Status
 
 from edilcloud.platform.performance_budget import evaluate_runtime_summary
 from edilcloud.platform.telemetry import (
@@ -30,6 +32,10 @@ class HealthResponse(Schema):
     sentry: str
     openai: str
     vector_store: str
+
+
+class ReadinessResponse(HealthResponse):
+    database: str
 
 
 class MetricsResponse(Schema):
@@ -88,6 +94,25 @@ def build_health_payload() -> dict[str, str]:
 @router.get("", response=HealthResponse)
 def healthcheck(request):
     return HealthResponse(**build_health_payload())
+
+
+@router.get("/ready", response={200: ReadinessResponse, 503: ReadinessResponse})
+def readiness(request, response: HttpResponse):
+    payload = build_health_payload()
+    database = "ok"
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            if cursor.fetchone() != (1,):
+                database = "error"
+    except Exception:
+        database = "error"
+    ready = database == "ok" and payload["cache"] == "ok"
+    payload.update(status="ok" if ready else "degraded", database=database)
+    response["Cache-Control"] = "no-store, private"
+    if not ready:
+        response["Retry-After"] = "5"
+    return Status(200 if ready else 503, payload)
 
 
 @router.get("/metrics", response=MetricsResponse)

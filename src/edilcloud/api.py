@@ -20,12 +20,25 @@ from edilcloud.modules.search.api import router as search_router
 from edilcloud.modules.workspaces.api import companies_router, router as workspaces_router
 from edilcloud.platform.api.health import router as health_router
 from edilcloud.platform.api.test_center import router as test_center_router
+from edilcloud.platform.rate_limit import RateLimitUnavailable
 
 api = NinjaAPI(
     title="EdilCloud API",
     version="0.1.0",
     urls_namespace="edilcloud_api",
 )
+
+
+@api.exception_handler(RateLimitUnavailable)
+def rate_limit_unavailable(request, exc):
+    response = api.create_response(
+        request,
+        {"detail": str(exc), "retryable": True},
+        status=503,
+    )
+    response["Retry-After"] = "5"
+    response["Cache-Control"] = "no-store, private"
+    return response
 
 api.add_router("/health", health_router)
 api.add_router("/test-center", test_center_router)

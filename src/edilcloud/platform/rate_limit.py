@@ -3,6 +3,11 @@ from __future__ import annotations
 import hashlib
 
 from django.core.cache import cache
+from redis.exceptions import RedisError
+
+
+class RateLimitUnavailable(RuntimeError):
+    """The shared limiter cannot enforce the policy; do not accept the attempt."""
 
 
 class RateLimitExceeded(ValueError):
@@ -31,15 +36,18 @@ def enforce_rate_limit(
     message: str,
 ) -> None:
     cache_key = build_rate_limit_key(namespace, *key_parts)
-    added = cache.add(cache_key, 1, timeout=window_seconds)
-    count = 1
+    try:
+        added = cache.add(cache_key, 1, timeout=window_seconds)
+        count = 1
 
-    if not added:
-        try:
-            count = cache.incr(cache_key)
-        except ValueError:
-            cache.set(cache_key, 1, timeout=window_seconds)
-            count = 1
+        if not added:
+            try:
+                count = cache.incr(cache_key)
+            except ValueError:
+                cache.set(cache_key, 1, timeout=window_seconds)
+                count = 1
+    except (RedisError, OSError) as exc:
+        raise RateLimitUnavailable("Verifica accesso temporaneamente non disponibile.") from exc
 
     if count > limit:
         raise RateLimitExceeded(message, retry_after=window_seconds)
