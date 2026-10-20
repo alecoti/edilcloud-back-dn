@@ -386,6 +386,12 @@ jobs:
 
           start_slot_worker() {
             local slot="$1"
+            # Production qualification explicitly suspends provider/background
+            # work. A deployment must not silently restart paid AI processing.
+            if run_priv test -f "${RUNTIME_DIR}/qualification-workers-suspended"; then
+              echo "Background workers remain suspended by the production qualification marker."
+              return 0
+            fi
             compose_cmd up -d "$(slot_worker_service "${slot}")" || return 1
             if compose_cmd config --services | grep -Fxq "$(slot_push_worker_service "${slot}")"; then
               compose_cmd up -d "$(slot_push_worker_service "${slot}")" || return 1
