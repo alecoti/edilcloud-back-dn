@@ -305,13 +305,7 @@ def enroll_signature(request, payload: schemas.SignatureRequest):
 
 @router.delete("/signature")
 def delete_signature(request):
-    signature = PersonalSignature.objects.filter(user=request.auth.user).first()
-    if signature:
-        name = signature.image.name
-        storage = signature.image.storage
-        signature.delete()
-        if name:
-            storage.delete(name)
+    services.delete_signature(user=request.auth.user)
     return {"enrolled": False}
 
 

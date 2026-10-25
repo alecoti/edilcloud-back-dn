@@ -675,5 +675,24 @@ def save_signature(*, user, strokes):
         signature.image.save(f"{uuid.uuid4()}.png", ContentFile(output.getvalue()), save=False)
         signature.save()
         if old_name:
-            transaction.on_commit(lambda: signature.image.storage.delete(old_name))
+            # Enrollment has committed. A storage cleanup failure must not tell
+            # the caller that the new signature was not saved. The bounded
+            # orphan cleaner retries unreferenced signature images.
+            transaction.on_commit(
+                lambda: signature.image.storage.delete(old_name), robust=True
+            )
     return signature
+
+
+def delete_signature(*, user):
+    with transaction.atomic():
+        # Serialize with enrollment, including a concurrent first enrollment.
+        type(user).objects.select_for_update().get(pk=user.pk)
+        signature = PersonalSignature.objects.filter(user=user).first()
+        if signature is None:
+            return
+        old_name = signature.image.name
+        storage = signature.image.storage
+        signature.delete()
+        if old_name:
+            transaction.on_commit(lambda: storage.delete(old_name), robust=True)
