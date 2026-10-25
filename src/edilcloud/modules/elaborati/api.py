@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 
-from django.http import FileResponse
+from django.http import FileResponse, JsonResponse
 from ninja import Router
 from ninja.errors import HttpError
 
@@ -290,23 +290,30 @@ def source_file(request, revision_id: UUID, source_id: str, image_preview: bool 
 @router.get("/signature")
 def signature(request):
     own = PersonalSignature.objects.filter(user=request.auth.user).first()
-    return {
+    return personal_signature_response({
         "enrolled": bool(own),
         "strokes": own.strokes if own else [],
         "fingerprint": own.fingerprint if own else None,
-    }
+    })
+
+
+def personal_signature_response(value):
+    return JsonResponse(value, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 @router.put("/signature")
 def enroll_signature(request, payload: schemas.SignatureRequest):
     signature = services.save_signature(user=request.auth.user, strokes=payload.strokes)
-    return {"enrolled": True, "fingerprint": signature.fingerprint}
+    return personal_signature_response({"enrolled": True, "fingerprint": signature.fingerprint})
 
 
 @router.delete("/signature")
 def delete_signature(request):
     services.delete_signature(user=request.auth.user)
-    return {"enrolled": False}
+    return personal_signature_response({"enrolled": False})
 
 
 @router.put("/workspace-style")

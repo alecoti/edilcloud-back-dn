@@ -140,14 +140,16 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
         raise HttpError(403, "L'anteprima deve essere confermata dall'utente che l'ha preparata.")
     signed = bool(audit.get("fingerprint"))
     if signed:
+        # Enrollment and removal lock the same user row. Keep the validated
+        # personal signature stable until this publication commits.
+        type(profile.user).objects.select_for_update().get(pk=profile.user_id)
         personal = PersonalSignature.objects.filter(user=profile.user).first()
-        if (
-            not confirm_signature
-            or not personal
-            or personal.fingerprint != audit["fingerprint"]
-            or audit.get("user_id") != profile.user_id
-        ):
+        if not confirm_signature or audit.get("user_id") != profile.user_id:
             raise HttpError(400, "Conferma esplicitamente la tua firma per questa revisione.")
+        if not personal:
+            raise HttpError(409, "La firma personale è stata rimossa. Registrala e prepara una nuova anteprima.")
+        if personal.fingerprint != audit["fingerprint"]:
+            raise HttpError(409, "La firma personale è cambiata. Prepara una nuova anteprima.")
     with revision.preview_file.open("rb") as stream:
         data = stream.read(45 * 1024 * 1024 + 1)
     if len(data) > 45 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != preview_hash:
