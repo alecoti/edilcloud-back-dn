@@ -43,6 +43,57 @@ def people_sources(bundle):
     )
 
 
+def people_register(bundle, used):
+    """Frozen identities, with current catalogues kept distinct from dated roles."""
+    from ..projects.participations import role_labels
+
+    rows = {}
+
+    def add(data, source_id, scope, *, actor=None):
+        actor = actor or {}
+        name = data.get("name") or actor.get("person_name")
+        if not name:
+            return
+        row = {
+            "name": name,
+            "company": data.get("company") or actor.get("company_name", ""),
+            "qualification": data.get("qualification") or actor.get("qualification", ""),
+            "function": data.get("function", ""),
+            "professional_role_labels": data.get("professional_role_labels") or actor.get("role_labels") or role_labels(data.get("professional_roles") or []),
+            "valid_from": data.get("valid_from", ""),
+            "valid_to": data.get("valid_to", ""),
+            "appointment_reference": data.get("appointment_reference", ""),
+            "status": data.get("status") or actor.get("identity_state", ""),
+            "scope": scope,
+        }
+        # Never combine a later company/role with an earlier attribution.
+        key = digest(row)
+        if key not in rows:
+            rows[key] = {**row, "source_ids": []}
+        if source_id not in rows[key]["source_ids"]:
+            rows[key]["source_ids"].append(source_id)
+
+    for source in bundle.get("sources", []):
+        if source["kind"] == "member":
+            data = source["data"]
+            if data.get("assignment_is_not_attendance"):
+                add(data, source["id"], "assignment")
+            elif data.get("roles_are_current_catalogue"):
+                add(data, source["id"], "catalogue")
+        if source["id"] in used and source.get("actor", {}).get("person_name"):
+            add({}, source["id"], "source", actor=source["actor"])
+
+    # A source actor is already represented when its exact professional identity
+    # is present in a dated assignment. Keep all other snapshots separately.
+    def identity(row):
+        return (row["name"], row["company"], row["qualification"], tuple(sorted(row["professional_role_labels"])))
+    assignments = {identity(row) for row in rows.values() if row["scope"] == "assignment"}
+    return sorted(
+        (row for row in rows.values() if row["scope"] == "assignment" or identity(row) not in assignments),
+        key=lambda row: (row["name"].casefold(), row["scope"], row["valid_from"]),
+    )
+
+
 def coverage(bundle, used):
     sources = bundle.get("sources", [])
     states = Counter(source.get("reading_state", "") for source in sources)
@@ -75,9 +126,8 @@ def coverage(bundle, used):
 
 def manifest(revision, *, pdf_hash=""):
     sources = revision.evidence.get("sources", [])
-    used = claim_source_ids(revision.editor_doc) | {
-        source["id"] for source in people_sources(revision.evidence)
-    }
+    used = claim_source_ids(revision.editor_doc)
+    used.update(sid for row in people_register(revision.evidence, used) for sid in row["source_ids"])
     entries = [
         {
             key: deepcopy(source.get(key))
@@ -287,4 +337,13 @@ def labels(locale):
             strict=True,
         )
     )
+    additions = {
+        "it": ("Identità e incarichi dalle fonti conservate: non attestano la presenza in cantiere o alla riunione. I dati di anagrafica alla raccolta non provano incarichi nel periodo analizzato.", "Anagrafica alla raccolta; validità nel periodo non documentata", "Attribuzione nelle fonti citate", "Non documentato"),
+        "en": ("Identities and appointments from retained sources; not evidence of attendance. Catalogue data at collection does not prove appointments during the reporting period.", "Catalogue at collection; validity during the period not documented", "Attribution in cited sources", "Not documented"),
+        "fr": ("Identités et fonctions des sources conservées ; sans attestation de présence. Le catalogue à la collecte ne prouve pas les fonctions pendant la période.", "Catalogue à la collecte ; validité sur la période non documentée", "Attribution dans les sources citées", "Non documenté"),
+        "ro": ("Identități și funcții din sursele păstrate; nu atestă prezența. Catalogul la colectare nu dovedește funcțiile din perioada analizată.", "Catalog la colectare; valabilitate în perioadă nedocumentată", "Atribuire în sursele citate", "Nedocumentat"),
+        "ru": ("Лица и назначения из сохранённых источников не подтверждают присутствие. Справочник на дату сбора не доказывает назначения в отчётном периоде.", "Справочник на дату сбора; действие в периоде не подтверждено", "Атрибуция в цитируемых источниках", "Не подтверждено"),
+        "ar": ("الهويات والأدوار من المصادر المحفوظة لا تثبت الحضور. بيانات الدليل عند الجمع لا تثبت الأدوار خلال فترة التقرير.", "الدليل عند الجمع؛ الصلاحية خلال الفترة غير موثقة", "النسبة في المصادر المستشهد بها", "غير موثق"),
+    }
+    result.update(zip(("people_note", "catalogue_scope", "source_scope", "not_documented"), additions.get(locale, additions["en"]), strict=True))
     return result

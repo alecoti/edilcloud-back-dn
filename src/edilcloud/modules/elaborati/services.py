@@ -104,6 +104,8 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
         "code": f"EL-{document.created_at.year}-{document.number:04d}",
         "author_id": document.created_by_id,
         "author": profile_display_name(document.created_by),
+        "created_at": document.created_at.isoformat(),
+        "revision_created_at": revision.created_at.isoformat(),
         "updated_at": revision.updated_at.isoformat(),
         "published_at": revision.published_at.isoformat() if revision.published_at else None,
         "pdf_hash": revision.pdf_hash,
@@ -112,6 +114,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
         "job": serialize_job(job, include_thinking=own_thinking) if job else None,
     }
     if full:
+        from .filenames import pdf_filename
         from .usage import document_token_usage
         from .publication import publication_content_hash
 
@@ -141,6 +144,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
                 if summaries:
                     break
         data.update(
+            pdf_filename=pdf_filename(revision),
             thinking=summaries,
             ai_usage=document_token_usage(document.pk),
             can_edit=viewer_can_edit,

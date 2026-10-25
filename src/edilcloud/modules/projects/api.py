@@ -14,6 +14,8 @@ from ninja.responses import Status
 from edilcloud.modules.identity.auth import JWTAuth
 from edilcloud.modules.projects.archive import export_project_archive
 from edilcloud.modules.projects.schemas import ProjectSettingsPatchSchema, ProjectMemberSettingsPatchSchema
+from edilcloud.modules.projects.schemas import PhaseAssignmentRequestSchema
+from edilcloud.modules.projects.assignments import assignment_state, update_assignment
 from edilcloud.modules.projects.settings_service import get_project_settings, update_project_settings, update_project_member_settings
 from edilcloud.modules.projects.demo_master_admin import (
     create_demo_master_snapshot,
@@ -1224,6 +1226,24 @@ def project_realtime_session(request, project_id: int):
     )
 
 
+@tasks_router.get("/{task_id}/assignment", response=dict[str, Any], auth=auth)
+def phase_assignment(request, task_id: int, activity_id: int | None = None, query: str = ""):
+    return assignment_state(profile=current_profile(request), task_id=task_id,
+        activity_id=activity_id, query=query[:200])
+
+
+@tasks_router.patch("/{task_id}/assignment", response=dict[str, Any], auth=auth)
+def patch_phase_assignment(request, task_id: int, payload: PhaseAssignmentRequestSchema,
+                           activity_id: int | None = None):
+    try:
+        return update_assignment(profile=current_profile(request), task_id=task_id,
+            activity_id=activity_id, company_id=payload.assigned_company,
+            set_company="assigned_company" in payload.model_fields_set,
+            worker_ids=payload.worker_profile_ids, inherit_workers=payload.inherit_workers)
+    except ValueError as exc:
+        raise HttpError(403, str(exc)) from exc
+
+
 @tasks_router.patch("/{task_id}", response=dict[str, Any], auth=auth)
 def update_task_endpoint(request, task_id: int, payload: UpdateProjectTaskRequestSchema):
     try:
@@ -1257,6 +1277,7 @@ def create_activity_endpoint(request, task_id: int, payload: CreateTaskActivityR
             datetime_start=payload.datetime_start,
             datetime_end=payload.datetime_end,
             workers=payload.workers,
+            inherit_workers=payload.inherit_workers,
             note=payload.note,
             alert=payload.alert,
             starred=payload.starred,
@@ -1322,6 +1343,7 @@ def update_activity_endpoint(request, activity_id: int, payload: UpdateTaskActiv
             datetime_start=payload.datetime_start,
             datetime_end=payload.datetime_end,
             workers=payload.workers,
+            inherit_workers=payload.inherit_workers,
             note=payload.note,
             alert=payload.alert,
             starred=payload.starred,

@@ -28,6 +28,8 @@ documentato nel post. Un'analisi AI dell'immagine è un ausilio, non una verific
 Le trascrizioni automatiche vanno usate come dichiarazioni, senza dedurre identità o presenza dalla voce.
 Le fonti secondarie non sostituiscono la registrazione originale.
 Attribuisci fatti e dichiarazioni alla persona, azienda, qualifica e incarichi presenti in source_actor.
+Alla prima menzione di una persona riporta anche azienda, qualifica e incarichi professionali
+documentati nella fonte pertinente; nelle menzioni successive puoi usare il solo nome.
 Non confondere un ruolo applicativo (Owner, Manager) con incarichi professionali (RSPP, CSE, CSP).
 Usa gli incarichi solo nel loro intervallo valid_from/valid_to. Un'anagrafica corrente o ricostruita
 non dimostra un incarico nel passato, una nomina verificata, una presenza o un'approvazione.

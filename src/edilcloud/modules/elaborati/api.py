@@ -206,11 +206,11 @@ def resume_job(request, job_id: UUID, payload: schemas.ResumeRequest):
     return services.serialize_job(job, include_thinking=True)
 
 
-def private_response(field, filename):
+def private_response(field, filename, *, download=False):
     if not field:
         raise HttpError(404, "PDF non disponibile.")
     response = FileResponse(
-        field.open("rb"), content_type="application/pdf", filename=filename, as_attachment=False
+        field.open("rb"), content_type="application/pdf", filename=filename, as_attachment=download
     )
     response["Cache-Control"] = "private, no-store"
     response["X-Content-Type-Options"] = "nosniff"
@@ -218,7 +218,7 @@ def private_response(field, filename):
 
 
 @router.get("/revisions/{revision_id}/pdf")
-def pdf(request, revision_id: UUID):
+def pdf(request, revision_id: UUID, download: bool = False):
     profile = profile_for(request)
     revision = services.get_revision(profile=profile, revision_id=revision_id)
     if revision.state == "draft":
@@ -236,7 +236,9 @@ def pdf(request, revision_id: UUID):
 
         if revision.preview_content_hash != publication_content_hash(revision):
             raise HttpError(409, "Il PDF non corrisponde alla versione corrente della bozza.")
-    return private_response(revision.preview_file, f"Elaborato-Rev{revision.number}.pdf")
+    from .filenames import pdf_filename
+
+    return private_response(revision.preview_file, pdf_filename(revision), download=download)
 
 
 @router.get("/revisions/{revision_id}/sources/{source_id}")

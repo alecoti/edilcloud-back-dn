@@ -1590,6 +1590,7 @@ def serialize_activity_context(activity: ProjectActivity | None) -> dict | None:
         return None
     return {
         "id": activity.id,
+        "inherit_workers": activity.inherit_workers,
         "title": activity.title,
         "status": activity.status,
         "progress": activity.progress,
@@ -2266,6 +2267,7 @@ def serialize_activity(
         "id": activity.id,
         "title": activity.title,
         "description": activity.description or None,
+        "inherit_workers": activity.inherit_workers,
         "status": activity.status,
         "progress": activity.progress,
         "datetime_start": activity.datetime_start,
@@ -2319,8 +2321,12 @@ def serialize_task(
     compact: bool = False,
     normalized: bool = False,
 ) -> dict:
+    from edilcloud.modules.projects.assignments import can_assign_company, can_assign_people
     return {
         "id": task.id,
+        "workers": [serialize_project_profile(worker) for worker in task.workers.all()],
+        "can_assign_company": bool(membership and can_assign_company(membership.profile, task.project)),
+        "can_assign_people": bool(membership and can_assign_people(membership.profile, task)),
         "name": task.name,
         "project": {
             "id": task.project_id,
@@ -2932,6 +2938,7 @@ def project_tasks_queryset(project: Project):
     return (
         project.tasks.select_related("project", "assigned_company").defer("schedule_metadata")
         .prefetch_related(
+            Prefetch("workers", queryset=Profile.objects.select_related("workspace", "user")),
             Prefetch(
                 "activities",
                 queryset=ProjectActivity.objects.defer("schedule_metadata").order_by("datetime_start", "id").prefetch_related(
@@ -2949,6 +2956,7 @@ def task_worker_directory(tasks, *, company_colors_by_workspace_id):
         worker.id: worker for task in tasks for activity in task.activities.all()
         for worker in activity.workers.all()
     }
+    profiles.update({worker.id: worker for task in tasks for worker in task.workers.all()})
     return [serialize_project_profile(worker, company_colors_by_workspace_id=company_colors_by_workspace_id)
             for worker in profiles.values()]
 
@@ -4436,9 +4444,8 @@ def create_project_task(
 
     assigned_company = None
     if assigned_company_id is not None:
-        assigned_company = Workspace.objects.filter(id=assigned_company_id, is_active=True).first()
-        if assigned_company is None:
-            raise ValueError("Azienda assegnataria non valida.")
+        from edilcloud.modules.projects.assignments import validate_company
+        assigned_company = validate_company(profile, project, assigned_company_id)
 
     task = ProjectTask.objects.create(
         project=project,
@@ -4452,6 +4459,8 @@ def create_project_task(
         starred=bool(starred),
     )
     task.project = project
+    from edilcloud.modules.projects.assignments import company_changed
+    company_changed(task, profile, notify=False)
     company_colors_by_workspace_id = project_company_colors_for_context(
         project=project,
         members=members,
@@ -4535,7 +4544,7 @@ def update_project_task(
     starred: bool = False,
 ) -> dict:
     task = (
-        ProjectTask.objects.select_related("project", "assigned_company").filter(id=task_id).first()
+        ProjectTask.objects.select_for_update(of=("self",)).select_related("project", "assigned_company").filter(id=task_id).first()
     )
     if task is None:
         raise ValueError("Task non trovato.")
@@ -4554,6 +4563,9 @@ def update_project_task(
     previous_starred = task.starred
     previous_assigned_company_id = task.assigned_company_id
     previous_assigned_company_name = task.assigned_company.name if task.assigned_company else None
+    from edilcloud.modules.projects.assignments import validate_company, company_changed
+    if assigned_company_id != previous_assigned_company_id:
+        validate_company(profile, project, assigned_company_id)
     dates_changed = task.date_start != date_start or task.date_end != date_end
     from edilcloud.modules.projects.gantt_planning import prepare_professional_date_edit, validate_professional_entity_dates, anchor_professional_date_edit
     professional_edit = prepare_professional_date_edit(project=project, profile=profile) if dates_changed else False
@@ -4574,6 +4586,8 @@ def update_project_task(
             raise ValueError("Azienda assegnataria non valida.")
         task.assigned_company = assigned_company
     task.save()
+    if previous_assigned_company_id != task.assigned_company_id:
+        company_changed(task, profile, notify=False)
     shifted_activity_refs: list[str] = []
     shift_delta_days = (task.date_start - previous_date_start).days
     if shift_delta_days != 0 and shift_delta_days == (task.date_end - previous_date_end).days:
@@ -4707,6 +4721,7 @@ def create_task_activity(
     datetime_end: datetime,
     progress: int | None = None,
     workers: list[int] | None = None,
+    inherit_workers: bool | None = None,
     note: str = "",
     alert: bool = False,
     starred: bool = False,
@@ -4743,9 +4758,12 @@ def create_task_activity(
         alert=bool(alert),
         starred=bool(starred),
     )
-    selected_workers = resolve_project_member_profile_ids(project=task.project, ids=workers or [])
-    if selected_workers:
-        activity.workers.set(selected_workers)
+    from edilcloud.modules.projects.assignments import update_assignment
+    if inherit_workers is True or (inherit_workers is not False and not workers):
+        activity.workers.set(task.workers.all())
+    else:
+        update_assignment(profile=profile, task_id=task.id, activity_id=activity.id,
+            worker_ids=workers or [], inherit_workers=False)
     activity.refresh_from_db()
     expanded_task_ref = sync_task_bounds_to_activities(task_id=task.id)
     if expanded_task_ref:
@@ -4830,6 +4848,7 @@ def update_task_activity(
     datetime_end: datetime,
     progress: int | None = None,
     workers: list[int] | None = None,
+    inherit_workers: bool | None = None,
     note: str = "",
     alert: bool = False,
     starred: bool = False,
@@ -4887,9 +4906,10 @@ def update_task_activity(
     activity.save()
     if professional_edit:
         anchor_professional_date_edit(activity)
-    activity.workers.set(
-        resolve_project_member_profile_ids(project=activity.task.project, ids=workers or [])
-    )
+    if inherit_workers is not None or (workers is not None and set(workers) != previous_worker_ids):
+        from edilcloud.modules.projects.assignments import update_assignment
+        update_assignment(profile=profile, task_id=activity.task_id, activity_id=activity.id,
+            worker_ids=workers, inherit_workers=inherit_workers)
     activity.refresh_from_db()
     expanded_task_ref = sync_task_bounds_to_activities(task_id=activity.task_id)
     if professional_edit and expanded_task_ref:

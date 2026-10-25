@@ -187,7 +187,8 @@ class CreateTaskActivityRequestSchema(Schema):
     progress: int | None = None
     datetime_start: datetime
     datetime_end: datetime
-    workers: list[int] = []
+    workers: list[int] | None = None
+    inherit_workers: bool | None = None
     note: str = ""
     alert: bool = False
     starred: bool = False
@@ -195,6 +196,12 @@ class CreateTaskActivityRequestSchema(Schema):
 
 class UpdateTaskActivityRequestSchema(CreateTaskActivityRequestSchema):
     pass
+
+
+class PhaseAssignmentRequestSchema(Schema):
+    assigned_company: int | None = None
+    worker_profile_ids: list[int] | None = None
+    inherit_workers: bool | None = None
 
 
 class CreateProjectGanttLinkRequestSchema(Schema):

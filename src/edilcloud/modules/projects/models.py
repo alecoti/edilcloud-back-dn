@@ -529,6 +529,7 @@ class ProjectTask(TimestampedModel):
         related_name="tasks",
     )
     name = models.CharField(max_length=255)
+    workers = models.ManyToManyField(Profile, related_name="assigned_project_phases", blank=True)
     assigned_company = models.ForeignKey(
         Workspace,
         on_delete=models.SET_NULL,
@@ -566,6 +567,7 @@ class ProjectActivity(TimestampedModel):
         related_name="activities",
     )
     title = models.CharField(max_length=255)
+    inherit_workers = models.BooleanField(default=True)
     description = models.TextField(blank=True)
     status = models.CharField(
         max_length=16,

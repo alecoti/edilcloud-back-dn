@@ -16,7 +16,7 @@ from django.utils import timezone
 from .evidence import resolve_evidence_file
 from .content import validate_editor
 from .pdf_labels import labels
-from .documentary_register import coverage, labels as register_labels, people_sources
+from .documentary_register import claim_source_ids, coverage, labels as register_labels, people_register
 from ..projects.provenance import source_link
 
 
@@ -75,11 +75,12 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
             index(child)
 
     index(revision.editor_doc)
-    appointments = people_sources(revision.evidence)
-    for source in appointments:
-        if source["id"] not in numbers:
-            numbers[source["id"]] = len(numbers) + 1
-        used.add(source["id"])
+    appointments = people_register(revision.evidence, claim_source_ids(revision.editor_doc))
+    for row in appointments:
+        for sid in row["source_ids"]:
+            if sid not in numbers:
+                numbers[sid] = len(numbers) + 1
+            used.add(sid)
 
     def actor_label(source):
         actor = source.get("actor") or {}
@@ -274,7 +275,7 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
     content = render(revision.editor_doc)
     code = f"EL-{document.created_at.year}-{document.number:04d} · Rev.{revision.number}"
     created = timezone.localtime(document.created_at)
-    author = (document.author_snapshot or {}).get("person_name") or (document.created_by.member_name if document.created_by else "")
+    author = actor_label({"actor": document.author_snapshot}) if document.author_snapshot else (document.created_by.member_name if document.created_by else register_words["unknown_actor"])
     signature_html = ""
     if signature:
         signature_html = f'<section class="signature"><h2>{esc(words["signature"])}</h2><p><strong>{esc(signature["name"])}</strong><br>{esc(signature["role"])} · {esc(signature["company"])}</p><img src="{signature["image_data"]}" alt="{esc(words["signature"])}"><p>{esc(words["signed_via"])}<br>{esc(signature["confirmed_at"])}</p></section>'
@@ -318,8 +319,7 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
     )
     from .reference_layout import layout_html
 
-    def appointment_row(source):
-        data = source["data"]
+    def appointment_row(data):
         professional = ", ".join(data.get("professional_role_labels") or [])
         reference = data.get("appointment_reference") or ""
         if reference:
@@ -327,10 +327,12 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
         if data.get("status") == "reconstructed":
             professional += " · " + register_words["reconstructed"]
         validity = " — ".join(date_label(value) for value in (data.get("valid_from"), data.get("valid_to")) if value)
+        if data["scope"] != "assignment":
+            validity = register_words["catalogue_scope" if data["scope"] == "catalogue" else "source_scope"]
         qualification = " · ".join(value for value in (data.get("qualification"), data.get("function")) if value)
-        return (f'<tr><td>{esc(data.get("name", ""))} {citations([source["id"]])}</td>'
-                f'<td>{esc(data.get("company", ""))}</td><td>{esc(qualification)}</td>'
-                f'<td>{esc(professional)}</td><td>{esc(validity)}</td></tr>')
+        return (f'<tr><td>{esc(data.get("name", ""))} {citations(data["source_ids"])}</td>'
+                f'<td>{esc(data.get("company") or register_words["not_documented"])}</td><td>{esc(qualification or register_words["not_documented"])}</td>'
+                f'<td>{esc(professional or register_words["not_documented"])}</td><td>{esc(validity)}</td></tr>')
 
     people_html = ""
     if appointments:
@@ -344,7 +346,7 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
     if counts["selection_partial"] or not counts["census_complete"]:
         coverage_html += f'<p class="closing">{esc(register_words["partial"])}</p>'
 
-    reference_body = f"""{people_html}{content}<p class="closing">{esc(revision.template_snapshot["closing"])}</p>{signature_html}{coverage_html}
+    reference_body = f"""{content}{people_html}<p class="closing">{esc(revision.template_snapshot["closing"])}</p>{signature_html}{coverage_html}
       <h2 class="references-title">{esc(words["sources"])}</h2><p class="closing">{esc(words["used"])}: {len(used)} · {esc(words["captured"])}: {esc(date_label(revision.evidence["captured_at"]))}</p>
       <table class="source-table"><thead><tr><th>#</th><th>{esc(words["source"])}</th><th>{esc(words["recorded"])}</th><th>{esc(words["hash"])}</th></tr></thead><tbody>{references}</tbody></table>
       <h2>{esc(words["history"])}</h2><table><tbody>{history}</tbody></table><p class="closing">{esc(words["note"])}</p>"""
