@@ -328,7 +328,9 @@ def export_project_archive(*, profile, project_id: int):
             logo_name = _safe_file_name(project.logo.name, fallback=f"project-{project.id}-logo")
             _write_file_field(zip_file, f"project/files/{logo_name}", project.logo)
 
-        for document in project.documents.select_related("folder").order_by("-updated_at", "-id"):
+        from edilcloud.modules.elaborati.visibility import visible_drive_documents
+
+        for document in visible_drive_documents(profile=profile, queryset=project.documents.all()).select_related("folder").order_by("-updated_at", "-id"):
             original_name = Path(document.document.name).name if document.document else document.title
             file_name = _safe_file_name(
                 original_name,

@@ -122,7 +122,7 @@ def test_author_confirmation_is_explicit_atomic_and_idempotent_without_content_c
     assert revision.jobs.count() == 1 and revision.jobs.get().state == 'queued'
 
 
-@pytest.mark.parametrize('case,status', [('unconfirmed',400),('blank_reason',400),('stale',409),('other_editor',403),('outsider',404)])
+@pytest.mark.parametrize('case,status', [('unconfirmed',400),('blank_reason',400),('stale',409),('other_editor',404),('outsider',404)])
 def test_legacy_confirmation_rejects_invalid_or_unauthorized_assignments(site,case,status):
     revision = baseline.create(site)
     ElaboratoOwnership.objects.filter(document=revision.elaborato).delete()

@@ -44,8 +44,17 @@ def options(request):
     default = WorkspaceDocumentStyle.objects.filter(workspace=profile.workspace).first()
     # Derive the author filter from visible documents; don't expose a global
     # directory of accounts to a member of one construction site.
+    from django.db.models import Exists, OuterRef, Q
+    from .models import ElaboratoRevision
+    from .visibility import organization_documents
+
+    visible_revisions = ElaboratoRevision.objects.filter(elaborato_id=OuterRef("pk")).exclude(
+        state="deleted"
+    ).filter(~Q(state="draft") | Q(elaborato__project_id__in=editable))
     authors = (
-        services.Elaborato.objects.filter(project__in=projects)
+        organization_documents(
+            profile=profile, queryset=services.Elaborato.objects.filter(project__in=projects),
+        ).alias(_visible_revision=Exists(visible_revisions)).filter(_visible_revision=True)
         .order_by("created_by_id")
         .values("created_by_id", "created_by__first_name", "created_by__last_name")
         .distinct()

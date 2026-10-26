@@ -3359,9 +3359,11 @@ def list_project_gantt(*, profile: Profile, project_id: int, compact: bool = Fal
 
 
 def list_project_documents(*, profile: Profile, project_id: int) -> list[dict]:
+    from edilcloud.modules.elaborati.visibility import visible_drive_documents
+
     project = get_project_for_profile(profile=profile, project_id=project_id)
     documents = list(
-        project.documents.select_related("folder")
+        visible_drive_documents(profile=profile, queryset=project.documents.all()).select_related("folder")
         .filter(document_kind=ProjectDocumentKind.DOCUMENT)
         .order_by("-updated_at", "-id")
     )
@@ -3641,23 +3643,28 @@ def list_project_photos(*, profile: Profile, project_id: int) -> list[dict]:
 
 
 def get_project_document_file_response(*, profile: Profile, document_id: int, request=None):
+    from edilcloud.modules.elaborati.visibility import require_drive_scope
+
     document = ProjectDocument.objects.select_related("project").filter(id=document_id).first()
     if document is None:
         raise ValueError("Documento non trovato.")
+    require_drive_scope(profile=profile, document_id=document_id)
     get_project_with_team_context(profile=profile, project_id=document.project_id)
     file_name = (
         Path(document.document.name).name if document.document else document.title or "documento"
     )
-    if document.document and document.document.name.startswith("elaborati/publications/"):
-        from edilcloud.modules.elaborati.models import ElaboratoRevision
+    from edilcloud.modules.elaborati.models import ElaboratoRevision
 
-        revision = ElaboratoRevision.objects.select_related("elaborato").filter(
-            drive_document_id=document.pk, elaborato__project_id=document.project_id
-        ).first()
-        if revision is not None:
-            source = revision.elaborato
-            file_name = f"EL-{source.created_at.year}-{source.number:04d}-Rev{revision.number}.pdf"
-    return build_inline_file_response(document.document, filename=file_name, request=request)
+    revision = ElaboratoRevision.objects.select_related("elaborato").filter(
+        drive_document_id=document.pk, elaborato__project_id=document.project_id
+    ).first()
+    if revision is not None:
+        source = revision.elaborato
+        file_name = f"EL-{source.created_at.year}-{source.number:04d}-Rev{revision.number}.pdf"
+    response = build_inline_file_response(document.document, filename=file_name, request=request)
+    if revision is not None:
+        response["Cache-Control"] = "private, no-store"
+    return response
 
 
 def get_project_photo_file_response(*, profile: Profile, photo_id: int, request=None):
@@ -3942,8 +3949,10 @@ def get_project_overview(
         profile=profile, project_id=project_id
     )
     tasks = list(project_tasks_queryset(project))
+    from edilcloud.modules.elaborati.visibility import visible_drive_documents
+
     document_queryset = (
-        project.documents.select_related("folder")
+        visible_drive_documents(profile=profile, queryset=project.documents.all()).select_related("folder")
         .filter(document_kind=ProjectDocumentKind.DOCUMENT)
         .order_by("-updated_at", "-id")
     )
@@ -6820,6 +6829,9 @@ def update_project_document(
     )
     if document is None:
         raise ValueError("Documento non trovato.")
+    from edilcloud.modules.elaborati.visibility import require_drive_scope
+
+    require_drive_scope(profile=profile, document_id=document_id)
     if getattr(document, "elaborato_revision", None) is not None:
         raise ValueError("Questo PDF è una pubblicazione immutabile. Modificalo creando una nuova revisione in Elaborati.")
     _project, membership, _members = get_project_with_team_context(
@@ -6917,6 +6929,9 @@ def delete_project_document(*, profile: Profile, document_id: int) -> None:
     document = ProjectDocument.objects.select_related("project").filter(id=document_id).first()
     if document is None:
         raise ValueError("Documento non trovato.")
+    from edilcloud.modules.elaborati.visibility import require_drive_scope
+
+    require_drive_scope(profile=profile, document_id=document_id)
     if getattr(document, "elaborato_revision", None) is not None:
         raise ValueError("Il PDF appartiene allo storico di un elaborato e deve restare consultabile nelle sue revisioni.")
     _project, membership, _members = get_project_with_team_context(

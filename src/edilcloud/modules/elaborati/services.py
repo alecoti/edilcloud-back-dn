@@ -29,6 +29,7 @@ from .models import (
     WorkspaceDocumentStyle,
 )
 from .registry import template_for
+from .visibility import organization_documents, require_document_scope
 
 
 def require_project_editor(profile, project):
@@ -42,6 +43,7 @@ def require_project_editor(profile, project):
 def authorize_revision(*, profile, revision, edit=False):
     if revision.state == "deleted":
         raise HttpError(404, "Revisione non trovata.")
+    require_document_scope(profile=profile, document_id=revision.elaborato_id)
     try:
         project = get_project_for_profile(profile=profile, project_id=revision.elaborato.project_id)
     except ValueError as exc:
@@ -290,7 +292,9 @@ def list_elaborati(
     limit=30,
 ):
     accessible = project_access_queryset(profile)
-    query = Elaborato.objects.filter(project__in=accessible).select_related(
+    query = organization_documents(
+        profile=profile, queryset=Elaborato.objects.filter(project__in=accessible),
+    ).select_related(
         "project", "created_by__user"
     )
     if q:
