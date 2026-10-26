@@ -16,6 +16,7 @@ from edilcloud.modules.projects.services import (
 )
 
 from .content import digest, validate_editor
+from .artifact_format import PDF_FORMAT_VERSION
 from .models import DocumentAudit, Elaborato, ElaboratoRevision, PersonalSignature
 from .services import ensure_editable, get_revision
 
@@ -24,6 +25,7 @@ def publication_content_hash(revision):
     d = revision.elaborato
     return digest(
         {
+            "pdf_format": PDF_FORMAT_VERSION,
             "editor": revision.editor_doc,
             "evidence": revision.evidence.get("bundle_hash"),
             "template": revision.template_snapshot,

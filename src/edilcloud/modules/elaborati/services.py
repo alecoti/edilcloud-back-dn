@@ -172,6 +172,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
                     "revision_id": str(r.pk),
                     "number": r.number,
                     "state": r.state,
+                    "created_at": r.created_at.isoformat(),
                     "published_at": r.published_at.isoformat() if r.published_at else None,
                 }
                 for r in document.revisions.exclude(state="deleted")

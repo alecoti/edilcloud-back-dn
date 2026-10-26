@@ -39,7 +39,7 @@ def layout_html(
       {f'<p class="subtitle">{esc(subtitle)}</p>' if subtitle else ""}
       <p class="project">{esc(project)}</p><p class="address">{esc(address)}</p>
       <div class="meta"><div><label>{esc(words["period"])}</label><strong>{esc(period)}</strong></div>
-      <div><label>{esc(words["prepared"])}</label><strong>{esc(prepared)}</strong></div>
+      <div><label>{esc(words["revision_created"])}</label><strong>{esc(prepared)}</strong></div>
       <div><label>{esc(words["author"])}</label><strong>{esc(author)}</strong></div></div>"""
     css = (ASSETS / "document-reference.css").read_text(encoding="utf-8")
     return f'''<!doctype html><html lang="{esc(language)}" dir="{"rtl" if language == "ar" else "ltr"}"><head>

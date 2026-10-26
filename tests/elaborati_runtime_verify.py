@@ -20,7 +20,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--all-batches", action="store_true")
     parser.add_argument("--report-name", choices=("publication-cross-backend-frozen.json",
-                                                 "maintenance-cross-backend-frozen.json"))
+                                                 "maintenance-cross-backend-frozen.json",
+                                                 "chronology-cross-backend-frozen.json"))
     args = parser.parse_args()
     task = Path(__file__).resolve().parents[2]
     context = json.loads((task / "runtime/context.json").read_text(encoding="utf-8"))
@@ -80,14 +81,14 @@ def main():
                    "wrong_hash_status": bad, "unknown_purpose_status": purpose}
             assert status == 200 and row["sha256"] == expected[revision], row
             assert bad == 409 and purpose == 400 and row["cache_control"] == "private, no-store", row
-            if args.report_name == "maintenance-cross-backend-frozen.json":
+            if args.report_name in ("maintenance-cross-backend-frozen.json", "chronology-cross-backend-frozen.json"):
                 drive_status, drive_headers, drive_body = call(base,
                     f"/api/v1/documents/{drive_ids[revision]}/file", token=token)
                 row["drive_status"] = drive_status
                 row["drive_sha256"] = hashlib.sha256(drive_body).hexdigest()
                 row["drive_disposition"] = drive_headers.get("Content-Disposition", drive_headers.get("content-disposition"))
                 assert drive_status == 200 and row["drive_sha256"] == expected[revision], row
-                if name.startswith("artifact_maintenance/"):
+                if name.startswith(("artifact_maintenance/", "draft_save_recovery/")):
                     assert drive_names[revision] in row["drive_disposition"], row
             report["cases"].append(row)
     context_status, _, active_raw = call("http://127.0.0.1:8003", "/_qa/context")

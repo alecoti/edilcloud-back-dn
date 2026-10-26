@@ -228,4 +228,13 @@ def labels(language):
         "ru": "Задание автора",
         "ar": "طلب المحرر",
     }.get(language, "Author's brief")
+    chronology = {
+        "it": ("Revisione", "Stato", "Revisione creata", "Pubblicazione", "Stato delle revisioni alla preparazione del PDF. Il trattino indica una pubblicazione non ancora registrata in questo documento; data e ora effettive sono consultabili nella piattaforma."),
+        "en": ("Revision", "Status", "Revision created", "Publication", "Revision status when the PDF was prepared. A dash means publication was not yet recorded in this document; the actual date and time are available in the platform."),
+        "fr": ("Révision", "État", "Révision créée", "Publication", "État des révisions à la préparation du PDF. Un tiret indique une publication pas encore enregistrée dans ce document ; la date et l’heure effectives sont consultables sur la plateforme."),
+        "ro": ("Revizie", "Stare", "Revizie creată", "Publicare", "Starea reviziilor la pregătirea PDF-ului. Linia indică o publicare încă neînregistrată în acest document; data și ora efective pot fi consultate în platformă."),
+        "ru": ("Редакция", "Статус", "Редакция создана", "Публикация", "Состояние редакций на момент подготовки PDF. Прочерк означает, что публикация ещё не зарегистрирована в этом документе; фактические дата и время доступны на платформе."),
+        "ar": ("المراجعة", "الحالة", "إنشاء المراجعة", "النشر", "حالة المراجعات عند إعداد ملف PDF. تعني الشرطة أن النشر لم يُسجَّل بعد في هذا المستند؛ يمكن الاطلاع على التاريخ والوقت الفعليين في المنصة."),
+    }
+    result.update(zip(("revision", "state", "revision_created", "published_date", "history_note"), chronology.get(language, chronology["en"]), strict=True))
     return result

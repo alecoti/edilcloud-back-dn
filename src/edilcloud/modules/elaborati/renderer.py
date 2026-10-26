@@ -274,7 +274,7 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
             numbers[person_sid] = len(numbers) + 1
     content = render(revision.editor_doc)
     code = f"EL-{document.created_at.year}-{document.number:04d} · Rev.{revision.number}"
-    created = timezone.localtime(document.created_at)
+    created = timezone.localtime(revision.created_at)
     author = actor_label({"actor": document.author_snapshot}) if document.author_snapshot else (document.created_by.member_name if document.created_by else register_words["unknown_actor"])
     signature_html = ""
     if signature:
@@ -314,7 +314,7 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
         source_row(sid) for sid in sorted(used, key=lambda sid: numbers[sid]) if sid in sources
     )
     history = "".join(
-        f"<tr><td>Rev.{r.number}</td><td>{esc(words.get(rendered_state if r.pk == revision.pk else r.state, r.state))}</td><td>{esc(date_label(r.published_at.isoformat()) if r.published_at else (created.strftime('%d/%m/%Y %H:%M') if r.pk == revision.pk else words['draft']))}</td></tr>"
+        f"<tr><td>Rev.{r.number}</td><td>{esc(words.get(rendered_state if r.pk == revision.pk else r.state, r.state))}</td><td>{esc(date_label(r.created_at.isoformat()))}</td><td>{esc(date_label(r.published_at.isoformat())) if r.published_at else '-'}</td></tr>"
         for r in document.revisions.order_by("number")
     )
     from .reference_layout import layout_html
@@ -349,7 +349,7 @@ def render_html(*, revision, profile, signature=None, publication_state=None):
     reference_body = f"""{content}{people_html}<p class="closing">{esc(revision.template_snapshot["closing"])}</p>{signature_html}{coverage_html}
       <h2 class="references-title">{esc(words["sources"])}</h2><p class="closing">{esc(words["used"])}: {len(used)} · {esc(words["captured"])}: {esc(date_label(revision.evidence["captured_at"]))}</p>
       <table class="source-table"><thead><tr><th>#</th><th>{esc(words["source"])}</th><th>{esc(words["recorded"])}</th><th>{esc(words["hash"])}</th></tr></thead><tbody>{references}</tbody></table>
-      <h2>{esc(words["history"])}</h2><table><tbody>{history}</tbody></table><p class="closing">{esc(words["note"])}</p>"""
+      <h2>{esc(words["history"])}</h2><p class="closing">{esc(words["history_note"])}</p><table><thead><tr><th>{esc(words["revision"])}</th><th>{esc(words["state"])}</th><th>{esc(words["revision_created"])}</th><th>{esc(words["published_date"])}</th></tr></thead><tbody>{history}</tbody></table><p class="closing">{esc(words["note"])}</p>"""
     return layout_html(
         language=document.language,
         company=(document.author_snapshot or {}).get("company_name") or company.name,
