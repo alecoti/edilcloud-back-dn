@@ -180,6 +180,10 @@ def process_job(job_id):
                 or revision.state != "draft"
             ):
                 raise HttpError(409, "La bozza o i permessi sono cambiati durante l'elaborazione.")
+            if job.action in {"generate", "preview"}:
+                from .pdf_cache import preserve_display_pdf
+                preserve_display_pdf(revision)
+                old_preview = revision.preview_file.name
             if job.action == "generate":
                 from .services import invalidate_preview
 
@@ -195,12 +199,8 @@ def process_job(job_id):
                 revision.version += 1
                 revision.save()
             elif job.action == "preview":
-                old_preview = revision.preview_file.name
                 for field, value in result["preview"].items():
                     setattr(revision, field, value)
-                if old_preview and old_preview != revision.preview_file.name:
-                    storage = revision.preview_file.storage
-                    transaction.on_commit(lambda: storage.delete(old_preview))
                 revision.save()
             elif job.action in {"verify", "missing"}:
                 revision.quality = result["quality"]
@@ -209,6 +209,12 @@ def process_job(job_id):
 
                     invalidate_preview(revision)
                 revision.save()
+            if job.action in {"generate", "preview"}:
+                from .pdf_cache import record_display_pdf, schedule_cleanup
+                if result.get("preview"):
+                    record_display_pdf(revision, profile_id=job.requested_by_id)
+                if old_preview and old_preview != revision.preview_file.name:
+                    schedule_cleanup(old_preview)
             locked_job.state = "completed"
             locked_job.stage = (
                 "ready"

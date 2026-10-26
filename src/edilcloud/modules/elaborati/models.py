@@ -109,6 +109,29 @@ class ElaboratoRevision(TimestampedModel):
         ]
 
 
+class DraftPdfCache(models.Model):
+    """Derived, private display bytes; never a publication consent receipt."""
+    pk = models.CompositePrimaryKey("revision_id", "profile_id")
+    revision = models.ForeignKey(ElaboratoRevision, on_delete=models.CASCADE,
+                                 related_name="display_pdfs", db_index=False)
+    profile = models.ForeignKey("workspaces.Profile", on_delete=models.CASCADE,
+                                related_name="elaborati_display_pdfs", db_index=False)
+    content_hash = models.TextField()
+    pdf_file = models.TextField()
+    pdf_hash = models.TextField()
+    created_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "elaborati_draftpdfcache"
+        indexes = [models.Index(fields=("pdf_file",), name="elab_display_pdf_file_idx"),
+                   models.Index(fields=("profile",), name="elab_display_profile_idx")]
+        constraints = [
+            models.CheckConstraint(condition=~models.Q(content_hash=""), name="elab_display_content_nonempty"),
+            models.CheckConstraint(condition=~models.Q(pdf_file=""), name="elab_display_file_nonempty"),
+            models.CheckConstraint(condition=~models.Q(pdf_hash=""), name="elab_display_hash_nonempty"),
+        ]
+
+
 class PersonalSignature(TimestampedModel):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     strokes = models.JSONField(default=list)

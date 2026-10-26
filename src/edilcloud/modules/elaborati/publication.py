@@ -60,6 +60,16 @@ def prepare_preview(job):
         "prepared_by_profile_id": job.requested_by.pk,
         "purpose": purpose,
     }
+    if purpose == "draft":
+        from .pdf_cache import display_pdf
+
+        cached = display_pdf(revision, user_id=job.requested_by.user_id, profile_id=job.requested_by.pk)
+        if cached:
+            return {"preview": {
+                "preview_file": cached.pdf_file, "preview_hash": cached.pdf_hash,
+                "preview_content_hash": publication_content_hash(revision),
+                "preview_expires_at": None, "preview_signature": audit,
+            }}
     if job.payload.get("apply_signature"):
         personal = PersonalSignature.objects.filter(user=job.requested_by.user).first()
         if (
@@ -100,7 +110,7 @@ def prepare_preview(job):
             "preview_file": revision.preview_file.name,
             "preview_hash": pdf_hash,
             "preview_content_hash": publication_content_hash(revision),
-            "preview_expires_at": timezone.now() + timedelta(minutes=20),
+            "preview_expires_at": None if purpose == "draft" else timezone.now() + timedelta(minutes=20),
             "preview_signature": audit,
         },
     }
@@ -142,6 +152,9 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
         raise HttpError(409, "Prepara la versione finale prima di confermare la pubblicazione.")
     if audit.get("prepared_by_user_id") != profile.user_id:
         raise HttpError(403, "L'anteprima deve essere confermata dall'utente che l'ha preparata.")
+    from .pdf_cache import prepared_profile
+    if prepared_profile(audit) != profile.pk:
+        raise HttpError(409, "Il profilo attivo è cambiato. Ripeti l'anteprima.")
     signed = bool(audit.get("fingerprint"))
     if signed:
         # Enrollment and removal lock the same user row. Keep the validated

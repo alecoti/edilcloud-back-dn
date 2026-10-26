@@ -7,15 +7,10 @@ from django.utils import timezone
 
 from .storage import private_document_storage
 
-from .models import ElaboratoRevision, PersonalSignature
-
-
 def cleanup_orphans(*, dry_run=True, limit=200):
     storage = private_document_storage()
-    referenced = set(
-        ElaboratoRevision.objects.exclude(preview_file="").values_list("preview_file", flat=True)
-    )
-    referenced.update(PersonalSignature.objects.exclude(image="").values_list("image", flat=True))
+    from .pdf_cache import referenced_files
+    referenced = referenced_files()
     threshold = timezone.now() - timedelta(hours=24)
     removed = []
     for folder, extension in (("elaborati/previews", "pdf"), ("elaborati/signatures", "png")):

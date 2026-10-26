@@ -13,7 +13,7 @@ import uuid
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("setup", "preview", "inspect"))
+    parser.add_argument("command", choices=("setup", "extend", "preview", "inspect"))
     parser.add_argument("--job", type=uuid.UUID)
     args = parser.parse_args()
     if os.environ.get("DJANGO_SETTINGS_MODULE") != "tests.elaborati_runtime_settings":
@@ -71,6 +71,44 @@ def main():
             }
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(manifest))
+    elif args.command == "extend":
+        from django.db import transaction
+        from edilcloud.modules.elaborati import services
+        from edilcloud.modules.workspaces.models import Profile
+
+        batch = os.environ.get("ELABORATI_RUNTIME_BATCH", "")
+        if not re.fullmatch(r"[a-z][a-z_0-9]{1,30}", batch):
+            raise SystemExit("A named synthetic QA batch is required.")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest["database"] != database or manifest.get("synthetic_only") is not True:
+            raise SystemExit("Database is not owned by this QA run.")
+        if batch in manifest.get("qa_cases", {}):
+            raise SystemExit("This QA batch already exists; its evidence must be preserved.")
+        before = (DocumentJob.objects.count(), DocumentAIUsage.objects.count())
+        with transaction.atomic():
+            profile = Profile.objects.get(pk=manifest["profile_id"], user_id=manifest["user_id"])
+            revisions = {}
+            sources = {}
+            known = set(manifest["revisions"].values())
+            for entries in manifest.get("qa_cases", {}).values():
+                known.update(entries.values())
+            for name, original_id in manifest["revisions"].items():
+                seed = ElaboratoRevision.objects.get(pk=original_id,
+                    elaborato__project_id=manifest["project_id"])
+                source = seed.elaborato.revisions.filter(state__in=("signed", "published")).order_by("-number").first()
+                if source is None:
+                    raise RuntimeError("The synthetic document has no current frozen source.")
+                revision = services.new_revision(profile=profile, revision_id=source.pk)
+                if str(revision.pk) in known or revision.state != "draft" or revision.preview_file:
+                    raise RuntimeError("A new unsigned synthetic draft was required.")
+                revisions[name] = str(revision.pk)
+                sources[name] = str(source.pk)
+            if before != (DocumentJob.objects.count(), DocumentAIUsage.objects.count()):
+                raise RuntimeError("A derived QA revision must not start jobs or AI requests.")
+        manifest.setdefault("qa_cases", {})[batch] = revisions
+        manifest.setdefault("qa_sources", {})[batch] = sources
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"batch": batch, "revisions": revisions, "external_ai_requests": 0}))
     elif args.command == "preview":
         if args.job is None:
             raise SystemExit("--job UUID is required.")
@@ -78,7 +116,9 @@ def main():
         if manifest["database"] != database or manifest.get("synthetic_only") is not True:
             raise SystemExit("Database is not owned by this QA run.")
         job = DocumentJob.objects.get(pk=args.job)
-        if job.action != "preview" or str(job.revision_id) not in manifest["revisions"].values():
+        batch = os.environ.get("ELABORATI_RUNTIME_BATCH", "")
+        allowed = manifest.get("qa_cases", {}).get(batch) if batch else manifest["revisions"]
+        if not allowed or job.action != "preview" or str(job.revision_id) not in allowed.values():
             raise SystemExit("Only a preview of a seeded synthetic draft is permitted.")
         from edilcloud.modules.elaborati.jobs import process_job
         processed = process_job(job.pk)

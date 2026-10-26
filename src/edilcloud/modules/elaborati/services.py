@@ -76,7 +76,7 @@ def ensure_editable(revision, version):
         )
 
 
-def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_user_id=None):
+def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_user_id=None, viewer_profile_id=None):
     document = revision.elaborato
     job = (
         revision.jobs.select_related("requested_by")
@@ -117,6 +117,10 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
         from .filenames import pdf_filename
         from .usage import document_token_usage
         from .publication import publication_content_hash
+        from .pdf_cache import display_pdf, file_exists, prepared_profile, viewer_profile
+
+        viewer_profile_id = viewer_profile(viewer_user_id, viewer_profile_id)
+        display = display_pdf(revision, user_id=viewer_user_id, profile_id=viewer_profile_id)
 
         preview_ready = bool(
             revision.preview_hash
@@ -125,7 +129,8 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
             and revision.preview_content_hash == publication_content_hash(revision)
             and (
                 viewer_user_id is None
-                or revision.preview_signature.get("prepared_by_user_id") == viewer_user_id
+                or (revision.preview_signature.get("prepared_by_user_id") == viewer_user_id
+                    and prepared_profile(revision.preview_signature) == viewer_profile_id)
             )
         )
         fingerprint = revision.preview_signature.get("fingerprint")
@@ -133,6 +138,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
             preview_ready = PersonalSignature.objects.filter(
                 user_id=viewer_user_id, fingerprint=fingerprint
             ).exists()
+        preview_ready = preview_ready and file_exists(revision.preview_file.name)
 
         summaries = []
         if viewer_user_id is not None:
@@ -155,11 +161,11 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
             declarations=revision.declarations,
             signature_audit=revision.signature_audit,
             source_manifest=revision.frozen_manifest,
-            pdf_ready=preview_ready,
+            pdf_ready=bool(display) or preview_ready or (revision.state != "draft" and file_exists(revision.preview_file.name)),
             preview_ready=preview_ready and revision.preview_signature.get("purpose", "publication") == "publication",
             preview_purpose=revision.preview_signature.get("purpose", "publication"),
             preview_hash=revision.preview_hash,
-            pdf_view_hash=revision.preview_hash if revision.state == "draft" else revision.pdf_hash,
+            pdf_view_hash=display.pdf_hash if display else revision.preview_hash if revision.state == "draft" else revision.pdf_hash,
             preview_signature_applied=bool(revision.preview_signature.get("fingerprint")),
             history=[
                 {
@@ -464,12 +470,13 @@ def delete_draft(*, profile, revision_id, version):
     # Keep the provider ledger, project numbering and published history. A
     # deleted draft is inaccessible through every document/source/job endpoint.
     old_file = revision.preview_file.name
-    storage = revision.preview_file.storage
     revision.state = "deleted"
     revision.version += 1
     revision.preview_file = ""
     invalidate_preview(revision)
     revision.save()
+    from .pdf_cache import remove_display_pdfs, schedule_cleanup
+    remove_display_pdfs(revision)
     DocumentAudit.objects.create(
         revision=revision,
         actor=profile,
@@ -477,7 +484,7 @@ def delete_draft(*, profile, revision_id, version):
         detail={"version": revision.version},
     )
     if old_file:
-        transaction.on_commit(lambda: storage.delete(old_file), robust=True)
+        schedule_cleanup(old_file)
     return {"deleted": True, "revision_id": str(revision.pk)}
 
 

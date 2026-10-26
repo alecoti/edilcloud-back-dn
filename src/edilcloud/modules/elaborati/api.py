@@ -20,7 +20,15 @@ router = Router(tags=["Elaborati"], auth=JWTAuth())
 
 
 def profile_for(request):
-    return get_current_profile(user=request.auth.user, claims=request.auth.claims)
+    if not hasattr(request, "_elaborati_profile"):
+        request._elaborati_profile = get_current_profile(user=request.auth.user, claims=request.auth.claims)
+    return request._elaborati_profile
+
+
+def revision_response(request, revision, *, editable=True):
+    profile = profile_for(request)
+    return services.serialize_revision(revision, full=True, viewer_can_edit=editable,
+                                       viewer_user_id=profile.user_id, viewer_profile_id=profile.pk)
 
 
 @router.get("/options")
@@ -90,10 +98,8 @@ def list_documents(
 
 @router.post("")
 def create(request, payload: schemas.CreateRequest):
-    return services.serialize_revision(
+    return revision_response(request,
         services.create_elaborato(profile=profile_for(request), payload=payload),
-        full=True,
-        viewer_user_id=request.auth.user.pk,
     )
 
 
@@ -104,9 +110,7 @@ def get_revision(request, revision_id: UUID):
     from edilcloud.modules.projects.services import get_project_membership
 
     editable = can_edit_project(get_project_membership(revision.elaborato.project, profile))
-    return services.serialize_revision(
-        revision, full=True, viewer_user_id=request.auth.user.pk, viewer_can_edit=editable
-    )
+    return revision_response(request, revision, editable=editable)
 
 
 @router.patch("/revisions/{revision_id}")
@@ -117,7 +121,7 @@ def save(request, revision_id: UUID, payload: schemas.SaveRequest):
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    return services.serialize_revision(revision, full=True, viewer_user_id=request.auth.user.pk)
+    return revision_response(request, revision)
 
 
 @router.post("/revisions/{revision_id}/actions")
@@ -144,7 +148,7 @@ def accept(request, revision_id: UUID, payload: schemas.AcceptRequest):
         version=payload.version,
         job_id=payload.job_id,
     )
-    return services.serialize_revision(revision, full=True, viewer_user_id=request.auth.user.pk)
+    return revision_response(request, revision)
 
 
 @router.post("/revisions/{revision_id}/declarations")
@@ -157,15 +161,13 @@ def declaration(request, revision_id: UUID, payload: schemas.DeclarationRequest)
         version=payload.version,
         text=payload.text,
     )
-    return services.serialize_revision(revision, full=True, viewer_user_id=request.auth.user.pk)
+    return revision_response(request, revision)
 
 
 @router.post("/revisions/{revision_id}/new-revision")
 def new_revision(request, revision_id: UUID):
-    return services.serialize_revision(
+    return revision_response(request,
         services.new_revision(profile=profile_for(request), revision_id=revision_id),
-        full=True,
-        viewer_user_id=request.auth.user.pk,
     )
 
 
@@ -183,7 +185,7 @@ def publish(request, revision_id: UUID, payload: schemas.PublishRequest):
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    return services.serialize_revision(revision, full=True, viewer_user_id=request.auth.user.pk)
+    return revision_response(request, revision)
 
 
 @router.get("/jobs/{job_id}")
@@ -209,8 +211,16 @@ def resume_job(request, job_id: UUID, payload: schemas.ResumeRequest):
 def private_response(field, filename, *, download=False):
     if not field:
         raise HttpError(404, "PDF non disponibile.")
+    return private_pdf(field.storage, field.name, filename, download=download)
+
+
+def private_pdf(storage, name, filename, *, download=False):
+    try:
+        opened = storage.open(name, "rb")
+    except FileNotFoundError as exc:
+        raise HttpError(404, "PDF non disponibile.") from exc
     response = FileResponse(
-        field.open("rb"), content_type="application/pdf", filename=filename, as_attachment=download
+        opened, content_type="application/pdf", filename=filename, as_attachment=download
     )
     response["Cache-Control"] = "private, no-store"
     response["X-Content-Type-Options"] = "nosniff"
@@ -226,8 +236,16 @@ def pdf(
     if purpose is not None and purpose not in {"display", "publication"}:
         raise HttpError(400, "Scopo PDF non valido.")
     revision = services.get_revision(profile=profile, revision_id=revision_id)
-    if revision.state == "draft":
+    from .pdf_cache import display_pdf, prepared_profile
+    from .filenames import pdf_filename
+    from .storage import private_document_storage
+
+    display = purpose == "display" or (purpose is None and revision.preview_signature.get("purpose") == "draft")
+    cached = display_pdf(revision, user_id=profile.user_id, profile_id=profile.pk) if display else None
+    if revision.state == "draft" and cached is None:
         if revision.preview_signature.get("prepared_by_user_id") != profile.user_id:
+            raise HttpError(403, "L'anteprima appartiene a un altro autore.")
+        if prepared_profile(revision.preview_signature) != profile.pk:
             raise HttpError(403, "L'anteprima appartiene a un altro autore.")
         from django.utils import timezone
 
@@ -241,11 +259,11 @@ def pdf(
 
         if revision.preview_content_hash != publication_content_hash(revision):
             raise HttpError(409, "Il PDF non corrisponde alla versione corrente della bozza.")
-    file_hash = revision.preview_hash if revision.state == "draft" else revision.pdf_hash
+    file_hash = cached.pdf_hash if cached else revision.preview_hash if revision.state == "draft" else revision.pdf_hash
     if hash is not None and hash != file_hash:
         raise HttpError(409, "Il PDF è cambiato. Ricarica il documento.")
-    from .filenames import pdf_filename
-
+    if cached:
+        return private_pdf(private_document_storage(), cached.pdf_file, pdf_filename(revision), download=download)
     return private_response(revision.preview_file, pdf_filename(revision), download=download)
 
 
