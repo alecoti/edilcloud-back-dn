@@ -206,6 +206,8 @@ def job_resumable(job):
 
 
 def serialize_job(job, *, include_result=False, include_thinking=False):
+    from .execution import execution_status
+
     thinking = job_thinking(job) if include_thinking else []
     workflow = dict(job.workflow_state)
     if job.workflow_version.startswith("v3"):
@@ -220,6 +222,10 @@ def serialize_job(job, *, include_result=False, include_thinking=False):
         "id": str(job.pk),
         "revision_id": str(job.revision_id),
         "state": job.state,
+        "execution_status": execution_status(
+            state=job.state, created_at=job.created_at,
+            lease_expires_at=job.lease_expires_at, now=timezone.now(),
+        ),
         "stage": job.stage,
         "action": job.action,
         "input_version": job.input_version,

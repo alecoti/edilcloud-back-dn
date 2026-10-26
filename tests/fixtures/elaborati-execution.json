@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "now": "2026-10-26T12:00:00Z",
+  "queue_warning_after_ms": 60000,
+  "cases": [
+    {
+      "name": "fresh queued",
+      "state": "queued",
+      "created_age_ms": 0,
+      "lease_offset_ms": null,
+      "expected": "queued",
+      "title": "Richiesta in coda"
+    },
+    {
+      "name": "queued before threshold",
+      "state": "queued",
+      "created_age_ms": 59999,
+      "lease_offset_ms": null,
+      "expected": "queued",
+      "title": "Richiesta in coda"
+    },
+    {
+      "name": "queued at threshold",
+      "state": "queued",
+      "created_age_ms": 60000,
+      "lease_offset_ms": null,
+      "expected": "queue_delayed",
+      "title": "La richiesta è ancora in coda"
+    },
+    {
+      "name": "long queue",
+      "state": "queued",
+      "created_age_ms": 3600000,
+      "lease_offset_ms": null,
+      "expected": "queue_delayed",
+      "title": "La richiesta è ancora in coda"
+    },
+    {
+      "name": "clock skew future creation",
+      "state": "queued",
+      "created_age_ms": -60000,
+      "lease_offset_ms": null,
+      "expected": "queued",
+      "title": "Richiesta in coda"
+    },
+    {
+      "name": "running with fresh lease despite old creation",
+      "state": "running",
+      "created_age_ms": 3600000,
+      "lease_offset_ms": 1,
+      "expected": "running",
+      "title": null
+    },
+    {
+      "name": "running lease at boundary",
+      "state": "running",
+      "created_age_ms": 3600000,
+      "lease_offset_ms": 0,
+      "expected": "lease_expired",
+      "title": "Elaborazione da verificare"
+    },
+    {
+      "name": "running stale lease",
+      "state": "running",
+      "created_age_ms": 3600000,
+      "lease_offset_ms": -1,
+      "expected": "lease_expired",
+      "title": "Elaborazione da verificare"
+    },
+    {
+      "name": "running missing lease",
+      "state": "running",
+      "created_age_ms": 3600000,
+      "lease_offset_ms": null,
+      "expected": "lease_expired",
+      "title": "Elaborazione da verificare"
+    },
+    {
+      "name": "completed ignores stale lease",
+      "state": "completed",
+      "created_age_ms": 3600000,
+      "lease_offset_ms": -1,
+      "expected": "completed",
+      "title": null
+    },
+    {
+      "name": "failed ignores age and lease",
+      "state": "failed",
+      "created_age_ms": 3600000,
+      "lease_offset_ms": -1,
+      "expected": "failed",
+      "title": null
+    },
+    {
+      "name": "unknown future state preserved",
+      "state": "cancelled",
+      "created_age_ms": 3600000,
+      "lease_offset_ms": -1,
+      "expected": "cancelled",
+      "title": null
+    }
+  ]
+}
