@@ -26,7 +26,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.db.models import Avg, Case, Count, DateTimeField, Exists, F, IntegerField, Max, OuterRef, Prefetch, Q, Subquery, When
 from django.db.models.functions import Coalesce
-from django.http import FileResponse, HttpResponse
+from django.http import HttpResponse
 from django.utils import timezone
 from PIL import Image, ImageOps, UnidentifiedImageError
 import pypdfium2 as pdfium
@@ -3648,6 +3648,15 @@ def get_project_document_file_response(*, profile: Profile, document_id: int, re
     file_name = (
         Path(document.document.name).name if document.document else document.title or "documento"
     )
+    if document.document and document.document.name.startswith("elaborati/publications/"):
+        from edilcloud.modules.elaborati.models import ElaboratoRevision
+
+        revision = ElaboratoRevision.objects.select_related("elaborato").filter(
+            drive_document_id=document.pk, elaborato__project_id=document.project_id
+        ).first()
+        if revision is not None:
+            source = revision.elaborato
+            file_name = f"EL-{source.created_at.year}-{source.number:04d}-Rev{revision.number}.pdf"
     return build_inline_file_response(document.document, filename=file_name, request=request)
 
 

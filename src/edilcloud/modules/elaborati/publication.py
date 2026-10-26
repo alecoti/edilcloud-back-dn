@@ -191,13 +191,20 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
                 ProjectDocument.objects.filter(pk=old.drive_document_id).update(folder=history)
         older.update(state="superseded")
     code = f"EL-{revision.elaborato.created_at.year}-{revision.elaborato.number:04d}"
+    # Filesystem writes cannot roll back with PostgreSQL. Own a separate flat
+    # namespace so a crash/rollback copy is reclaimable without scanning uploads.
+    storage = ProjectDocument._meta.get_field("document").storage
+    copy_name = storage.save(
+        f"elaborati/publications/{revision.pk.hex}-{uuid.uuid4().hex}.pdf",
+        ContentFile(data),
+    )
     drive = ProjectDocument.objects.create(
         project=project,
         uploaded_by=profile,
         folder=folder,
         title=f"{code} Rev.{revision.number} · {revision.elaborato.title}"[:255],
         description=f"Elaborato pubblicato · SHA-256 {preview_hash}",
-        document=ContentFile(data, name=f"{code}-Rev{revision.number}.pdf"),
+        document=copy_name,
     )
     revision.drive_document = drive
     revision.pdf_hash = preview_hash

@@ -19,7 +19,8 @@ import psycopg
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--all-batches", action="store_true")
-    parser.add_argument("--report-name", choices=("publication-cross-backend-frozen.json",))
+    parser.add_argument("--report-name", choices=("publication-cross-backend-frozen.json",
+                                                 "maintenance-cross-backend-frozen.json"))
     args = parser.parse_args()
     task = Path(__file__).resolve().parents[2]
     context = json.loads((task / "runtime/context.json").read_text(encoding="utf-8"))
@@ -48,6 +49,10 @@ def main():
     with psycopg.connect(url) as db:
         expected = {str(row[0]): row[1] for row in db.execute(
             "SELECT id,pdf_hash FROM elaborati_elaboratorevision").fetchall()}
+        drive_ids = {str(row[0]): row[1] for row in db.execute(
+            "SELECT id,drive_document_id FROM elaborati_elaboratorevision").fetchall()}
+        drive_names = {str(row[0]): f"EL-{row[1].year}-{row[2]:04d}-Rev{row[3]}.pdf"
+            for row in db.execute("SELECT r.id,d.created_at,d.number,r.number FROM elaborati_elaboratorevision r JOIN elaborati_elaborato d ON d.id=r.elaborato_id")}
         before_usage = db.execute("SELECT count(*) FROM elaborati_documentaiusage").fetchone()[0]
         before_jobs = db.execute("SELECT count(*) FROM elaborati_documentjob").fetchone()[0]
     report = {"synthetic_only": True, "after_personal_signature_removal": True, "cases": []}
@@ -75,6 +80,15 @@ def main():
                    "wrong_hash_status": bad, "unknown_purpose_status": purpose}
             assert status == 200 and row["sha256"] == expected[revision], row
             assert bad == 409 and purpose == 400 and row["cache_control"] == "private, no-store", row
+            if args.report_name == "maintenance-cross-backend-frozen.json":
+                drive_status, drive_headers, drive_body = call(base,
+                    f"/api/v1/documents/{drive_ids[revision]}/file", token=token)
+                row["drive_status"] = drive_status
+                row["drive_sha256"] = hashlib.sha256(drive_body).hexdigest()
+                row["drive_disposition"] = drive_headers.get("Content-Disposition", drive_headers.get("content-disposition"))
+                assert drive_status == 200 and row["drive_sha256"] == expected[revision], row
+                if name.startswith("artifact_maintenance/"):
+                    assert drive_names[revision] in row["drive_disposition"], row
             report["cases"].append(row)
     context_status, _, active_raw = call("http://127.0.0.1:8003", "/_qa/context")
     assert context_status == 200
