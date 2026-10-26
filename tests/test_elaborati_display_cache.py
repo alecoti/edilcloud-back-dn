@@ -11,7 +11,7 @@ from ninja.errors import HttpError
 
 from edilcloud.modules.elaborati import services
 from edilcloud.modules.elaborati.jobs import process_job
-from edilcloud.modules.elaborati.models import DraftPdfCache
+from edilcloud.modules.elaborati.models import DocumentAudit, DraftPdfCache
 from edilcloud.modules.elaborati.pdf_cache import display_pdf, prepared_profile
 from edilcloud.modules.elaborati.publication import publish_revision
 from edilcloud.modules.elaborati.schemas import ActionRequest
@@ -151,3 +151,61 @@ def test_publication_and_legacy_display_are_bound_to_the_requesting_profile(
     assert "profilo attivo" in exc.value.message
     revision.refresh_from_db()
     assert revision.state == "draft" and revision.drive_document_id is None
+
+
+def test_publication_releases_display_cache_after_commit_and_preserves_frozen_file(
+    site, provider, monkeypatch, django_capture_on_commit_callbacks
+):
+    monkeypatch.setattr(
+        "edilcloud.modules.elaborati.renderer.render_pdf",
+        lambda **kwargs: b"%PDF-synthetic-" + kwargs["publication_state"].encode(),
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        revision = baseline.generate(site)
+        cached = prepare_display(site, revision)
+        revision = baseline.prepare(site, revision, signed=True)
+    assert private_document_storage().exists(cached.pdf_file)
+    with django_capture_on_commit_callbacks(execute=True):
+        frozen = publish_revision(
+            profile=site[1],
+            revision_id=revision.pk,
+            version=revision.version,
+            preview_hash=revision.preview_hash,
+            confirm_signature=True,
+        )
+        assert not DraftPdfCache.objects.filter(revision=revision).exists()
+        assert private_document_storage().exists(cached.pdf_file)
+    assert not private_document_storage().exists(cached.pdf_file)
+    assert frozen.preview_file.open("rb").read() == b"%PDF-synthetic-signed"
+
+
+def test_cache_and_display_bytes_survive_a_rolled_back_publication(
+    site, provider, monkeypatch, django_capture_on_commit_callbacks
+):
+    monkeypatch.setattr(
+        "edilcloud.modules.elaborati.renderer.render_pdf", lambda **kwargs: b"%PDF-rollback-test"
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        revision = baseline.generate(site)
+        cached = prepare_display(site, revision)
+        revision = baseline.prepare(site, revision)
+    original_create = DocumentAudit.objects.create
+
+    def reject_publication(**kwargs):
+        if kwargs.get("action") == "published":
+            raise ValueError("synthetic publication audit rejection")
+        return original_create(**kwargs)
+
+    monkeypatch.setattr(DocumentAudit.objects, "create", reject_publication)
+    with django_capture_on_commit_callbacks(execute=True):
+        with pytest.raises(ValueError, match="synthetic publication audit rejection"):
+            publish_revision(
+                profile=site[1],
+                revision_id=revision.pk,
+                version=revision.version,
+                preview_hash=revision.preview_hash,
+            )
+    revision.refresh_from_db()
+    assert revision.state == "draft" and revision.drive_document_id is None
+    assert DraftPdfCache.objects.filter(revision=revision, pdf_file=cached.pdf_file).exists()
+    assert private_document_storage().exists(cached.pdf_file)

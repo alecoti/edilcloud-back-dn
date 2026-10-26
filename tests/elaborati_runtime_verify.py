@@ -19,6 +19,7 @@ import psycopg
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--all-batches", action="store_true")
+    parser.add_argument("--report-name", choices=("publication-cross-backend-frozen.json",))
     args = parser.parse_args()
     task = Path(__file__).resolve().parents[2]
     context = json.loads((task / "runtime/context.json").read_text(encoding="utf-8"))
@@ -90,7 +91,7 @@ def main():
         report["personal_signatures"] = db.execute("SELECT count(*) FROM elaborati_personalsignature").fetchone()[0]
     assert report["ai_guard"]["status"] == 403 and report["ai_guard"]["usage_after"] == before_usage == 0
     assert report["ai_guard"]["jobs_after"] == before_jobs
-    filename = "display-cross-backend-frozen.json" if args.all_batches else "integration-cross-backend-frozen.json"
+    filename = args.report_name or ("display-cross-backend-frozen.json" if args.all_batches else "integration-cross-backend-frozen.json")
     output = task.parents[1] / "docs/elaborati/20261025/evidence" / filename
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"frozen_cases_passed": len(report["cases"]),

@@ -212,6 +212,8 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
         else {}
     )
     revision.save()
+    from .pdf_cache import remove_display_pdfs
+    remove_display_pdfs(revision)
     DocumentAudit.objects.create(
         revision=revision,
         actor=profile,
