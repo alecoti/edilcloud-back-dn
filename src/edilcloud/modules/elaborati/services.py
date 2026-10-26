@@ -159,6 +159,7 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
             preview_ready=preview_ready and revision.preview_signature.get("purpose", "publication") == "publication",
             preview_purpose=revision.preview_signature.get("purpose", "publication"),
             preview_hash=revision.preview_hash,
+            pdf_view_hash=revision.preview_hash if revision.state == "draft" else revision.pdf_hash,
             preview_signature_applied=bool(revision.preview_signature.get("fingerprint")),
             history=[
                 {

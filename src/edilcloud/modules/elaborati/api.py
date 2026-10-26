@@ -218,8 +218,13 @@ def private_response(field, filename, *, download=False):
 
 
 @router.get("/revisions/{revision_id}/pdf")
-def pdf(request, revision_id: UUID, download: bool = False):
+def pdf(
+    request, revision_id: UUID, download: bool = False,
+    purpose: str | None = None, hash: str | None = None,
+):
     profile = profile_for(request)
+    if purpose is not None and purpose not in {"display", "publication"}:
+        raise HttpError(400, "Scopo PDF non valido.")
     revision = services.get_revision(profile=profile, revision_id=revision_id)
     if revision.state == "draft":
         if revision.preview_signature.get("prepared_by_user_id") != profile.user_id:
@@ -236,6 +241,9 @@ def pdf(request, revision_id: UUID, download: bool = False):
 
         if revision.preview_content_hash != publication_content_hash(revision):
             raise HttpError(409, "Il PDF non corrisponde alla versione corrente della bozza.")
+    file_hash = revision.preview_hash if revision.state == "draft" else revision.pdf_hash
+    if hash is not None and hash != file_hash:
+        raise HttpError(409, "Il PDF è cambiato. Ricarica il documento.")
     from .filenames import pdf_filename
 
     return private_response(revision.preview_file, pdf_filename(revision), download=download)

@@ -55,7 +55,11 @@ def prepare_preview(job):
     purpose = job.payload.get("preview_purpose", "publication")
     if purpose == "draft" and job.payload.get("apply_signature"):
         raise HttpError(400, "La firma si applica soltanto alla versione finale da confermare.")
-    audit = {"prepared_by_user_id": job.requested_by.user_id, "purpose": purpose}
+    audit = {
+        "prepared_by_user_id": job.requested_by.user_id,
+        "prepared_by_profile_id": job.requested_by.pk,
+        "purpose": purpose,
+    }
     if job.payload.get("apply_signature"):
         personal = PersonalSignature.objects.filter(user=job.requested_by.user).first()
         if (
