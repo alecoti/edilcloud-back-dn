@@ -1,0 +1,825 @@
+{
+  "identity": {
+    "revisionId": "draft-qa",
+    "version": 7,
+    "editSequence": 2,
+    "editorDoc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Testo inviato"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "documents": {
+    "base": {
+      "revision_id": "draft-qa",
+      "state": "draft",
+      "version": 7,
+      "editor_doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo precedente"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "saved": {
+      "revision_id": "draft-qa",
+      "state": "draft",
+      "version": 8,
+      "editor_doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo inviato"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "noop": {
+      "revision_id": "draft-qa",
+      "state": "draft",
+      "version": 7,
+      "editor_doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo inviato"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "changed": {
+      "revision_id": "draft-qa",
+      "state": "draft",
+      "version": 8,
+      "editor_doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Modifica remota"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "frozen": {
+      "revision_id": "draft-qa",
+      "state": "published",
+      "version": 8,
+      "editor_doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo inviato"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "later": {
+      "revision_id": "draft-qa",
+      "state": "draft",
+      "version": 9,
+      "editor_doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo inviato"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "wrong_id": {
+      "revision_id": "other",
+      "state": "draft",
+      "version": 8,
+      "editor_doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo inviato"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "malformed": {
+      "revision_id": "draft-qa",
+      "state": "draft",
+      "version": null,
+      "editor_doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo inviato"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "cases": [
+    {
+      "sends": 1,
+      "reads": 0,
+      "name": "saved",
+      "send": "saved",
+      "expected": "saved"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "lost_after_commit",
+      "read": "saved",
+      "expected": "saved"
+    },
+    {
+      "sends": 1,
+      "reads": 0,
+      "name": "no_op",
+      "send": "noop",
+      "expected": "saved"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "lost_no_op",
+      "read": "noop",
+      "expected": "saved"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "server_failure_after_commit",
+      "send": {
+        "status": 503
+      },
+      "read": "saved",
+      "expected": "saved"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "timeout_after_commit",
+      "send": {
+        "status": 408
+      },
+      "read": "saved",
+      "expected": "saved"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "invalid_receipt",
+      "send": "base",
+      "read": "saved",
+      "expected": "saved"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "not_committed_yet",
+      "read": "base",
+      "expected": "pending"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "read_unavailable",
+      "expected": "unknown"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "remote_conflict",
+      "send": {
+        "status": 409
+      },
+      "read": "changed",
+      "expected": "changed"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "frozen_revision",
+      "send": {
+        "status": 409
+      },
+      "read": "frozen",
+      "expected": "changed"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "wrong_revision",
+      "read": "wrong_id",
+      "expected": "unknown"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "invalid_snapshot",
+      "read": "malformed",
+      "expected": "unknown"
+    },
+    {
+      "sends": 1,
+      "reads": 1,
+      "name": "later_version_same_text",
+      "read": "later",
+      "expected": "changed"
+    },
+    {
+      "sends": 1,
+      "reads": 0,
+      "name": "rejected_400",
+      "send": {
+        "status": 400
+      },
+      "expected": "rejected"
+    },
+    {
+      "sends": 1,
+      "reads": 0,
+      "name": "rejected_401",
+      "send": {
+        "status": 401
+      },
+      "expected": "rejected"
+    },
+    {
+      "sends": 1,
+      "reads": 0,
+      "name": "rejected_403",
+      "send": {
+        "status": 403
+      },
+      "expected": "rejected"
+    },
+    {
+      "sends": 1,
+      "reads": 0,
+      "name": "rejected_422",
+      "send": {
+        "status": 422
+      },
+      "expected": "rejected"
+    },
+    {
+      "sends": 1,
+      "reads": 0,
+      "name": "rejected_429",
+      "send": {
+        "status": 429
+      },
+      "expected": "rejected"
+    },
+    {
+      "sends": 0,
+      "reads": 0,
+      "name": "invalid_version",
+      "identity": {
+        "version": 0
+      },
+      "expected": "rejected"
+    },
+    {
+      "sends": 0,
+      "reads": 0,
+      "name": "invalid_editor",
+      "identity": {
+        "editorDoc": {
+          "type": "invalid"
+        }
+      },
+      "expected": "rejected"
+    }
+  ],
+  "equivalence": [
+    {
+      "name": "null_defaults",
+      "left": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo"
+              }
+            ]
+          }
+        ]
+      },
+      "right": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {
+              "textAlign": null,
+              "factIds": []
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo"
+              }
+            ]
+          }
+        ],
+        "attrs": {}
+      },
+      "expected": true
+    },
+    {
+      "name": "text_is_significant",
+      "left": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo"
+              }
+            ]
+          }
+        ]
+      },
+      "right": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo "
+              }
+            ]
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "facts_are_significant",
+      "left": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {
+              "factIds": [
+                "fact:1"
+              ]
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo"
+              }
+            ]
+          }
+        ]
+      },
+      "right": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {
+              "factIds": []
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "sources_are_significant",
+      "left": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {
+              "sourceIds": [
+                "post:1"
+              ]
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo"
+              }
+            ]
+          }
+        ]
+      },
+      "right": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {
+              "sourceIds": [
+                "post:2"
+              ]
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "Testo"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "propagated_width",
+      "left": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "table",
+            "content": [
+              {
+                "type": "tableRow",
+                "content": [
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        120
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        180
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "tableRow",
+                "content": [
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": null,
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": null,
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "right": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "table",
+            "content": [
+              {
+                "type": "tableRow",
+                "content": [
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        120
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        180
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "tableRow",
+                "content": [
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        120
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        180
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "different_width",
+      "left": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "table",
+            "content": [
+              {
+                "type": "tableRow",
+                "content": [
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        120
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        180
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "tableRow",
+                "content": [
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": null,
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": null,
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "right": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "table",
+            "content": [
+              {
+                "type": "tableRow",
+                "content": [
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        120
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        180
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "tableRow",
+                "content": [
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        121
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colwidth": [
+                        180
+                      ],
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": false
+    }
+  ]
+}
