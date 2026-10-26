@@ -39,6 +39,12 @@ class SaveRequest(StrictSchema):
     editor_doc: dict
 
 
+class OwnershipConfirmationRequest(StrictSchema):
+    version: int = Field(gt=0)
+    confirmed: StrictBool
+    reason: str = Field(min_length=12, max_length=1000)
+
+
 class ActionRequest(StrictSchema):
     idempotency_key: UUID
     version: int = Field(gt=0)

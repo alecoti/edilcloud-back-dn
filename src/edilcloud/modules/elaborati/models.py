@@ -48,6 +48,44 @@ class Elaborato(TimestampedModel):
         indexes = [models.Index(fields=("project", "document_type", "-created_at"))]
 
 
+class ElaboratoOwnership(models.Model):
+    """Authoritative organization attribution; absence means legacy/unassigned.
+
+    This record alone grants no access. Its immutable snapshot survives changes
+    to names and deletion of the assigning profile.
+    """
+
+    document = models.OneToOneField(
+        Elaborato, on_delete=models.CASCADE, primary_key=True, related_name="ownership"
+    )
+    workspace = models.ForeignKey(
+        "workspaces.Workspace", on_delete=models.PROTECT,
+        related_name="owned_elaborati", db_index=False,
+    )
+    assigned_by = models.ForeignKey(
+        "workspaces.Profile", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="elaborati_ownership_assignments", db_index=False,
+    )
+    assigned_at = models.DateTimeField()
+    basis = models.CharField(max_length=32, choices=(
+        ("creation", "Creation"), ("author_confirmation", "Author confirmation"),
+        ("administrative_review", "Administrative review"),
+    ))
+    assignment_snapshot = models.JSONField()
+
+    class Meta:
+        indexes = [models.Index(fields=("workspace",), name="elab_owned_workspace_idx")]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(basis__in=("creation", "author_confirmation", "administrative_review")),
+                name="elab_ownership_basis",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(assignment_snapshot={}), name="elab_ownership_snapshot",
+            ),
+        ]
+
+
 class ElaboratoRevision(TimestampedModel):
     class State(models.TextChoices):
         DRAFT = "draft", "Bozza"

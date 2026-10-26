@@ -114,6 +114,11 @@ def serialize_revision(revision, *, full=False, viewer_can_edit=True, viewer_use
         "job": serialize_job(job, include_thinking=own_thinking) if job else None,
     }
     if full:
+        from .ownership import ownership_view
+        from edilcloud.modules.workspaces.models import Profile
+
+        identity = Profile.objects.select_related("workspace").filter(pk=viewer_profile_id).first() if viewer_profile_id is not None else None
+        data["ownership"] = ownership_view(document, profile=identity, can_edit=viewer_can_edit)
         from .filenames import pdf_filename
         from .usage import document_token_usage
         from .publication import publication_content_hash
@@ -407,6 +412,9 @@ def create_elaborato(*, profile, payload):
     revision = ElaboratoRevision.objects.create(
         elaborato=document, created_by=profile, template_snapshot=template
     )
+    from .ownership import record_creation
+
+    record_creation(document=document, profile=profile)
     queue_job(revision=revision, profile=profile, action="generate", key=payload.idempotency_key)
     DocumentAudit.objects.create(revision=revision, actor=profile, action="created")
     return revision

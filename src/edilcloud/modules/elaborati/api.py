@@ -124,6 +124,15 @@ def save(request, revision_id: UUID, payload: schemas.SaveRequest):
     return revision_response(request, revision)
 
 
+@router.post("/revisions/{revision_id}/ownership")
+def confirm_ownership(request, revision_id: UUID, payload: schemas.OwnershipConfirmationRequest):
+    from .ownership import confirm_legacy
+
+    revision = confirm_legacy(profile=profile_for(request), revision_id=revision_id,
+        version=payload.version, confirmed=payload.confirmed, reason=payload.reason)
+    return revision_response(request, revision)
+
+
 @router.post("/revisions/{revision_id}/actions")
 def action(request, revision_id: UUID, payload: schemas.ActionRequest):
     return services.serialize_job(
