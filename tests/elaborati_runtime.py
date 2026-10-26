@@ -118,7 +118,9 @@ def main():
         job = DocumentJob.objects.get(pk=args.job)
         batch = os.environ.get("ELABORATI_RUNTIME_BATCH", "")
         allowed = manifest.get("qa_cases", {}).get(batch) if batch else manifest["revisions"]
-        if not allowed or job.action != "preview" or str(job.revision_id) not in allowed.values():
+        children = manifest.get("qa_children", {}).get(batch or "base", {})
+        owned_ids = set(allowed.values()) | set(children.values()) if allowed else set()
+        if not owned_ids or job.action != "preview" or str(job.revision_id) not in owned_ids:
             raise SystemExit("Only a preview of a seeded synthetic draft is permitted.")
         from edilcloud.modules.elaborati.jobs import process_job
         processed = process_job(job.pk)
