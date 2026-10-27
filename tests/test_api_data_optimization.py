@@ -5,7 +5,6 @@ from unittest.mock import Mock
 
 import pytest
 from django.core.cache import cache
-from django.core.files.base import ContentFile
 from django.db import connection
 from django.test import RequestFactory, override_settings
 from django.test.utils import CaptureQueriesContext
@@ -69,7 +68,7 @@ def test_selected_post_is_filtered_before_page_and_preserves_discussion_and_scop
 @override_settings(PROJECT_CONTENT_TRANSLATION_ASYNC=True)
 def test_get_translation_miss_queues_without_provider_call_or_database_write(monkeypatch):
     owner, project, task, _ = fixture()
-    post = ProjectPost.objects.create(project=project, task=task, author=owner, text="Hello", source_language="en")
+    ProjectPost.objects.create(project=project, task=task, author=owner, text="Hello", source_language="en")
     queue = Mock()
     monkeypatch.setattr("edilcloud.modules.projects.translation_jobs.enqueue_translation", queue)
     provider = Mock(side_effect=AssertionError("Provider called in HTTP read"))
@@ -228,12 +227,12 @@ def test_timeline_keyset_scope_and_history_are_preserved():
     owner, project, task, _ = fixture()
     for n in range(13):
         ProjectOperationalEvent.objects.create(project=project, event_type="post.created", occurred_at=timezone.now(), task_id_snapshot=task.id, payload={"timeline": {"id": str(n), "label": f"Event {n}"}})
-    first = list_project_operational_timeline(project_id=project.id, mode="general", task_id=task.id, limit=10)
-    second = list_project_operational_timeline(project_id=project.id, mode="general", task_id=task.id, limit=10, cursor=first["next_cursor"])
+    first = list_project_operational_timeline(profile=owner, project_id=project.id, mode="general", task_id=task.id, limit=10)
+    second = list_project_operational_timeline(profile=owner, project_id=project.id, mode="general", task_id=task.id, limit=10, cursor=first["next_cursor"])
     assert len(first["events"]) == 10 and len(second["events"]) == 3
     assert len({row["id"] for row in first["events"] + second["events"]}) == 13
     with pytest.raises(ValueError):
-        list_project_operational_timeline(project_id=project.id + 1, mode="general", task_id=task.id, limit=10, cursor=first["next_cursor"])
+        list_project_operational_timeline(profile=owner, project_id=project.id + 1, mode="general", task_id=task.id, limit=10, cursor=first["next_cursor"])
 
 
 @pytest.mark.django_db

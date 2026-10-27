@@ -61,6 +61,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "edilcloud.modules.assistant" = ["data/*.json"]
+"edilcloud.modules.projects" = ["*.sql"]
 "edilcloud.modules.elaborati" = ["assets/*.ttf", "assets/*.txt", "assets/*.css", "assets/*.js", "migrations/*.sql"]
 "edilcloud.modules.identity" = ["templates/**/*.txt", "templates/**/*.html"]
 "edilcloud.modules.workspaces" = ["templates/**/*.txt", "templates/**/*.html"]

@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from django.db.models import Q
 from django.utils import timezone
 
 from edilcloud.modules.projects.models import ProjectOperationalEvent
@@ -544,6 +543,7 @@ def persist_project_operational_event(*, project_id: int, payload: dict[str, Any
 
 def list_project_operational_timeline(
     *,
+    profile,
     project_id: int,
     mode: str,
     task_id: int | None = None,
@@ -551,38 +551,7 @@ def list_project_operational_timeline(
     limit: int | None = None,
     cursor: str | None = None,
 ) -> dict[str, Any]:
-    queryset = ProjectOperationalEvent.objects.filter(project_id=project_id)
+    from .timeline_read import timeline
 
-    if mode == "activity" and activity_id is not None:
-        queryset = queryset.filter(activity_id_snapshot=activity_id)
-    elif task_id is not None:
-        scope_filter = Q(task_id_snapshot=task_id)
-        if mode == "phase":
-            scope_filter |= Q(task_id_snapshot__isnull=True, activity_id_snapshot__isnull=True)
-        queryset = queryset.filter(scope_filter)
-
-    from edilcloud.modules.projects.read_cursor import apply_read_cursor, next_read_cursor
-    scope = f"timeline:{project_id}:{mode}:{task_id}:{activity_id}"
-    safe_limit = min(250, max(1, limit)) if limit is not None else None
-    queryset = apply_read_cursor(queryset, cursor=cursor, scope=scope, timestamp="occurred_at")
-    if safe_limit is not None:
-        queryset = queryset.filter(payload__has_key="timeline")
-    rows = list(queryset.order_by("-occurred_at", "-id")[:safe_limit + 1] if safe_limit is not None else queryset.order_by("-occurred_at", "-id"))
-    has_more = safe_limit is not None and len(rows) > safe_limit
-    page = rows[:safe_limit] if safe_limit is not None else rows
-    events: list[dict[str, Any]] = []
-    for item in page:
-        timeline_event = item.payload.get("timeline") if isinstance(item.payload, dict) else None
-        if not isinstance(timeline_event, dict):
-            continue
-        events.append(_json_safe(timeline_event))
-
-    return {
-        "mode": mode,
-        "project_id": project_id,
-        "task_id": task_id,
-        "activity_id": activity_id,
-        "events": events,
-        "has_more": has_more,
-        "next_cursor": next_read_cursor(page[-1], scope=scope, timestamp="occurred_at") if has_more else None,
-    }
+    return timeline(profile=profile, project_id=project_id, mode=mode, task_id=task_id,
+                    activity_id=activity_id, limit=limit, cursor=cursor)

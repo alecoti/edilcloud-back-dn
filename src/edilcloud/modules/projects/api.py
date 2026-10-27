@@ -609,7 +609,7 @@ def get_project_timeline_endpoint(
         raise HttpError(400, "taskId obbligatorio per questa cronologia.")
 
     try:
-        return list_project_operational_timeline(project_id=project_id, mode=mode,
+        return list_project_operational_timeline(profile=current_profile(request), project_id=project_id, mode=mode,
             task_id=taskId, activity_id=activityId, limit=limit, cursor=cursor)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc

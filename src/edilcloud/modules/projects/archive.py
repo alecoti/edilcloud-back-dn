@@ -195,7 +195,13 @@ def export_project_archive(*, profile, project_id: int):
     gantt = list_project_gantt(profile=profile, project_id=project_id)
     folders = list_project_folders(profile=profile, project_id=project_id)
     invite_codes = list(project.invite_codes.order_by("-created_at", "-id"))
-    operational_events = list(project.operational_events.order_by("-occurred_at", "-id"))
+    from .event_access import visible_operational_events
+
+    operational_events = list(visible_operational_events(
+        project.operational_events.all(), profile=profile
+    ).order_by("-occurred_at", "-id"))
+    from .timeline_read import timeline
+    timeline_events = timeline(profile=profile, project_id=project_id, mode="project")["events"]
     posts = list(
         annotate_posts_with_feed_activity(project_posts_queryset())
         .filter(project=project)
@@ -244,6 +250,7 @@ def export_project_archive(*, profile, project_id: int):
                 },
                 "generated_at": now,
                 "generated_by_profile_id": profile.id,
+                "visibility": {"scope": "authorized_view", "profile_id": profile.pk, "workspace_id": profile.workspace_id},
             },
         )
         _write_json(
@@ -273,6 +280,7 @@ def export_project_archive(*, profile, project_id: int):
                 "posts": len(serialized_posts),
                 "invite_codes": len(invite_codes),
                 "operational_events": len(operational_events),
+                "timeline_events": len(timeline_events),
             },
         )
         _write_json(zip_file, "team/members.json", overview["team"])
@@ -323,6 +331,8 @@ def export_project_archive(*, profile, project_id: int):
                 for event in operational_events
             ],
         )
+
+        _write_json(zip_file, "operations/timeline.json", timeline_events)
 
         if project.logo:
             logo_name = _safe_file_name(project.logo.name, fallback=f"project-{project.id}-logo")
