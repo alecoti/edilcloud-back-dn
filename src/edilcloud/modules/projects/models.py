@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from edilcloud.modules.workspaces.models import Profile, TimestampedModel, Workspace, WorkspaceRole
 from edilcloud.modules.projects.gantt_storage import project_schedule_storage
+from edilcloud.modules.projects.document_storage import project_document_storage
 
 
 class StoredFileMetadata(TimestampedModel):
@@ -401,7 +402,7 @@ class ProjectDocument(StoredFileMetadata):
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    document = models.FileField(upload_to=project_document_upload_to)
+    document = models.FileField(upload_to=project_document_upload_to, storage=project_document_storage)
     drawing_preview = models.ImageField(upload_to=project_drawing_preview_upload_to, blank=True)
     is_public = models.BooleanField(default=False)
     document_kind = models.CharField(

@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 
 from django.core.files.storage import FileSystemStorage
+from django.core.exceptions import ImproperlyConfigured, SuspiciousFileOperation
 from django.db import connection, transaction
 from django.utils import timezone
 
@@ -64,8 +65,11 @@ def cleanup_publication_copies(*, dry_run=True, limit=200):
     if not isinstance(storage, FileSystemStorage):
         raise ValueError("La pulizia delle copie richiede lo storage filesystem configurato.")
     folder = "elaborati/publications"
-    root = Path(storage.location).resolve()
-    directory = Path(storage.path(folder))
+    try:
+        root = Path(getattr(storage, "publication_location", storage.location)).resolve()
+        directory = Path(storage.path(folder))
+    except (ImproperlyConfigured, SuspiciousFileOperation):
+        raise ValueError("Directory delle copie Elaborati non valida.") from None
     if not directory.exists():
         return []
     for part in (directory.parent, directory):

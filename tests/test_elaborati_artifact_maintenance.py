@@ -77,6 +77,9 @@ def test_committed_copy_and_user_upload_are_never_orphans(site, provider, monkey
     assert cleanup_publication_copies(dry_run=False) == []
     assert storage.exists(name) and storage.exists(user_file) and storage.exists(unknown)
     assert frozen.drive_document.document.open("rb").read() == b"%PDF-frozen"
+    from django.conf import settings
+    assert not (Path(settings.MEDIA_ROOT) / name).exists()
+    assert (Path(settings.PRIVATE_STORAGE_ROOT) / name).read_bytes() == b"%PDF-frozen"
     from edilcloud.modules.projects.services import get_project_document_file_response
     response = get_project_document_file_response(profile=site[1],
         document_id=frozen.drive_document_id)
@@ -137,7 +140,7 @@ def test_copy_cleanup_ignores_symlinks_and_subdirectories(site, tmp_path):
     except OSError:
         pytest.skip("Creating symlinks is not permitted by this Windows configuration")
     assert cleanup_publication_copies(dry_run=False) == []
-    assert outside.read_bytes() == b"must stay" and Path(storage.path(name)).is_symlink()
+    assert outside.read_bytes() == b"must stay" and (directory / Path(name).name).is_symlink()
 
 
 def test_copy_cleanup_rejects_directory_junction_or_symlink(site, tmp_path):
