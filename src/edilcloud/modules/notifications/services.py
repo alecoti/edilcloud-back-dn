@@ -204,6 +204,10 @@ def create_notification(
 
     def _publish_notification_side_effects() -> None:
         from edilcloud.platform.realtime.services import publish_notification_event
+        from .document_access import notification_delivery_allowed
+
+        if not notification_delivery_allowed(notification):
+            return
 
         publish_notification_event(
             profile_id=recipient_profile.id,
@@ -352,7 +356,8 @@ def visible_notifications_queryset(profile):
         from edilcloud.modules.projects.models import Project
 
         queryset = queryset.exclude(project_id__in=Project.objects.filter(is_demo_master=True).values("id"))
-    return queryset
+    from .document_access import visible_document_notifications
+    return visible_document_notifications(queryset, profile=profile)
 
 
 def list_notifications(*, user, claims: dict, limit: int = 80, count_only: bool = False, offset: int = 0, cursor: str | None = None) -> dict:
@@ -427,8 +432,9 @@ def mark_notification_read(*, user, claims: dict, notification_id: int) -> dict:
     if profile is None:
         raise ValueError("Profilo notifiche non disponibile.")
 
+    from .document_access import visible_document_notifications
     notification = (
-        Notification.objects.select_related(
+        visible_document_notifications(Notification.objects.all(), profile=profile).select_related(
             "sender_user",
             "sender_profile",
             "sender_profile__workspace",

@@ -82,17 +82,24 @@ def process_push_job(notification_id):
             state, reason = "skipped", "RECIPIENT_INACTIVE"
         elif not _project_push_allowed(notification):
             state, reason = "skipped", "PROJECT_ACCESS_OR_PREFERENCES"
+        elif not _document_push_allowed(notification):
+            state, reason = "skipped", "DOCUMENT_ACCESS"
         elif notification.created_at < now - timedelta(hours=24):
             state, reason = "skipped", "EXPIRED"
         else:
             dispatch_notification_push(job.notification)
-            deliveries = list(NotificationPushDelivery.objects.filter(notification_id=notification_id).values("status", "error_code", "retry_after_seconds"))
-            transient = [item for item in deliveries if item["status"] == "failed" and item["error_code"] in _TRANSIENT]
-            if not deliveries or transient:
-                state, reason = "retry", (transient[0]["error_code"] or "PROVIDER_ERROR") if transient else "NO_ACTIVE_DEVICE"
-                delay = max([item["retry_after_seconds"] for item in transient] or [0])
-            elif not any(item["status"] == "sent" for item in deliveries):
-                state, reason = "failed", "NO_SUCCESSFUL_DELIVERY"
+            # Dispatch can stop between devices after a document access change.
+            # Preserve accepted deliveries, but do not describe the job as complete.
+            if not _document_push_allowed(notification):
+                state, reason = "skipped", "DOCUMENT_ACCESS"
+            else:
+                deliveries = list(NotificationPushDelivery.objects.filter(notification_id=notification_id).values("status", "error_code", "retry_after_seconds"))
+                transient = [item for item in deliveries if item["status"] == "failed" and item["error_code"] in _TRANSIENT]
+                if not deliveries or transient:
+                    state, reason = "retry", (transient[0]["error_code"] or "PROVIDER_ERROR") if transient else "NO_ACTIVE_DEVICE"
+                    delay = max([item["retry_after_seconds"] for item in transient] or [0])
+                elif not any(item["status"] == "sent" for item in deliveries):
+                    state, reason = "failed", "NO_SUCCESSFUL_DELIVERY"
     except Exception as error:
         state, reason = "retry", type(error).__name__[:64]
     if state == "retry":
@@ -112,3 +119,8 @@ def _project_push_allowed(notification):
     from edilcloud.modules.projects.notification_preferences import project_notification_allowed
     return project_notification_allowed(profile=notification.recipient_profile,
         project_id=notification.project_id, kind=notification.kind, push=True)
+
+
+def _document_push_allowed(notification):
+    from .document_access import notification_delivery_allowed
+    return notification_delivery_allowed(notification)

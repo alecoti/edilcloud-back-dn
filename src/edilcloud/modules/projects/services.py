@@ -508,6 +508,7 @@ def emit_project_realtime_event(
     folder_id: int | None = None,
     document_id: int | None = None,
     data: dict | None = None,
+    audience_group: str | None = None,
 ) -> None:
     payload = build_project_realtime_event(
         event_type=event_type,
@@ -521,7 +522,10 @@ def emit_project_realtime_event(
         document_id=document_id,
         data=data,
     )
-    publish_project_event(project_id=project_id, payload=payload)
+    if audience_group is None:
+        publish_project_event(project_id=project_id, payload=payload)
+    else:
+        publish_project_event(project_id=project_id, payload=payload, audience_group=audience_group)
     persist_project_operational_event(project_id=project_id, payload=payload)
 
 
@@ -6960,6 +6964,7 @@ def delete_project_document(*, profile: Profile, document_id: int) -> None:
             "folder_id": folder_id,
             "folder_path": folder_path,
             "is_deleted": True,
+            "document_origin": "ordinary_upload",
         },
     )
     notify_profiles_with_blueprint(
@@ -6974,5 +6979,6 @@ def delete_project_document(*, profile: Profile, document_id: int) -> None:
             document_title=document_title,
             folder_id=folder_id,
             folder_path=folder_path,
+            ordinary_deleted=True,
         ),
     )

@@ -54,6 +54,8 @@ def issue_realtime_ticket(
     profile_id: int,
     channel: str,
     project_id: int | None = None,
+    auth_session: str | None = None,
+    workspace_id: int | None = None,
 ) -> tuple[str, str]:
     """Create a short-lived websocket ticket stored in cache for subsequent socket validation."""
     ticket = secrets.token_urlsafe(32)
@@ -64,6 +66,10 @@ def issue_realtime_ticket(
         channel=channel,
         project_id=project_id,
     )
+    if auth_session is not None:
+        payload["auth_session"] = auth_session
+    if workspace_id is not None:
+        payload["workspace_id"] = workspace_id
     cache.set(_ticket_cache_key(ticket), payload, timeout=settings.REALTIME_TICKET_TTL_SECONDS)
     return ticket, expires_at.isoformat()
 
@@ -86,6 +92,9 @@ def validate_realtime_ticket(
         raise ValueError("Canale realtime non valido.")
     if expected_channel == "project" and payload.get("project_id") != expected_project_id:
         raise ValueError("Ticket realtime non valido per questo progetto.")
+    from .access import active_ticket_profile
+    if active_ticket_profile(payload) is None:
+        raise ValueError("Il contesto realtime non è più autorizzato.")
     return payload
 
 
@@ -98,6 +107,8 @@ def build_notification_socket_record(*, user, claims: dict) -> dict | None:
         user_id=user.id,
         profile_id=profile.id,
         channel="notifications",
+        auth_session=claims.get("sid"),
+        workspace_id=profile.workspace_id,
     )
     return {
         "path": "/ws/realtime/notifications/",
@@ -118,6 +129,8 @@ def build_project_socket_record(*, user, claims: dict, project_id: int) -> dict 
         profile_id=profile.id,
         channel="project",
         project_id=project_id,
+        auth_session=claims.get("sid"),
+        workspace_id=profile.workspace_id,
     )
     return {
         "path": f"/ws/realtime/projects/{project_id}/",
@@ -175,12 +188,12 @@ def publish_notification_event(*, profile_id: int, payload: dict) -> None:
     )
 
 
-def publish_project_event(*, project_id: int, payload: dict) -> None:
+def publish_project_event(*, project_id: int, payload: dict, audience_group: str | None = None) -> None:
     """Broadcast a project-scoped event to all sockets subscribed for the project."""
     channel_layer = get_channel_layer()
     if channel_layer is None:
         return
     async_to_sync(channel_layer.group_send)(
-        project_group_name(project_id),
+        audience_group or project_group_name(project_id),
         {"type": "realtime.event", "payload": payload},
     )

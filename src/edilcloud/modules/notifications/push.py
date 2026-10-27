@@ -448,6 +448,9 @@ def dispatch_notification_push(notification: Notification) -> int:
     now = timezone.now()
     sent = 0
     for device in devices:
+        from .document_access import notification_delivery_allowed
+        if not notification_delivery_allowed(notification):
+            break
         # A worker retry must not resend to devices already accepted by FCM.
         if NotificationPushDelivery.objects.filter(notification=notification, device=device, status=NotificationPushDeliveryStatus.SENT).exists():
             continue

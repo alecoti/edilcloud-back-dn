@@ -984,9 +984,8 @@ def test_dispatch_notification_push_tracks_failed_attempts_without_deactivating_
     )
     notification = create_notification(
         recipient_profile=profile,
-        subject="Nuovo documento",
-        kind="project.document.created",
-        project_id=23,
+        subject="Avviso di sistema",
+        kind="system.test",
     )
 
     monkeypatch.setattr(

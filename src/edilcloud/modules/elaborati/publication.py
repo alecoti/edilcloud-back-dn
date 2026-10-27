@@ -65,13 +65,19 @@ def prepare_preview(job):
     if purpose == "draft":
         from .pdf_cache import display_pdf
 
-        cached = display_pdf(revision, user_id=job.requested_by.user_id, profile_id=job.requested_by.pk)
+        cached = display_pdf(
+            revision, user_id=job.requested_by.user_id, profile_id=job.requested_by.pk
+        )
         if cached:
-            return {"preview": {
-                "preview_file": cached.pdf_file, "preview_hash": cached.pdf_hash,
-                "preview_content_hash": publication_content_hash(revision),
-                "preview_expires_at": None, "preview_signature": audit,
-            }}
+            return {
+                "preview": {
+                    "preview_file": cached.pdf_file,
+                    "preview_hash": cached.pdf_hash,
+                    "preview_content_hash": publication_content_hash(revision),
+                    "preview_expires_at": None,
+                    "preview_signature": audit,
+                }
+            }
     if job.payload.get("apply_signature"):
         personal = PersonalSignature.objects.filter(user=job.requested_by.user).first()
         if (
@@ -112,7 +118,9 @@ def prepare_preview(job):
             "preview_file": revision.preview_file.name,
             "preview_hash": pdf_hash,
             "preview_content_hash": publication_content_hash(revision),
-            "preview_expires_at": None if purpose == "draft" else timezone.now() + timedelta(minutes=20),
+            "preview_expires_at": None
+            if purpose == "draft"
+            else timezone.now() + timedelta(minutes=20),
             "preview_signature": audit,
         },
     }
@@ -155,6 +163,7 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
     if audit.get("prepared_by_user_id") != profile.user_id:
         raise HttpError(403, "L'anteprima deve essere confermata dall'utente che l'ha preparata.")
     from .pdf_cache import prepared_profile
+
     if prepared_profile(audit) != profile.pk:
         raise HttpError(409, "Il profilo attivo è cambiato. Ripeti l'anteprima.")
     signed = bool(audit.get("fingerprint"))
@@ -166,7 +175,9 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
         if not confirm_signature or audit.get("user_id") != profile.user_id:
             raise HttpError(400, "Conferma esplicitamente la tua firma per questa revisione.")
         if not personal:
-            raise HttpError(409, "La firma personale è stata rimossa. Registrala e prepara una nuova anteprima.")
+            raise HttpError(
+                409, "La firma personale è stata rimossa. Registrala e prepara una nuova anteprima."
+            )
         if personal.fingerprint != audit["fingerprint"]:
             raise HttpError(409, "La firma personale è cambiata. Prepara una nuova anteprima.")
     with revision.preview_file.open("rb") as stream:
@@ -211,6 +222,7 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
     revision.drive_document = drive
     revision.pdf_hash = preview_hash
     from .documentary_register import manifest
+
     revision.frozen_manifest = manifest(revision, pdf_hash=preview_hash)
     revision.published_at = timezone.now()
     revision.published_by = profile
@@ -222,6 +234,7 @@ def publish_revision(*, profile, revision_id, version, preview_hash, confirm_sig
     )
     revision.save()
     from .pdf_cache import remove_display_pdfs
+
     remove_display_pdfs(revision)
     DocumentAudit.objects.create(
         revision=revision,
@@ -247,9 +260,15 @@ def notify_publication(*, profile, revision_id):
             "elaborato__project", "drive_document__folder"
         ).get(pk=revision_id)
         from edilcloud.modules.projects.services import emit_project_realtime_event
+        from .visibility import publication_group
+
+        audience = publication_group(revision)
+        if audience is None:
+            return
 
         emit_project_realtime_event(
             event_type="document.created",
+            audience_group=audience,
             project_id=revision.elaborato.project_id,
             actor_profile=profile,
             document_id=revision.drive_document_id,
@@ -267,21 +286,30 @@ def notify_publication(*, profile, revision_id):
             build_project_document_notification,
         )
 
+        from dataclasses import replace
+        from .visibility import publication_recipients
+
+        blueprint = build_project_document_notification(
+            kind="project.document.created",
+            action="created",
+            actor_profile=profile,
+            project=revision.elaborato.project,
+            document_id=revision.drive_document_id,
+            document_title=revision.elaborato.title,
+            folder_id=revision.drive_document.folder_id,
+            folder_path=revision.drive_document.folder.path,
+            file_field=revision.drive_document.document,
+        )
         notify_profiles_with_blueprint(
-            recipients=project_notification_recipients(
-                revision.elaborato.project, exclude_profile_ids={profile.pk}
+            recipients=publication_recipients(
+                revision=revision,
+                candidates=project_notification_recipients(
+                    revision.elaborato.project, exclude_profile_ids={profile.pk}
+                ),
             ),
             actor_profile=profile,
-            blueprint=build_project_document_notification(
-                kind="project.document.created",
-                action="created",
-                actor_profile=profile,
-                project=revision.elaborato.project,
-                document_id=revision.drive_document_id,
-                document_title=revision.elaborato.title,
-                folder_id=revision.drive_document.folder_id,
-                folder_path=revision.drive_document.folder.path,
-                file_field=revision.drive_document.document,
+            blueprint=replace(
+                blueprint, data={**blueprint.data, "elaborato_revision_id": str(revision.pk)}
             ),
         )
     except Exception:

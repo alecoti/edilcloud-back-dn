@@ -470,6 +470,7 @@ def build_project_document_notification(
     folder_id: int | None = None,
     folder_path: str | None = None,
     file_field=None,
+    ordinary_deleted: bool = False,
 ) -> NotificationBlueprint:
     actor_name = _display_name(actor_profile)
     image_url = _project_context_image_url(
@@ -506,5 +507,6 @@ def build_project_document_notification(
             "folder_path": folder_path,
             "project_name": project.name,
             "image_url": image_url,
+            **({"document_origin": "ordinary_upload"} if ordinary_deleted and action == "deleted" else {}),
         },
     )

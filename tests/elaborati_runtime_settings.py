@@ -31,3 +31,10 @@ OPENAI_API_BASE_URL = "http://127.0.0.1:9/v1"
 GOOGLE_WEATHER_API_KEY = ""
 GOOGLE_MAPS_API_KEY = ""
 CORS_ALLOW_ALL_ORIGINS = True
+
+if os.environ.get("ELABORATI_RUNTIME_BATCH") == "notifications":
+    # The publication request and socket must exchange events across ASGI
+    # workers without relying on a process-local queue from another event loop.
+    CHANNEL_LAYERS = {"default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {
+        "hosts": ["redis://127.0.0.1:16379/0"], "prefix": "elaborati-notification-qa-6629bfceadef",
+    }}}
