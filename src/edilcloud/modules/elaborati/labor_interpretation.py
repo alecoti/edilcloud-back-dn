@@ -81,6 +81,12 @@ def normalize(request, result):
             raise ValueError("La proposta AI contiene una modalità non valida.")
         name = _text(row["name"], 200)
         count = _integer(row["count"], 1, 500, nullable=True)
+        basis = row["basis"]
+        # The type "person" denotes one individual; its unit is structural.
+        # Do not fill missing team cardinality or hide contradictory values.
+        if row["kind"] == "person":
+            count = 1 if count is None else count
+            basis = "per_person" if basis is None else basis
         hours = _integer(row["duration_hours"], 0, 12500, nullable=True)
         minutes = _integer(row["duration_minutes"], 0, 750000, nullable=True)
         pause = _integer(row["break_minutes"], 0, 1500, nullable=True)
@@ -99,7 +105,7 @@ def normalize(request, result):
             amount = (hours or 0) * 60 + (minutes or 0) if hours is not None or minutes is not None else None
             time = {"mode": "duration", "minutes": amount if row["time_mode"] == "duration" else None}
         normalized.append({"id": row_id(request["command_id"], index),
-            "subject": {"kind": row["kind"], "key": None, "name": name, "basis": row["basis"], "count": count},
+            "subject": {"kind": row["kind"], "key": None, "name": name, "basis": basis, "count": count},
             "time": time, "source_span": {"start": first, "end": first + len(quote), "quote": quote}})
     proposal_input = {k: request[k] for k in ("schema", "project_id", "work_date", "timezone", "source")}
     proposal_input["rows"] = normalized

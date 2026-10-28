@@ -55,7 +55,9 @@ def view(request):
         "visibility": "private", "state": request.state, "request": request.request,
         "result": request.result or None, "error_code": request.error_code,
         "provenance": {"model": request.model, "contract": domain.CONTRACT["version"],
-            "request_hash": request.request_hash, "response_id": request.response_id},
+            "request_hash": request.request_hash, "response_id": request.response_id,
+            "provider_model": request.result.get("provider_model") if request.result else None,
+            "normalization_contract": request.result.get("normalization_contract") if request.result else None},
         "usage": {"input_tokens": request.input_tokens, "output_tokens": request.output_tokens,
             "total_tokens": request.total_tokens, "known": request.total_tokens is not None},
         "requires_human_review": True, "registered_minutes": 0}
@@ -135,7 +137,12 @@ def _terminal(request, payload, status):
                     code = "PROVIDER_REFUSAL"
                 elif payload.get("status") == "completed":
                     answer = "".join(item["text"] for item in parts if item.get("type") == "output_text" and isinstance(item.get("text"), str))
-                    result = domain.normalize(request, json.loads(answer))
+                    structured = json.loads(answer)
+                    result = domain.normalize(request, structured)
+                    result["raw_proposal"] = structured
+                    result["normalization_contract"] = "labor-normalization-v1"
+                    model = payload.get("model")
+                    result["provider_model"] = model if isinstance(model, str) and len(model) <= 128 else None
                     state, code = "completed", ""
                 else:
                     code = "INCOMPLETE_PROVIDER_OUTPUT"
@@ -155,7 +162,7 @@ def interpret(profile, payload):
         ledger.project_access(profile, request["project_id"], lock=True)
         prior = LaborAIRequest.objects.filter(workspace_id=profile.workspace_id, actor_key=profile.pk, command_id=request["command_id"]).first()
         if prior:
-            if prior.request_hash != request_hash:
+            if prior.request != request:
                 raise HttpError(409, "La chiave di interpretazione è già associata a un altro testo.")
             return view(prior)
         if not settings.OPENAI_API_KEY:
