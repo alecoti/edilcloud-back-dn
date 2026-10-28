@@ -571,6 +571,10 @@ def calculate_account_ai_usage(account: BillingAccount, *, reference: datetime |
     total_used += DocumentAIUsage.objects.filter(
         workspace_id__in=workspace_ids, created_at__gte=start, created_at__lt=end,
     ).aggregate(total=Sum("total_tokens"))["total"] or 0
+    from edilcloud.modules.elaborati.labor_models import LaborAIRequest
+    total_used += LaborAIRequest.objects.filter(
+        workspace_id__in=workspace_ids, created_at__gte=start, created_at__lt=end,
+    ).aggregate(total=Sum("total_tokens"))["total"] or 0
     return {
         "used": int(total_used),
         "month_key": start.strftime("%Y-%m"),

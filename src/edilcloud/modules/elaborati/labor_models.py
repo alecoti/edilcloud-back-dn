@@ -112,3 +112,33 @@ class LaborLine(models.Model):
             models.Index(fields=("identity", "work_date"), name="labor_line_identity_day_idx"),
             models.Index(fields=("identity", "started_at", "ended_at"), name="labor_line_interval_idx"),
         ]
+
+
+class LaborAIRequest(models.Model):
+    """One explicit interpretation, including ambiguous billable outcomes."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace = models.ForeignKey("workspaces.Workspace", on_delete=models.PROTECT)
+    project = models.ForeignKey("projects.Project", on_delete=models.PROTECT)
+    actor_key = models.BigIntegerField()
+    command_id = models.UUIDField()
+    request_hash = models.CharField(max_length=64)
+    request = models.JSONField()
+    state = models.CharField(max_length=16, default="prepared")
+    result = models.JSONField(default=dict)
+    model = models.CharField(max_length=64, default="gpt-6-luna")
+    response_id = models.CharField(max_length=128, null=True, blank=True, unique=True)
+    input_tokens = models.PositiveIntegerField(null=True, blank=True)
+    output_tokens = models.PositiveIntegerField(null=True, blank=True)
+    total_tokens = models.PositiveIntegerField(null=True, blank=True)
+    reserved_tokens = models.PositiveIntegerField(default=0)
+    error_code = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(default=django_timezone.now)
+    updated_at = models.DateTimeField(default=django_timezone.now)
+
+    class Meta:
+        db_table = "elaborati_laborairequest"
+        constraints = [
+            models.UniqueConstraint(fields=("workspace", "actor_key", "command_id"), name="labor_ai_request_command_uq"),
+            models.CheckConstraint(condition=models.Q(state__in=("prepared", "sent", "completed", "failed", "unknown")), name="labor_ai_request_state_ck"),
+        ]
+        indexes = [models.Index(fields=("workspace", "created_at"), name="labor_ai_workspace_time_idx")]

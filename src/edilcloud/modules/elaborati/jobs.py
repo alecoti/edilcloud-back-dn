@@ -62,7 +62,8 @@ def queue_job(*, revision, profile, action, key, payload=None, input_version=Non
     tokens = 0 if action == "preview" or workflow.startswith("v3") else 90_000 if action == "generate" else 45_000
     if tokens and settings.AI_TOKEN_QUOTA_ENFORCED and not ai_quota_is_unlimited(account):
         remaining = entitlement_snapshot(account)["ai_tokens"]["remaining_this_period"]
-        if remaining - reserved < tokens:
+        from .labor_ai_requests import pending
+        if remaining - reserved - pending(account_workspace_ids(account)) < tokens:
             raise HttpError(
                 402,
                 "Budget AI insufficiente per questa redazione. Attendi il completamento delle altre elaborazioni o verifica il piano.",

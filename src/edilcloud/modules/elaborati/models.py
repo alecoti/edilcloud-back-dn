@@ -338,4 +338,4 @@ class DocumentAudit(TimestampedModel):
     detail = models.JSONField(default=dict)
 
 
-from .labor_models import LaborIdentity, LaborLine, LaborOperation, LaborRegister, LaborRevision  # noqa: E402,F401
+from .labor_models import LaborAIRequest, LaborIdentity, LaborLine, LaborOperation, LaborRegister, LaborRevision  # noqa: E402,F401

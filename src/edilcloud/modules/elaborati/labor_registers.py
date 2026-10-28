@@ -187,6 +187,8 @@ def prepare(profile, payload):
         labor_proposal(payload)
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
+    from .labor_ai_requests import origins
+    ai_origins = origins(profile, payload)
     cleaned, supplied = deepcopy(payload), {}
     ids = []
     for row in payload["rows"]:
@@ -217,7 +219,7 @@ def prepare(profile, payload):
     proposal["requires_identity_validation"] = any(r["identity_status"] != "resolved" for r in proposal["rows"])
     proposal["totals"]["unresolved_rows"] = sum(bool(r["issues"]) for r in proposal["rows"])
     proposal["totals"]["resolved_person_minutes"] = sum(r["person_minutes"] or 0 for r in proposal["rows"] if not r["issues"])
-    return {"input": deepcopy(payload), "proposal": proposal, "identities": supplied,
+    return {"input": deepcopy(payload), "proposal": proposal, "identities": supplied, "interpretations": ai_origins,
             "prepared_by": snapshot(profile)}
 
 

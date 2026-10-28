@@ -180,7 +180,8 @@ class ProviderCheckpoint:
                     state__in=("queued", "running"), workflow_version="v1",
                 ).aggregate(n=Sum(Greatest(F("reserved_tokens") - F("consumed_tokens"), Value(0))))["n"] or 0
                 remaining = entitlement_snapshot(account)["ai_tokens"]["remaining_this_period"]
-                if reservation <= 0 or remaining - attempts - legacy < reservation:
+                from .labor_ai_requests import pending
+                if reservation <= 0 or remaining - attempts - legacy - pending(workspace_ids) < reservation:
                     raise StepUnavailable("Budget insufficiente per la fase richiesta. I risultati precedenti sono conservati.")
             DocumentStep.objects.select_for_update().get(pk=self.step.pk)
             number = (self.step.attempts.aggregate(n=Max("number"))["n"] or 0) + 1

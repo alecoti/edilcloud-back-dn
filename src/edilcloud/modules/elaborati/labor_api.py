@@ -6,8 +6,19 @@ from ninja import Router
 from edilcloud.modules.identity.auth import JWTAuth
 from edilcloud.modules.projects.services import get_current_profile
 from . import labor_registers as ledger
+from . import labor_ai_requests as interpretations
 
 router = Router(tags=["Resource registers"], auth=JWTAuth())
+
+
+@router.post("/labor/interpretations")
+def interpret(request, payload: dict):
+    return response(interpretations.interpret(profile(request), payload))
+
+
+@router.get("/labor/interpretations/{command_id}")
+def interpretation(request, command_id: UUID):
+    return response(interpretations.read(profile(request), command_id))
 
 
 def profile(request):
