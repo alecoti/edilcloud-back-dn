@@ -134,7 +134,7 @@ def identities(profile, project_id, q=""):
         people = people.filter(Q(first_name__icontains=q[:200]) | Q(last_name__icontains=q[:200]))
     return {"items": [identity_view(i) for i in query.order_by("name", "id")[:100]],
             "profile_candidates": [{"profile_id": p.pk, "name": p.member_name} for p in people.order_by("first_name", "last_name", "pk")[:100]],
-            "can_manage": profile.role in MANAGERS, "current_profile_id": profile.pk, "current_role": profile.role}
+            "can_manage": profile.role in MANAGERS, "current_profile_id": profile.pk, "workspace_id": profile.workspace_id, "current_role": profile.role}
 
 
 @transaction.atomic
