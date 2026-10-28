@@ -92,6 +92,7 @@ def test_worker_or_stale_profile_cannot_bypass_deactivation(site, inactive):
     assert failure.value.status_code == 404
 
 
+@pytest.mark.django_db(transaction=True)
 def test_drive_lists_files_and_mutations_use_same_boundary_without_changing_ordinary_uploads(site, actors):
     revision = baseline.create(site)
     drive = ProjectDocument.objects.create(project=site[0], uploaded_by=site[1], title="Private QA",

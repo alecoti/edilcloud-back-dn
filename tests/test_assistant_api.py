@@ -466,7 +466,7 @@ def test_structured_assistant_queries_bypass_llm_and_return_deterministic_answer
     assert run_log.response_length_mode == "short"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_assistant_quality_report_command_aggregates_persisted_metadata():
     client = Client()
     _user, _workspace, profile = create_workspace_profile(
@@ -494,7 +494,7 @@ def test_assistant_quality_report_command_aggregates_persisted_metadata():
     assert "team_count" in report["success_rate_per_intent"]
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_assistant_quality_gate_command_passes_for_green_dataset_and_run_logs():
     client = Client()
     _user, _workspace, profile = create_workspace_profile(
@@ -924,7 +924,7 @@ def test_pgvector_sync_is_incremental_and_tracks_real_file_backed_sources(monkey
 
     def fake_embed_texts(texts):
         embedding_batches.append(len(texts))
-        return [[0.1, 0.2, 0.3, 0.4] for _ in texts]
+        return [[0.1, 0.2, 0.3, 0.4] * 768 for _ in texts]
 
     monkeypatch.setattr("edilcloud.modules.assistant.services.embed_texts", fake_embed_texts)
 

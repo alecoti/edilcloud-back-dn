@@ -9,6 +9,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
+from django.db.migrations.loader import MigrationLoader
 from django.utils import timezone
 
 from edilcloud.modules.projects.models import ProjectActivity, ProjectTask
@@ -16,7 +17,7 @@ from edilcloud.modules.projects.shared_schema import (
     NATIVE_PHASE, NATIVE_PHASE_CHECKSUM, PHASE, record_verified_phase, verified_phase_adoption,
 )
 
-pytest_plugins = ['tests.test_elaborati']
+from tests.test_elaborati import site  # shared fixture
 
 pytestmark = [pytest.mark.django_db, pytest.mark.skipif(
     connection.vendor != 'postgresql', reason='PostgreSQL adoption catalog checks')]
@@ -26,13 +27,20 @@ pytestmark = [pytest.mark.django_db, pytest.mark.skipif(
 def native_receipt():
     # The test schema was created by Django. Model the native receipt explicitly;
     # this fixture is not evidence of a full native bootstrap.
-    resource = Path(__file__).resolve().parents[2] / 'rust/resources/migrations/2026101901_phase_staffing.sql'
+    resource = Path(__file__).resolve().parent / 'fixtures/native-phase-staffing-2026101901.sql'
     assert hashlib.sha384(resource.read_bytes()).hexdigest() == NATIVE_PHASE_CHECKSUM
     with connection.cursor() as cursor:
         cursor.execute('CREATE TABLE _sqlx_migrations (version bigint PRIMARY KEY, checksum bytea NOT NULL, success boolean NOT NULL)')
         cursor.execute('INSERT INTO _sqlx_migrations VALUES (%s,%s,true)',
                        [NATIVE_PHASE, bytes.fromhex(NATIVE_PHASE_CHECKSUM)])
-    MigrationRecorder(connection).record_unapplied(*PHASE)
+    loader = MigrationLoader(connection)
+    pending = loader.graph.backwards_plan(PHASE)
+    recorder = MigrationRecorder(connection)
+    # A historical receipt gap cannot leave later dependencies marked applied.
+    # Tables stay in the current test schema; full native bootstrap is a separate gate.
+    for key in pending:
+        recorder.record_unapplied(*key)
+    return pending
 
 
 def recorded():
@@ -53,6 +61,14 @@ def test_plan_is_read_only_and_apply_preserves_later_staffing_choices(native_rec
     call_command('migrate_shared', stdout=output, verbosity=0)
     assert json.loads(output.getvalue())['phase_adoption'] is True
     assert not recorded()
+    with transaction.atomic():
+        assert record_verified_phase(connection) is True
+    # Descendants were genuinely installed by the test database bootstrap.
+    # Restore only their receipts so the current-version command can verify
+    # its no-op tail without replaying later irreversible audit migrations.
+    for key in reversed(native_receipt):
+        if key != PHASE:
+            MigrationRecorder(connection).record_applied(*key)
     output = StringIO()
     call_command('migrate_shared', apply=True, stdout=output, verbosity=0)
     assert json.loads(output.getvalue())['remaining'] == []

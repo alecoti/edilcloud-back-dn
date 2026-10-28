@@ -50,16 +50,26 @@ def execute_native_resource():
 
 
 def test_native_first_then_django_adopts_and_rollback_preserves_shared_bytes(site):
-    MigrationExecutor(connection).migrate([("elaborati", "0011_document_author_snapshot")])
+    # Exercise this migration's actual operations without reversing newer,
+    # intentionally irreversible labor/audit migrations in the test schema.
+    executor = MigrationExecutor(connection)
+    migration = executor.loader.get_migration("elaborati", "0012_shared_display_cache")
+    before = executor.loader.project_state([("elaborati", "0011_document_author_snapshot")])
+    after = before.clone()
+    operation = migration.operations[0]
+    operation.state_forwards("elaborati", after)
     with connection.cursor() as cursor:
         cursor.execute("DROP TABLE public.elaborati_draftpdfcache")
     execute_native_resource()
     entry = artifact(site, baseline.create(site))
-    MigrationExecutor(connection).migrate([("elaborati", "0012_shared_display_cache")])
+    with connection.schema_editor() as editor:
+        operation.database_forwards("elaborati", editor, before, after)
     assert DraftPdfCache.objects.get(pk=entry.pk).pdf_file == entry.pdf_file
-    MigrationExecutor(connection).migrate([("elaborati", "0011_document_author_snapshot")])
+    with connection.schema_editor() as editor:
+        operation.database_backwards("elaborati", editor, after, before)
     assert DraftPdfCache.objects.get(pk=entry.pk).pdf_file == entry.pdf_file
-    MigrationExecutor(connection).migrate([("elaborati", "0012_shared_display_cache")])
+    with connection.schema_editor() as editor:
+        operation.database_forwards("elaborati", editor, before, after)
     assert private_document_storage().open(entry.pdf_file).read() == b"%PDF-synthetic-migration"
 
 
