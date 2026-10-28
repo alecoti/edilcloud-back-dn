@@ -334,6 +334,18 @@ jobs:
             local port="$1"
             local tmp_file
 
+            # Preserve an operator's Rust selection while publishing a new
+            # Django slot. The shared controller also updates media routing and
+            # validates the public identity before accepting an active switch.
+            if run_priv test -x /usr/local/sbin/edilcloud-backend \
+              && run_priv test -f /etc/edilcloud/backend-control.json; then
+              run_priv /usr/local/sbin/edilcloud-backend register django \
+                --port "${port}" --release "${GITHUB_SHA}" \
+                --media-root "${APP_DIR}/media" \
+                --private-root "${APP_DIR}/.runtime/gantt-private"
+              return $?
+            fi
+
             case "${PROXY_SWITCH_STRATEGY}" in
               none)
                 echo "Proxy switch disabled. Keeping rolling deploy semantics."
@@ -374,6 +386,12 @@ jobs:
 
           start_slot_worker() {
             local slot="$1"
+            # Production qualification explicitly suspends provider/background
+            # work. A deployment must not silently restart paid AI processing.
+            if run_priv test -f "${RUNTIME_DIR}/qualification-workers-suspended"; then
+              echo "Background workers remain suspended by the production qualification marker."
+              return 0
+            fi
             compose_cmd up -d "$(slot_worker_service "${slot}")" || return 1
             if compose_cmd config --services | grep -Fxq "$(slot_push_worker_service "${slot}")"; then
               compose_cmd up -d "$(slot_push_worker_service "${slot}")" || return 1
@@ -451,6 +469,11 @@ jobs:
 
             if ! healthcheck "$(slot_port "${ACTIVE_SLOT}")"; then
               return 1
+            fi
+
+            if run_priv test -x /usr/local/sbin/edilcloud-backend \
+              && run_priv test -f /etc/edilcloud/backend-control.json; then
+              switch_live_backend "$(slot_port "${ACTIVE_SLOT}")" || return 1
             fi
 
             start_slot_worker "${ACTIVE_SLOT}"
