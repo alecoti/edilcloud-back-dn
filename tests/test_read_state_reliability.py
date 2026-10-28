@@ -123,8 +123,12 @@ def test_real_websocket_fanout_reaches_both_profile_sessions_and_not_another_wor
 
     user, _, profile = create_workspace_profile(email="read-sockets@example.com", password="devpass123")
 
-    async def connect(profile_id):
-        ticket, _ = issue_realtime_ticket(user_id=user.id, profile_id=profile_id, channel="notifications")
+    other_user, _, other_profile = create_workspace_profile(
+        email="read-other-sockets@example.com", password="devpass123"
+    )
+
+    async def connect(socket_user, profile_id):
+        ticket, _ = issue_realtime_ticket(user_id=socket_user.id, profile_id=profile_id, channel="notifications")
         socket = ApplicationCommunicator(NotificationRealtimeConsumer.as_asgi(), {
             "type": "websocket", "path": "/ws/realtime/notifications/", "headers": [],
             "query_string": f"ticket={ticket}".encode(), "subprotocols": [],
@@ -136,7 +140,10 @@ def test_real_websocket_fanout_reaches_both_profile_sessions_and_not_another_wor
     async def scenario():
         import json
 
-        first, second, other = await connect(profile.id), await connect(profile.id), await connect(profile.id + 10000)
+        first, second, other = (
+            await connect(user, profile.id), await connect(user, profile.id),
+            await connect(other_user, other_profile.id),
+        )
         try:
             event = {"eventId": "read-transport", "type": "feed.updated", "profileId": profile.id}
             await sync_to_async(publish_notification_event)(profile_id=profile.id, payload=event)

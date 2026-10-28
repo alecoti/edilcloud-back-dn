@@ -26,6 +26,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_DB: edilcloud_ci
+          POSTGRES_USER: edilcloud_ci
+          POSTGRES_PASSWORD: ci-only-disposable
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U edilcloud_ci -d edilcloud_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      DJANGO_SETTINGS_MODULE: tests.ci_postgres_settings
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -52,10 +70,10 @@ jobs:
         run: python -m playwright install --with-deps chromium
 
       - name: Migration drift check
-        run: python manage.py makemigrations --dry-run --check --settings=edilcloud.settings.test
+        run: python manage.py makemigrations --dry-run --check --settings=tests.ci_postgres_settings
 
       - name: Django system check
-        run: python manage.py check --settings=edilcloud.settings.test
+        run: python manage.py check --settings=tests.ci_postgres_settings
 
       - name: Backend test suite
         run: pytest -q

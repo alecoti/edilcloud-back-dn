@@ -22,7 +22,7 @@ from tests import test_elaborati as baseline
 from tests.test_notifications_api import auth_header, login_and_get_token
 
 pytestmark = pytest.mark.django_db
-pytest_plugins = ["tests.test_elaborati"]
+from tests.test_elaborati import site, provider  # shared fixtures
 
 
 def prepare_display(site, revision):

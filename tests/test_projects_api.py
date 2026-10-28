@@ -2601,6 +2601,7 @@ def test_project_mutations_publish_realtime_events(monkeypatch):
     assert event_types == [
         "task.created",
         "task.updated",
+        "task.updated",  # activity progress rolls up the parent phase
         "activity.created",
         "post.created",
         "comment.created",
@@ -2611,10 +2612,10 @@ def test_project_mutations_publish_realtime_events(monkeypatch):
     ]
     assert all(entry["project_id"] == project.id for entry in published_events)
     assert published_events[0]["payload"]["taskId"] == task.id
-    assert published_events[3]["payload"]["activityId"] == activity.id
-    assert published_events[4]["payload"]["commentId"] == comment.id
-    assert published_events[7]["payload"]["documentId"] == document.id
-    assert published_events[8]["payload"]["data"]["is_deleted"] is True
+    assert published_events[4]["payload"]["activityId"] == activity.id
+    assert published_events[5]["payload"]["commentId"] == comment.id
+    assert published_events[8]["payload"]["documentId"] == document.id
+    assert published_events[9]["payload"]["data"]["is_deleted"] is True
 
     operational_events = list(
         ProjectOperationalEvent.objects.filter(project=project).order_by("occurred_at", "id")
@@ -2656,6 +2657,7 @@ def test_project_mutations_publish_realtime_events(monkeypatch):
         "comment_added",
         "issue_opened",
         "activity_created",
+        "task_updated",
         "task_updated",
         "task_created",
     ]

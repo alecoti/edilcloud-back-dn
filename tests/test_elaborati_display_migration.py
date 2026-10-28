@@ -17,7 +17,7 @@ pytestmark = [
     pytest.mark.django_db,
     pytest.mark.skipif(connection.vendor != "postgresql", reason="PostgreSQL shared migration"),
 ]
-pytest_plugins = ["tests.test_elaborati"]
+from tests.test_elaborati import site, provider  # shared fixtures
 SQL = (
     Path(__file__).resolve().parents[1]
     / "src/edilcloud/modules/elaborati/migrations/0012_shared_display_cache.sql"

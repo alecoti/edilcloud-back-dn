@@ -46,9 +46,12 @@ def test_fast_zero_generates_draft_pdf_without_any_ai_or_token_reservation(site,
     assert serialized["pdf_ready"] and not serialized["preview_ready"]
     from ninja.errors import HttpError
 
-    with pytest.raises(HttpError, match="versione finale"):
+    with pytest.raises(HttpError, match="anteprima.*scaduta") as rejected:
         publish_revision(profile=site[1], revision_id=revision.pk, version=revision.version,
                          preview_hash=revision.preview_hash)
+    assert rejected.value.status_code == 409
+    revision.refresh_from_db()
+    assert revision.state == "draft" and revision.drive_document_id is None
     assert job.steps.get(key="document_content").state == "completed"
 
 

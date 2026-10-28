@@ -15,7 +15,7 @@ from tests import test_elaborati as baseline
 from tests.test_elaborati_display_cache import prepare_display
 
 pytestmark = pytest.mark.django_db
-pytest_plugins = ["tests.test_elaborati"]
+from tests.test_elaborati import site, provider  # shared fixtures
 
 
 @pytest.mark.parametrize("at,expected", [
