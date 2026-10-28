@@ -14,9 +14,34 @@ from edilcloud.modules.projects.services import (
 
 from . import schemas, services
 from .models import DocumentJob, PersonalSignature, WorkspaceDocumentStyle
+from .labor_api import router as labor_router
 from .registry import STYLES, TYPES, template_for
 
 router = Router(tags=["Elaborati"], auth=JWTAuth())
+
+router.add_router("/resources", labor_router)
+
+
+@router.post("/resources/labor/preview")
+def preview_labor_proposal(request, payload: dict):
+    from .labor_proposals import labor_proposal
+    from edilcloud.modules.projects.services import get_project_for_profile, get_project_membership
+
+    profile = profile_for(request)
+    project_id = payload.get("project_id")
+    if type(project_id) is not int or not 0 < project_id <= 2**63 - 1:
+        raise HttpError(400, "project_id: identificativo non valido.")
+    try:
+        project = get_project_for_profile(profile=profile, project_id=project_id)
+        get_project_membership(project, profile)
+    except ValueError as exc:
+        raise HttpError(404, "Progetto non trovato o non accessibile.") from exc
+    try:
+        proposal = labor_proposal(payload)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    proposal["ownership"] = {"workspace_id": profile.workspace_id, "visibility": "private"}
+    return JsonResponse(proposal, headers={"Cache-Control": "private, no-store"})
 
 
 def profile_for(request):

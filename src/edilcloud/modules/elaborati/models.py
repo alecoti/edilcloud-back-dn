@@ -336,3 +336,6 @@ class DocumentAudit(TimestampedModel):
     actor = models.ForeignKey("workspaces.Profile", on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=32)
     detail = models.JSONField(default=dict)
+
+
+from .labor_models import LaborIdentity, LaborLine, LaborOperation, LaborRegister, LaborRevision  # noqa: E402,F401
