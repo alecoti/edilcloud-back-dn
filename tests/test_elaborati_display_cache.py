@@ -147,8 +147,9 @@ def test_publication_and_legacy_display_are_bound_to_the_requesting_profile(
             preview_hash=revision.preview_hash,
             confirm_signature=True,
         )
-    assert exc.value.status_code == 409
-    assert "profilo attivo" in exc.value.message
+    # A different company cannot reach preview validation of this private draft.
+    assert exc.value.status_code == 404
+    assert "non accessibile" in exc.value.message
     revision.refresh_from_db()
     assert revision.state == "draft" and revision.drive_document_id is None
 

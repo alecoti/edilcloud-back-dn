@@ -2650,8 +2650,7 @@ def test_project_mutations_publish_realtime_events(monkeypatch):
     assert timeline_payload["mode"] == "phase"
     assert timeline_payload["task_id"] == task.id
     assert [event["event_kind"] for event in timeline_payload["events"]] == [
-        "document_deleted",
-        "document_created",
+        "document_deleted",  # creation target was deleted; historical ACL fails closed
         "folder_created",
         "issue_resolved",
         "comment_added",
@@ -2662,9 +2661,9 @@ def test_project_mutations_publish_realtime_events(monkeypatch):
         "task_created",
     ]
     assert timeline_payload["events"][0]["details"][0]["label"] == "Cartella"
-    assert timeline_payload["events"][2]["scope"]["scope_kind"] == "project"
-    assert timeline_payload["events"][5]["scope"]["scope_kind"] == "activity"
-    assert timeline_payload["events"][5]["target_post_id"] == post.id
+    assert timeline_payload["events"][1]["scope"]["scope_kind"] == "project"
+    assert timeline_payload["events"][4]["scope"]["scope_kind"] == "activity"
+    assert timeline_payload["events"][4]["target_post_id"] == post.id
 
 
 @pytest.mark.django_db
