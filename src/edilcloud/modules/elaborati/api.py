@@ -2,7 +2,7 @@ from datetime import date
 from uuid import UUID
 
 from django.http import FileResponse, JsonResponse
-from ninja import Router
+from ninja import Body, Router
 from ninja.errors import HttpError
 
 from edilcloud.modules.identity.auth import JWTAuth
@@ -23,7 +23,7 @@ router.add_router("/resources", labor_router)
 
 
 @router.post("/resources/labor/preview")
-def preview_labor_proposal(request, payload: dict):
+def preview_labor_proposal(request, payload: dict = Body(...)):
     from .labor_proposals import labor_proposal
     from edilcloud.modules.projects.services import get_project_for_profile, get_project_membership
 

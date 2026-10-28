@@ -2,7 +2,7 @@
 from datetime import date
 from uuid import UUID
 from django.http import JsonResponse
-from ninja import Router
+from ninja import Body, Router
 from edilcloud.modules.identity.auth import JWTAuth
 from edilcloud.modules.projects.services import get_current_profile
 from . import labor_registers as ledger
@@ -12,7 +12,7 @@ router = Router(tags=["Resource registers"], auth=JWTAuth())
 
 
 @router.post("/labor/interpretations")
-def interpret(request, payload: dict):
+def interpret(request, payload: dict = Body(...)):
     return response(interpretations.interpret(profile(request), payload))
 
 
@@ -35,7 +35,7 @@ def identities(request, project_id: int, q: str = ""):
 
 
 @router.post("/identities")
-def create_identity(request, payload: dict):
+def create_identity(request, payload: dict = Body(...)):
     return response(ledger.create_identity(profile(request), payload))
 
 
@@ -50,7 +50,7 @@ def listing(request, project_id: int, start: date | None = None, end: date | Non
 
 
 @router.post("/labor/registers")
-def create(request, payload: dict):
+def create(request, payload: dict = Body(...)):
     return response(ledger.create_register(profile(request), payload))
 
 
@@ -60,5 +60,5 @@ def read(request, register_id: UUID, version: int | None = None):
 
 
 @router.post("/labor/registers/{register_id}/commands")
-def command(request, register_id: UUID, payload: dict):
+def command(request, register_id: UUID, payload: dict = Body(...)):
     return response(ledger.command(profile(request), register_id, payload))
